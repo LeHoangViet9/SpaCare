@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.env*
+!.env.example
+*.tsbuildinfo
+coverage/
+
+!.env.demo.example
+
+# Local IDE settings and generated test/review artifacts
+.idea/
+outputs/
+tmp_library_inspect/
+__pycache__/
+*.pyc
+*.log
+test-results.txt
