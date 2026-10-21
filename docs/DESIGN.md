@@ -1,5 +1,8 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Nhật ký dễ đọc - 21/10/2026
+Theo yêu cầu người dùng: nhật ký OWNER hiển thị nhãn thao tác tiếng Việt, tiền VND, giờ Việt Nam, lý do và thay đổi trước → sau khi bản ghi có snapshot. Bản ghi cũ không có snapshot không suy đoán giá trị trước. Tên tham chiếu lấy từ danh mục hiện tại kèm mã ngắn; tham chiếu không tải được giữ mã để đối chiếu. Chỉ trình bày các trường nghiệp vụ cho phép, không hiển thị JSON, mật khẩu, digest hoặc nét ký. Có tìm kiếm, lọc ngày/người/thao tác và phân trang trong tối đa 500 bản ghi API đã trả. Không đổi API, schema, phân quyền hoặc dữ liệu audit gốc; không ghi mutation khi xem nhật ký.
+
 ## Sửa lỗi hiển thị và điều hướng — 21/10/2026
 
 - Bộ lọc danh sách lưu tại query parameter `search`. Mở hóa đơn sau hoàn thành lịch, bấm mã HĐ hoặc mã lịch đều mang mã đầy đủ sang URL đích. Workspace đọc trực tiếp URL, không truyền bộ lọc qua ref của trang cũ; reload và Back/Forward giữ bộ lọc. Nhập tìm kiếm dùng History replaceState được Next.js đồng bộ để không tạo một mục lịch sử cho mỗi ký tự. Điều hướng chỉ đọc dữ liệu đã được API phân quyền, không gọi mutation.

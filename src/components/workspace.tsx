@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import AuditLog from '@/components/audit-log';
 import SignaturePad, { SignatureImage } from '@/components/signature-pad';
 import { isValidSignature, type Signature } from '@/lib/signature';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -327,7 +328,7 @@ export default function Workspace() {
       return <div className="flow-row" key={day}><span>{day.slice(5)}</span><div className="bars"><div className="bar incoming" style={{ width: `${incoming / maximum * 100}%` }} /><div className="bar outgoing" style={{ width: `${outgoing / maximum * 100}%` }} /></div><small>Thu {vnd(incoming)} · Chi {vnd(outgoing)}</small></div>;
     })}{!filteredCash.length && <div className="empty">Chưa có giao dịch trong khoảng ngày này.</div>}</div><p className="muted">Hiển thị 14 ngày có giao dịch gần nhất trong khoảng lọc. Xanh: thu · Cam: chi.</p></Panel></>; break;
     case 'staff': content = <Panel title="Danh sách nhân viên" action={owner && <button className="primary" onClick={() => open('Tạo tài khoản nhân viên', 'user', [{ key: 'name', label: 'Họ và tên' }, { key: 'email', label: 'Email', type: 'email' }, { key: 'password', label: 'Mật khẩu ban đầu · tối thiểu 12 ký tự', type: 'password' }, { key: 'cashier', label: 'Cấp quyền thu ngân', type: 'checkbox', optional: true }])}>＋ Thêm nhân viên</button>}><Table resetKey={tableResetKey} headers={['Họ và tên', 'Email', 'Vai trò', 'Quyền thu ngân', 'Trạng thái', 'Thao tác']} rows={data.staff.map((r: Row) => [r.name, r.email || '—', label(r.role), r.cashier || r.role === 'OWNER' ? 'Có' : 'Không', r.active ? 'Hoạt động' : 'Đã khóa', owner && r.role === 'STAFF' ? <div key="actions" className="actions"><button disabled={busy} onClick={() => open('Sửa nhân viên', 'updateUser', staffFields, edit(r))}>Sửa</button><button disabled={busy} onClick={() => statusAction(r, 'userStatus')}>{r.active ? 'Ngừng hoạt động' : 'Hoạt động lại'}</button></div> : '—'])} /></Panel>; break;
-    case 'audit': content = <Panel title="Nhật ký thao tác"><Table resetKey={tableResetKey} headers={['Thời gian', 'Người thực hiện', 'Hành động', 'Đối tượng', 'Chi tiết']} rows={data.audit.map((r: Row) => [time(r.createdAt), lookup('staff', r.actorId), r.action, `#${r.targetId?.slice(-6)}`, <details key="detail"><summary>Xem</summary><pre>{JSON.stringify(r.details, null, 2)}</pre></details>])} /></Panel>; break;
+    case 'audit': content = <AuditLog data={data} />; break;
     default: content = null;
   }
   if (!canViewPage(tab, data.user)) content = <Panel title="Không thể mở mục này"><p>Mục chưa triển khai hoặc tài khoản không có quyền truy cập.</p></Panel>;

@@ -1423,3 +1423,10 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .session-confirmation dt { color: #52666b; }
 .session-confirmation dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
 .badge.paused { background: #fff2cc; color: #765215; }
+.audit-log { padding: 24px; }
+.audit-log .actions { display: flex; flex-wrap: wrap; align-items: end; }
+.audit-log .actions > * { flex: 1 1 180px; min-width: 0; max-width: 100%; }
+.audit-log h4 { margin: 10px 0; }
+.audit-log summary { cursor: pointer; padding: 10px 0; }
+.audit-log li { margin: 8px 0; }
+@media (max-width: 700px) { .audit-log { padding: 16px; } }
