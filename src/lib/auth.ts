@@ -14,9 +14,9 @@ export type Actor = {
 };
 
 export async function actor(): Promise<Actor> {
-  await connect();
   const token = (await cookies()).get('spacare_session')?.value;
   ensure(token, 'Vui lòng đăng nhập.', 401);
+  await connect();
   const session = await Session.findOne({
     tokenHash: hash(token),
     expiresAt: { $gt: new Date() },

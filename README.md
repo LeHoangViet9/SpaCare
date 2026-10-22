@@ -139,3 +139,11 @@ Dùng database riêng spacare_demo, không sửa .env.local. Đăng nhập owner
 Màn hình <=700px dùng menu chọn mục ở đầu, thanh truy cập nhanh phía dưới, danh sách dạng thẻ có nhãn thay cho bảng kéo ngang, nút chạm tối thiểu 46px và ô nhập chữ 16px. Form mở dạng bottom sheet có vùng cuộn và nút lưu ở cuối. Desktop vẫn giữ sidebar và bảng. Có hỗ trợ safe-area trên điện thoại và không tắt khả năng zoom. Checklist kiểm tra thực tế ở mục 16 docs/TESTING.md.
 
 Danh sách đã có phân trang giao diện: desktop mặc định 10 dòng, điện thoại 5 thẻ, tùy chọn 5/10/20/50. Phân trang/tìm kiếm vẫn áp dụng trên cửa sổ tối đa 500 bản ghi đã tải; chưa phải phân trang backend cho toàn bộ database.
+
+
+## Chẩn đoán đăng nhập trên Vercel
+
+- MONGODB_URI phải được cấu hình tại môi trường Production của dự án Vercel, trỏ tới Atlas/replica set truy cập được từ máy chủ Vercel. File .env.local trên máy cá nhân không tự trở thành cấu hình production. Không dùng địa chỉ localhost của máy cá nhân cho Vercel.
+- APP_ORIGIN phải là HTTPS origin chính xác của website. Sau thay đổi biến môi trường, redeploy để áp dụng.
+- Xem Vercel Runtime Logs của POST /api/auth/login: DB_CONFIG_MISSING = thiếu URI; DB_CONFIG_INVALID = URI không hợp lệ; DB_AUTH_FAILED = xác thực MongoDB thất bại; DB_DNS_FAILED = tra cứu DNS SRV/TXT thất bại; DB_CONNECTION_FAILED = lỗi kết nối khác, cần kiểm tra host, TLS và Atlas Network Access. Không mở rộng quyền truy cập mạng nếu chưa xác định đúng nguyên nhân.
+- Bản sửa xử lý kết nối không tự khắc phục DNS, tài khoản Atlas hoặc cấu hình mạng bên ngoài. Không gửi URI/mật khẩu trong ảnh/log khi nhờ kiểm tra.

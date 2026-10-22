@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { menu, pageKeys, canViewPage } from '../src/lib/navigation.ts';
+import { menu, pageKeys, menuPath, canViewPage } from '../src/lib/navigation.ts';
+
+test('mobile groups resolve every desktop page, including nested administration pages', () => {
+  for (const key of pageKeys()) {
+    const path = menuPath(key);
+    assert.ok(menu.includes(path[0]));
+    assert.equal(path.at(-1).key, key);
+  }
+  assert.deepEqual(menuPath('customers').map(n => n.key), ['operations', 'customers']);
+  assert.deepEqual(menuPath('deposits').map(n => n.key), ['finance', 'deposits']);
+  assert.deepEqual(menuPath('staff').map(n => n.key), ['admin', 'staff_group', 'staff']);
+  assert.deepEqual(menuPath('unknown'), []);
+});
 test('distinct pages; unconfirmed payroll and commission stay unavailable', () => {
  const keys = pageKeys();
  assert.equal(keys.length, 13);

@@ -4,7 +4,7 @@ import AuditLog from '@/components/audit-log';
 import SignaturePad, { SignatureImage } from '@/components/signature-pad';
 import { isValidSignature, type Signature } from '@/lib/signature';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { menu, canViewPage } from '@/lib/navigation';
+import { menu, menuPath, canViewPage } from '@/lib/navigation';
 import { workspaceHref } from '@/lib/workspace-view';
 import { staffBookingsToday } from '@/lib/rules';
 import { isValidElement, useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +33,21 @@ export default function Workspace() {
     window.history.replaceState(null, '', pathname + (query.size ? '?' + query.toString() : ''));
   }
   const [busy, setBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuButton = useRef<HTMLButtonElement>(null);
+  const activeMenuGroup = menuPath(tab)[0]?.key;
+  function closeMobileMenu() { setMobileMenuOpen(false); mobileMenuButton.current?.focus(); }
+  function openMobileGroup(key: string) {
+    const parents = activeMenuGroup === key ? menuPath(tab).filter(node => node.children) : [];
+    setExpandedGroups({ ...Object.fromEntries(parents.map(node => [node.key, true])), [key]: true });
+    setMobileMenuOpen(true);
+  }
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closeMobileMenu(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileMenuOpen]);
   const [period, setPeriod] = useState({ from: '', to: '' });
   const lock = useRef(false);
   const retryKeys = useRef(new Map<string, string>());
@@ -47,32 +62,16 @@ export default function Workspace() {
   function toggleGroup(key: string) {
     setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   }
-  const tabToGroupMap: Record<string, string[]> = {
-    appointments: ['operations'],
-    customers: ['operations'],
-    services: ['services_treatments'],
-    packages: ['services_treatments'],
-    treatments: ['services_treatments'],
-    treatment_uses: ['services_treatments'],
-    invoices: ['finance'],
-    deposits: ['finance'],
-    cash: ['finance'],
-    days: ['finance'],
-    reports: ['finance'],
-    staff: ['admin', 'staff_group'],
-    salary: ['admin', 'staff_group'],
-    commission: ['admin', 'staff_group'],
-    audit: ['admin'],
-  };
   useEffect(() => {
-    const parents = tabToGroupMap[tab] || [];
+    setMobileMenuOpen(false);
+    const parents = menuPath(tab).filter(node => node.children).map(node => node.key);
     setExpandedGroups(previous => ({ ...previous, ...Object.fromEntries(parents.map(key => [key, true])) }));
     viewRevision.current += 1;
     setNotice(''); setError(''); setModal(null);
   }, [tab]);
   function changeTab(next: string, linkedSearch = '') {
     viewRevision.current += 1;
-    const groups = tabToGroupMap[next] || [];
+    const groups = menuPath(next).filter(node => node.children).map(node => node.key);
     if (groups.length) {
       setExpandedGroups(prev => {
         const nextGroups = { ...prev };
@@ -340,7 +339,7 @@ export default function Workspace() {
     }
     if (node.pending) return <span key={node.key} className="nav-item nav-pending" aria-disabled="true" title="Chờ xác định nghiệp vụ">{node.title}<small>Chưa triển khai</small></span>;
     if (!canViewPage(node.key, data!.user)) return null;
-    return <Link key={node.key} href={node.key === 'overview' ? '/' : '/workspace/' + node.key} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined}>{node.title}</Link>;
+    return <Link key={node.key} href={node.key === 'overview' ? '/' : '/workspace/' + node.key} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}>{node.title}</Link>;
   }
   return <div className="app">
     <header className="mobile-toolbar">
@@ -349,7 +348,7 @@ export default function Workspace() {
         <span className="mobile-account" title={data.user.name + " · " + label(data.user.role)}>{data.user.name}<small>{label(data.user.role)}</small></span>
         <button type="button" aria-label="Đăng xuất" onClick={logout}>↪</button>
       </div>
-      <details className="mobile-menu"><summary>☰ Menu · {pageTitle}</summary><nav aria-label="Menu di động">{menu.map(node => renderMenu(node))}</nav></details>
+      <button ref={mobileMenuButton} type="button" className="mobile-menu-toggle" aria-expanded={mobileMenuOpen} aria-controls="mobile-menu-panel" onClick={() => setMobileMenuOpen(open => !open)}>☰ Menu · {pageTitle}</button>
     </header>
     <aside className="sidebar">
       <div className="brand">✧ SpaCare</div>
@@ -383,24 +382,20 @@ export default function Workspace() {
         <footer>SpaCare · MVP nội bộ <span>Giờ Việt Nam · VNĐ · Danh sách tối đa 500 bản ghi gần nhất</span></footer>
       </div>
     </main>
-    <nav className="mobile-bottom-nav" aria-label="Truy cập nhanh">
-      {[
-        ['overview', '◈', 'Tổng quan'],
-        ['appointments', '◷', 'Lịch hẹn'],
-        ['customers', '◎', 'Khách hàng'],
-        ['packages', '✿', 'Gói'],
-        ['invoices', '▤', 'Hóa đơn'],
-      ].map(([key, icon, name]) => (
-        <button
-          type="button"
-          key={key}
-          className={(tab === key || (key === 'packages' && tab === 'treatments')) ? "active" : ""}
-          aria-current={(tab === key || (key === 'packages' && tab === 'treatments')) ? "page" : undefined}
-          onClick={() => changeTab(key)}
-        >
-          <span aria-hidden="true">{icon}</span>
-          <small>{name}</small>
+    {mobileMenuOpen && <>
+      <button className="mobile-menu-backdrop" type="button" aria-label="Đóng menu" onClick={closeMobileMenu} />
+      <section className="mobile-menu-panel" id="mobile-menu-panel" aria-label="Điều hướng di động">
+        <div className="mobile-menu-heading"><strong>Menu SpaCare</strong><button type="button" aria-label="Đóng menu" onClick={closeMobileMenu}>✕</button></div>
+        <nav aria-label="Menu di động">{menu.map(node => renderMenu(node))}</nav>
+      </section>
+    </>}
+    <nav className="mobile-bottom-nav" aria-label="Menu chính trên điện thoại">
+      {menu.map(node => node.children ? (
+        <button type="button" key={node.key} className={activeMenuGroup === node.key ? 'active' : ''} aria-expanded={mobileMenuOpen && !!expandedGroups[node.key]} aria-controls="mobile-menu-panel" onClick={() => openMobileGroup(node.key)}>
+          <span className="mobile-nav-icon" aria-hidden="true">{({ operations: '◷', services_treatments: '✧', finance: '₫', admin: '⚙' } as Record<string, string>)[node.key]}</span><small>{node.title}</small>
         </button>
+      ) : (
+        <Link href="/" key={node.key} className={tab === node.key ? 'active' : ''} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}><span className="mobile-nav-icon" aria-hidden="true">⌂</span><small>{node.title}</small></Link>
       ))}
     </nav>
     {modal && <FormModal spec={modal} busy={busy} error={error} onClose={() => { if (!busy) { setModal(null); setError(''); } }} onSubmit={values => run(modal.action, values)} />}

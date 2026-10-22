@@ -132,3 +132,8 @@ POST /api/operations giữ Origin, phiên đang hoạt động, cùng spa, Idemp
 | resumeTreatment | Chỉ OWNER. {id,reason,expiresOn?:YYYY-MM-DD}. Gói PAUSED/còn buổi. Bỏ expiresOn giữ nguyên hạn; nếu nhập phải hợp lệ, từ hôm nay và sau hạn cũ nếu có. Không tự cộng ngày. |
 Payload method/evidenceReference cũ không thay thế chữ ký cho buổi mới. remainingBefore không khớp trả409, yêu cầu tải lại và ký lại; thiếu/trống/sai chữ ký trả400 và không đổi dữ liệu.
 GET /api/treatment-uses/{id}: phiên active, cùng spa; OWNER hoặc actorId/staffId của buổi được xem. Response {signature,snapshot,performedAt,digest}, Cache-Control:no-store,private. STAFF khác403; spa khác404; chưa đăng nhập401. GET workspace giữ ẩn nét ký và snapshot, list chỉ có nhãn đã ký/sessionNumber.
+
+
+## Xử lý mất kết nối DB - 21/10/2026
+
+Thiết kế kỹ thuật PROPOSED: request không có cookie trả 401 trước khi kết nối DB; login kiểm tra Origin và payload trước khi kết nối. Lỗi kết nối DB trả 503, Cache-Control: no-store, với code cố định DB_CONFIG_MISSING, DB_CONFIG_INVALID, DB_AUTH_FAILED, DB_DNS_FAILED hoặc DB_CONNECTION_FAILED. Không trả URI, mật khẩu hoặc thông báo gốc từ driver. Các lỗi lập trình khác vẫn trả 500. Mã DB_DNS_FAILED xác định lỗi tra cứu DNS từ driver; DB_CONNECTION_FAILED cần đối chiếu runtime logs và cấu hình mạng, không mặc định kết luận IP allowlist. Không đổi quyền, schema hoặc nghiệp vụ.

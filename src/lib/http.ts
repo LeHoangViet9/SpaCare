@@ -1,7 +1,15 @@
 import { DomainError } from './rules';
 import { ZodError } from 'zod';
+import { DatabaseUnavailableError } from './db';
 
 export function failure(error: unknown) {
+  if (error instanceof DatabaseUnavailableError) {
+    console.error('MongoDB connection failed', { code: error.code });
+    return Response.json(
+      { error: error.message, code: error.code },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
   if (error instanceof DomainError)
     return Response.json({ error: error.message }, { status: error.status });
 

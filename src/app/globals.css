@@ -1251,7 +1251,7 @@ td:first-child { white-space: normal; min-width: 0; overflow-wrap: anywhere; }
 .payment-instructions img { display: block; max-width: 100%; height: auto; margin: 12px auto; }
 
 /* Phone navigation and record cards. Desktop retains the tabular layout. */
-.mobile-toolbar, .mobile-bottom-nav { display: none; }
+.mobile-toolbar, .mobile-bottom-nav, .mobile-menu-panel, .mobile-menu-backdrop { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .cell-value { min-width: 0; }
 .main, .page, .panel { min-width: 0; }
@@ -1411,9 +1411,24 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .nav-pending small { font-size: 10px; margin-left: auto; }
 .sidebar > nav { min-height: 0; flex: 1; }
 .sidebar-bottom { flex-shrink: 0; }
-.mobile-menu summary { cursor: pointer; padding: 10px; border-radius: 8px; background: var(--sage); }
-.mobile-menu > nav { max-height: 65dvh; overflow-y: auto; padding: 8px 0; }
-@media (max-width: 700px) { .mobile-bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.mobile-menu-toggle { width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; background: var(--sage); }
+@media (max-width: 700px) {
+  .app { padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+  .mobile-toolbar { z-index: 26; }
+  .mobile-account { flex: 1; }
+  .mobile-bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: stretch; }
+  .mobile-bottom-nav button, .mobile-bottom-nav a { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; min-width: 0; min-height: 78px; padding: 6px 2px; border: 0; border-radius: 10px; background: transparent; color: #65766d; text-decoration: none; text-align: center; }
+  .mobile-bottom-nav button.active, .mobile-bottom-nav a.active { background: var(--sage); color: var(--green); font-weight: 700; }
+  .mobile-bottom-nav .mobile-nav-icon { font-size: 22px; line-height: 24px; }
+  .mobile-bottom-nav small { display: block; width: 100%; font-size: 10px; line-height: 14px; overflow-wrap: normal; }
+  .mobile-menu-backdrop { display: block; position: fixed; inset: 0; z-index: 21; border: 0; border-radius: 0; background: #172b2455; padding: 0; }
+  .mobile-menu-panel { display: flex; flex-direction: column; position: fixed; z-index: 24; left: 10px; right: 10px; bottom: calc(104px + env(safe-area-inset-bottom, 0px)); max-height: calc(100dvh - 240px - env(safe-area-inset-bottom, 0px)); border: 1px solid var(--line); border-radius: 16px; background: #fcfdf9; box-shadow: 0 12px 40px #172b2433; padding: 10px 12px; }
+  .mobile-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .mobile-menu-heading button { width: 44px; height: 44px; padding: 8px; }
+  .mobile-menu-panel > nav { min-height: 0; overflow-y: auto; padding: 10px 0; }
+  .mobile-menu-panel .nav-item, .mobile-menu-panel .nav-group-header { min-height: 44px; }
+  .mobile-bottom-nav a:focus-visible, .mobile-bottom-nav button:focus-visible, .mobile-menu-toggle:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+}
 .signature-pad, .signature-image { display: block; width: 100%; height: 220px; background: #fff; color: #233e55; border: 1px solid #8c9da4; border-radius: 10px; }
 .signature-pad { touch-action: none; user-select: none; cursor: crosshair; }
 .signature-field { display: grid; gap: 10px; }

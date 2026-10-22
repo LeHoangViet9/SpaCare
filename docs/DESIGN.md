@@ -140,3 +140,13 @@ OPEN: chế tài quá hạn, chuẩn số ngày và mốc tính hạn; giá tr�
 Theo xác nhận mới nhất: thay form chọn phương thức/tham chiếu bằng thông tin khách/gói/người thực hiện/buổi và ô ký tay/chuột. Khách có lịch thực hiện tại Lịch hẹn; không lịch thực hiện trên Gói. Ký lại xóa nét, Hủy không lưu; submit khóa khi chữ ký trống/đang gửi. SVG chỉ render polyline từ tọa độ hữu hạn, không chèn markup từ dữ liệu. Dùng Pointer Events + pointer capture và touch-action:none riêng khung ký; nét lưu tọa độ chuẩn hóa để xem trên nhiều kích thước.
 Backend ràng buộc chữ ký với snapshot buổi và remainingBefore trong transaction. Dữ liệu thay đổi khi đang ký trả409, không tự áp chữ ký cũ cho buổi tiếp theo. Chuỗi lịch/gói/khách được kiểm tra cùng spa; không thay quyền thanh toán hoặc thu ngân. Chữ ký đầy đủ tải riêng khi người có quyền mở xem; list và audit không chứa nét ký. Không dùng ảnh ký mẫu/giả cho bản ghi lịch sử.
 Bảo lưu: ACTIVE -> PAUSED -> ACTIVE bằng action OWNER, lưu before/after/lý do trong audit, không đổi remaining. Không scheduler tự mở lại, không kéo hạn dùng theo holdUntil. expiresOn là ngày OWNER nhập tường minh khi duyệt gia hạn lúc mở lại, không suy ra hạn gốc hoặc chính sách quá hạn.
+
+
+## Khôi phục kết nối MongoDB - 21/10/2026
+
+Thiết kế kỹ thuật PROPOSED: chỉ chia sẻ promise đang kết nối; xóa promise khi hoàn tất hoặc thất bại. Sau mất kết nối, lần gọi tiếp theo phải kết nối lại thay vì nhận promise thành công cũ. Log lỗi kết nối chỉ chứa mã phân loại cố định, không chứa thông báo driver có thể mang bí mật. Kiểm tra session cookie trước DB để người chưa đăng nhập vẫn nhận 401 khi DB không sẵn sàng.
+
+
+## Đồng bộ điều hướng điện thoại - 22/10/2026
+
+Theo yêu cầu người dùng: thanh dưới điện thoại lấy trực tiếp 5 nhóm cấp đầu của menu chung, cùng tên và thứ tự với menu phía trên/desktop. Nhóm mở bảng mục con nổi, không đẩy nội dung trang xuống; Tổng quan mở trang gốc. Mục con giữ kiểm tra canViewPage và mục chưa triển khai giữ trạng thái không bấm được. Đường dẫn nhóm hiện tại suy ra từ cây menu, không duy trì bảng ánh xạ riêng. Chọn mục đóng bảng; hỗ trợ đóng bằng nút, nền ngoài và Escape. Đây là thay đổi trình bày, không đổi API, schema hoặc quyền nghiệp vụ.

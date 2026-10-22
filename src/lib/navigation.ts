@@ -9,6 +9,14 @@ export const menu: MenuNode[] = [
 export function pageKeys(nodes: MenuNode[] = menu): string[] {
   return nodes.flatMap(node => node.children ? pageKeys(node.children) : node.pending ? [] : [node.key]);
 }
+export function menuPath(key: string, nodes: MenuNode[] = menu): MenuNode[] {
+  for (const node of nodes) {
+    if (node.key === key) return [node];
+    const children = node.children ? menuPath(key, node.children) : [];
+    if (children.length) return [node, ...children];
+  }
+  return [];
+}
 export function canViewPage(key: string, user: { role: string; cashier?: boolean }): boolean {
   if (!pageKeys().includes(key)) return false;
   if (['services', 'staff', 'audit'].includes(key)) return user.role === 'OWNER';
