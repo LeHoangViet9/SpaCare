@@ -6,7 +6,7 @@ API dùng cookie session cùng origin. Phải đăng nhập, không chấp nhậ
 |---|---|
 | POST /api/auth/login | `{email,password}` → set cookie |
 | POST /api/auth/logout | Thu hồi session hiện tại |
-| GET /api/workspace | Dữ liệu theo spa/quyền, tối đa 500 mỗi danh sách; số tổng quan aggregate toàn bộ |
+| GET /api/workspace | Dữ liệu theo spa/quyền; danh sách phân trang, số tổng quan aggregate toàn bộ |
 | POST /api/operations | `{action,data}` + header `Idempotency-Key` |
 
 Ví dụ tạo lịch, thời gian phải có UTC offset:
@@ -137,3 +137,66 @@ GET /api/treatment-uses/{id}: phiên active, cùng spa; OWNER hoặc actorId/sta
 ## Xử lý mất kết nối DB - 21/10/2026
 
 Thiết kế kỹ thuật PROPOSED: request không có cookie trả 401 trước khi kết nối DB; login kiểm tra Origin và payload trước khi kết nối. Lỗi kết nối DB trả 503, Cache-Control: no-store, với code cố định DB_CONFIG_MISSING, DB_CONFIG_INVALID, DB_AUTH_FAILED, DB_DNS_FAILED hoặc DB_CONNECTION_FAILED. Không trả URI, mật khẩu hoặc thông báo gốc từ driver. Các lỗi lập trình khác vẫn trả 500. Mã DB_DNS_FAILED xác định lỗi tra cứu DNS từ driver; DB_CONNECTION_FAILED cần đối chiếu runtime logs và cấu hình mạng, không mặc định kết luận IP allowlist. Không đổi quyền, schema hoặc nghiệp vụ.
+
+
+## Tra cứu khách hàng toàn bộ - 22/10/2026
+
+GET /api/customers?search=&page=1&pageSize=20 trả {customers,total,page,pageSize}. Cần session và user active; spaId lấy từ actor(), bỏ qua spaId client. search tối đa 100 ký tự, tìm literal không phân biệt hoa/thường trên tên, điện thoại, ghi chú hoặc ID đầy đủ; không tự bỏ dấu tiếng Việt. page nguyên 1..1000000, pageSize nguyên 1..100; sai trả 400. id tùy chọn phải là ObjectId hợp lệ và luôn kết hợp spaId; khác spa trả danh sách rỗng. Sắp createdAt giảm dần, _id giảm dần, page vượt cuối được đưa về trang cuối. Phản hồi no-store; không mutation. Chỉ trả trường khách được phép: _id, name, phone, notes, createdAt, updatedAt.
+
+Trang Khách hàng và bộ chọn khách trong form dùng endpoint này, không còn trần 500. GET /api/workspace vẫn tải preview khách và bổ sung khách cũ được tham chiếu bởi các bản ghi đang hiển thị để giữ tên/điện thoại. Các danh sách khác giữ giới hạn trước đây.
+
+
+## Workspace phân trang toàn bộ - 22/10/2026
+
+Mục này thay thế mọi mô tả limit/tableLimit 500 trước đây. GET /api/workspace nhận section (mặc định overview), search (literal, tối đa 100), page (1..1000000), pageSize (1..100), allocationPage (trang lịch sử phân bổ riêng), from/to (YYYY-MM-DD, ngày Việt Nam), actor (ObjectId cho lọc audit), action (lọc audit). from phải không sau to; đầu vào sai trả 400; section không được quyền truy cập trả 403. spaId/actorId quyền lấy từ session, không tin query client.
+
+Response bổ sung pages[collection]={rows,total,page,pageSize}; collection là services, staff, appointments, invoices, deposits, allocations, treatments, uses, days, audit hoặc customers theo section. page vượt cuối được đưa về trang cuối. Arrays cấp ngoài là dữ liệu tham chiếu/lựa chọn form, không dùng làm toàn bộ lịch sử. invoices rows có trạng thái tính từ số tiền và canAllocate; treatments rows có thông tin hạn thanh toán. Không có tableLimit. Lịch sử phân bổ có pagination độc lập với cọc. Các field nhạy cảm User và TreatmentUse tiếp tục loại khỏi response.
+
+report={inflow,outflow,days} tính toàn bộ giao dịch trong from/to theo spa, chỉ OWNER/thu ngân. days gồm {_id:day,incoming,outgoing}; giao diện biểu đồ chỉ vẽ 14 ngày có giao dịch cuối, số tổng vẫn tính toàn khoảng. totals thêm treatments, remaining, activeTreatments, uses và bookings cho STAFF tính từ toàn bộ lịch CONFIRMED của chính mình trong ngày Việt Nam.
+
+Tìm kiếm hỗ trợ tên/điện thoại khách liên quan, tên nhân viên, tên dịch vụ/gói trong các danh sách tương ứng; ID đầy đủ hoặc chuỗi hex ngắn tối thiểu 6 ký tự, chuỗi nghiệp vụ và số tiền nguyên ở các field được phép. Audit tìm theo mã/tên thao tác, người thực hiện, khách tham chiếu và các trường note/reason/name/description được hỗ trợ; không tìm trên bí mật hoặc nét ký. Mọi response no-store.
+
+
+## API bán gói/hóa đơn — 22/10/2026 (thay thế payload cũ tương ứng)
+Mọi mutation giữ Origin, session active, tenant scope, Idempotency-Key và transaction/audit.
+- packageTemplate OWNER: {name,serviceId,totalSessions:1..1000,price:integer>0}. updatePackageTemplate thêm id; packageTemplateStatus {id,active}. Sửa mẫu không sửa dữ liệu đã bán.
+- service/updateService thêm commission:integer>=0, mặc định0; không tự tính thanh toán hoa hồng.
+- customer/updateCustomer thêm consultantId tùy chọn cùng spa và active; update bỏ trường để gỡ mặc định. GET customers bổ sung consultantId.
+- sellPackage OWNER/thu ngân: {customerId,templateId,total?:giá bán thay thế dương,dueDate,consultantId?,promotion?,gifts?:[{templateId}]}. Tối đa20 quà; quà bắt buộc tên đợt promotion không rỗng, không nhận trường giá. Server lấy tên/số buổi/dịch vụ từ mẫu và cưỡng chế giá quà0. Response id=gói chính, invoiceId=hóa đơn mua. Client cũ nhập name/serviceId/totalSessions phải chuyển sang templateId.
+- invoice OWNER/thu ngân: {customerId,serviceId,description?,total?,consultantId?,dueDate?,treatmentId?,signature?,remainingBefore?}. Mua lẻ cho sửa giá/nội dung, giá dương; không gửi giá dùng giá danh mục. Có treatmentId: đúng khách/dịch vụ/gói ACTIVE/còn buổi, chữ ký/remainingBefore bắt buộc, giá server luôn0 kể cả client gửi giá khác; ghi buổi và hóa đơn cùng transaction. Dùng buổi không trả nợ hóa đơn mua gói.
+- use/completeTreatmentAppointment: payload giữ nguyên, tạo thêm SESSION invoice0 cùng transaction; response bổ sung invoiceId nếu có hóa đơn buổi. Retry lịch đã có Use dùng lại invoice tương ứng, không tự backfill buổi cũ.
+- GET /api/invoices/{id}: hóa đơn đúng phạm vi tài chính, khách, quà tặng kèm, lịch sử thao tác và chữ ký buổi nếu OWNER/actor/staff được phép xem. Không tự mở quyền chữ ký cho thu ngân. no-store,private.
+- GET /api/customers/{id}/history?page=1: khách cùng spa và danh sách hóa đơn người xem được phép đọc, tổng/page, mỗi trang10. Gồm mua lẻ/gói/quà/buổi0đ. Không trả toàn bộ tài chính spa cho STAFF.
+- GET workspace thêm package_catalog (OWNER), pages.packageTemplates và packageTemplates cho form chọn gói; vẫn phân trang backend. Ẩn menu audit/treatment_uses không xóa API hay audit đã lưu.
+
+Bổ sung: history nhận kind=invoices|appointments|treatments (mặc định invoices), trả rows/kind/total/page. Lịch hẹn STAFF chỉ lịch mình, gói giữ quyền đọc hiện hành cùng spa. completeAppointment cho OWNER/thu ngân nhập description/total/consultantId khi tạo hóa đơn mới; liên kết hóa đơn cũ giữ số liệu cũ. STAFF phụ trách vẫn hoàn thành theo giá danh mục, không tự sửa giá bằng endpoint này.
+
+Bổ sung chữ ký hóa đơn 22/10/2026: GET invoices/{id}?signaturePage=1 trả signatures/signatureTotal/signaturePage (5 buổi mỗi trang). Hóa đơn mua gói gom chữ ký của gói và các gói tặng liên kết; hóa đơn từng buổi đọc Use trực tiếp hoặc appointmentId cho liên kết cũ. Giữ tenant/customer scope và quyền OWNER/actor/staff từng buổi, không tự cấp quyền chữ ký cho thu ngân. Không backfill hay tạo chữ ký giả; ghi rõ buổi lịch sử thiếu chữ ký.
+
+
+## Trang Thu ngân — 22/10/2026
+GET workspace nhận section=cashier, backend chỉ OWNER hoặc cashier=true. Trả catalogs và các lựa chọn vận hành theo API workspace hiện có; không có pages cho trang soạn hóa đơn. Không thêm action ghi mới: dùng customer, invoice, sellPackage và payment như đã mô tả. Session/tenant/quyền/transaction/idempotency không đổi. Route /workspace/cashier; ?mode=package mở mặc định Bán gói. Dịch vụ/gói được chọn trên trình duyệt chưa tạo nháp DB; Lưu mới gửi operation. GET chi tiết hóa đơn giữ kiểm tra quyền; nút thu tiền mở lại form payment hiện có, server kiểm tra quyền khi ghi.
+
+
+## Bộ lọc và hồ sơ — 22/10/2026
+GET workspace nhận thêm status (đúng danh sách; sai trả400), employee/customer (ObjectId hoặc rỗng), method CASH|BANK_TRANSFER, direction IN|OUT, category literal<=100, order asc|desc. Mọi lọc AND với scope gốc trước phân trang. Lịch dùng startAt và order, mặc địnhdesc; cash/days lọc day, các lịch sử khác lọc createdAt hoặc performedAt; từ00h ngày đầu đến trước00h ngày sau theo UTC+7. Catalog/nhân viên không lọc ngày. category cho services; package_catalog tra serviceId theo nhóm dịch vụ. Không nhận spaId/actorId quyền từ client.
+Status invoices: DEBT,OVERDUE,UNPAID,PARTIALLY_PAID,PAID,SESSION,GIFT; packages ACTIVE,PAUSED,COMPLETED,GIFT; deposits AVAILABLE,EXHAUSTED; services/package_catalog/staff ACTIVE,INACTIVE; appointments CONFIRMED,POSTPONED,COMPLETED,CANCELLED; days OPEN,CLOSED. pages.cash.summary={incoming,outgoing} tính toàn bộ kết quả trong quyền, không chỉ trang.
+GET customers bổ sung lastVisit (lịch COMPLETED gần nhất không ở tương lai), nextVisit (CONFIRMED tới đây); cả hai theo quyền lịch của phiên, truy vấn theo lô khách trên trang. Giữ consultantId và các trường cũ. service/updateService thêm category tùy chọn, trim<=100, giữ quyền OWNER.
+GET customers/{id}/history bổ sung summary={invoices,debt,credit,appointments,activePackages,lastVisit}, customer.notes/consultantName và serviceName/staffName của các dòng. credit=null khi không có quyền xem cọc; nợ/hóa đơn/lịch giữ scope hiện tại.
+GET /api/staff/{id}: OWNER và cùng spa; trả staff{name,email,role,cashier,active,createdAt} + summary{appointments,completed,sessions,customers}. STAFF/thu ngân403 trước truy vấn hồ sơ; không session401. no-store,private. Không có hành động lương/chấm công/hoa hồng mới.
+
+
+## API lương/hoa hồng — 22/10/2026
+GET /api/payroll?month=YYYY-MM&view=salary|commission&employee=&page=1. month hợp lệ2000..9998, page1..1000000; phân trang10. OWNER xem/chọn toàn spa. STAFF/thu ngân bị ép staffId=user.id; yêu cầu employee khác trả403 trước đọc dữ liệu lương. Vai trò khác403. no-store,private. Response people (name,active,role,baseSalary hoặc null), rows,total,page,summary{commission,sessions,unsettled,unsettledCount}. Summary commission là toàn tháng; unsettled gồm khoản chưa chốt đến hết tháng. Commission rows bổ sung payrollMonth/payrollStatus. people STAFF chỉ chứa chính mình; không trả hash/password/session. GET workspace nhận salary/commission để điều hướng, không trả bảng lương qua payload workspace chung.
+Các action POST operations giữ Origin, phiên active, cùng spa, Idempotency-Key, transaction/audit:
+- setStaffSalary OWNER: {staffId,baseSalary>=0}; cấu hình không sửa bảng đã lập.
+- savePayroll OWNER: {id?:bảng đang sửa,staffId,month,baseSalary?,bonus>=0,deductions>=0,note?}. Mới lấy lương cấu hình nếu bỏ baseSalary; không có cấu hình phải nhập rõ. Bảng đã có yêu cầu đúng id và DRAFT. Điều chỉnh dương cần note. Tính hoa hồng còn chưa chốt trước đầu tháng sau, cộng tồn tháng trước; không tính lại ledger từ giá danh mục. Không lập tháng tương lai.
+- approvePayroll OWNER: {id,expectedTotal}. Kiểm tra tập Commission và tổng so với nháp/expectedTotal; lệch409, chưa khóa/ghi chi. Thành công gắn payrollId và chuyển APPROVED. Retry giữ bảng cũ.
+- payPayroll OWNER: {id,method:CASH|BANK_TRANSFER,receivedConfirmation:true,note?,transferReference?}. Số tiền server lấy từ bảng duyệt; không nhận amount/staffId để quyết định chi. BANK_TRANSFER cần note/reference>=3 ký tự. Khoản dương cần sổ hôm nay OPEN; ghi PAYROLL OUT + PAID atomically. Bảng PAID retry không ghi chi thêm. Khoản0 không tạo phiếu0. reverseCash từ chối PAYROLL.
+- completeInvoiceService OWNER/thu ngân: {id,staffId}. Chỉ invoice dịch vụ lẻ, không Appointment/Treatment; nhân viên active cùng spa. Đánh dấu thực hiện và ghi Commission một lần, bất kể paid. Đã thực hiện khác người409. Invoice có lịch hoàn thành tại lịch; invoice đã thực hiện không gắn lịch mới.
+- use thêm staffId tùy chọn; invoice có treatmentId thêm staffId tùy chọn cho buổi. Chỉ OWNER/thu ngân chỉ định người khác, STAFF chỉ mình. Signature snapshot và Commission gắn cùng staffId. completeTreatmentAppointment giữ nhân viên lịch.
+Hoàn thành lịch lẻ, Use/lịch gói mới tự ghi Commission trong transaction. Hóa đơn0/gói tặng không chặn mức hoa hồng. Chưa có backfill, xóa/đảo hoa hồng hoặc mở lại bảng lương duyệt/chi.
+
+
+## Cài hoa hồng theo dịch vụ — 22/10/2026
+POST operations action=setServiceCommission {serviceId,commission}: OWNER, phiên active, same-spa Service, tiền nguyên VNĐ 0..1e12; giữ transaction, idempotency, audit before/after. Chỉ sửa commission, giữ tên/giá/thời lượng. GET /api/payroll view=commission trả thêm services {_id,name,active,commission} cùng spa cho OWNER; STAFF nhận danh sách rỗng.

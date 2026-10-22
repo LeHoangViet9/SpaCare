@@ -150,3 +150,65 @@ Thiết kế kỹ thuật PROPOSED: chỉ chia sẻ promise đang kết nối; x
 ## Đồng bộ điều hướng điện thoại - 22/10/2026
 
 Theo yêu cầu người dùng: thanh dưới điện thoại lấy trực tiếp 5 nhóm cấp đầu của menu chung, cùng tên và thứ tự với menu phía trên/desktop. Nhóm mở bảng mục con nổi, không đẩy nội dung trang xuống; Tổng quan mở trang gốc. Mục con giữ kiểm tra canViewPage và mục chưa triển khai giữ trạng thái không bấm được. Đường dẫn nhóm hiện tại suy ra từ cây menu, không duy trì bảng ánh xạ riêng. Chọn mục đóng bảng; hỗ trợ đóng bằng nút, nền ngoài và Escape. Đây là thay đổi trình bày, không đổi API, schema hoặc quyền nghiệp vụ.
+
+
+## Danh sách và bộ chọn khách hàng lớn - 22/10/2026
+
+Trang Khách hàng tìm và phân trang tại backend, không lọc chỉ trong preview workspace. Bộ chọn khách trong form tìm backend, 20 kết quả mỗi trang, giữ khách đã chọn khi tìm/trang thay đổi; request cũ được hủy để tránh ghi đè kết quả mới. Sửa/thêm khách reload dữ liệu và trang khách. Các bản ghi workspace có tham chiếu khách ngoài preview được nạp đúng tên/điện thoại theo cùng spa. Chưa đổi cơ chế tải 500 của danh sách khác hoặc báo cáo khoảng ngày.
+
+
+## Phân trang toàn bộ workspace - 22/10/2026
+
+Thay thế cửa sổ dữ liệu cũ: mỗi trang danh sách gọi workspace với section, search, page, pageSize. Tìm kiếm/đếm trước khi cắt trang. Cọc và lịch sử phân bổ đổi trang độc lập. Audit lọc ngày/người/thao tác tại backend. Khi đổi bộ lọc, về trang đầu; response cũ không ghi đè request mới hoặc trang sau điều hướng. Bảng giữ phân trang local cho phần xem nhanh Tổng quan; các danh sách lịch sử dùng metadata backend. Danh mục và lựa chọn nghiệp vụ còn dùng được tải riêng với dữ liệu tham chiếu của trang, giúp lịch sử cũ hiển thị đúng tên. Xóa dòng giới hạn bản ghi trên footer, gói và nhật ký. Báo cáo dùng DB aggregate; không cộng các dòng của một trang.
+
+
+## Rút gọn chữ trên điện thoại - 22/10/2026
+
+Theo yêu cầu người dùng: gom nút menu biểu tượng vào một hàng cùng thương hiệu/tài khoản; chỉ giữ một H1 của trang. Trên mobile ẩn breadcrumb, eyebrow, mô tả trang, vai trò lặp trong header, footer và tiêu đề panel đầu khi trùng ngữ nghĩa với H1. Tổng quan bỏ phần khẩu hiệu trên mobile, giữ nút đặt lịch và số liệu; tiêu đề các phần khác nhau như lịch gần nhất/biểu đồ/lịch sử phân bổ vẫn giữ. Không ẩn lưu ý nghiệp vụ, lỗi, trạng thái hoặc nội dung xác nhận thanh toán/chữ ký. Desktop giữ cách trình bày hiện có.
+
+### Tìm và chọn khách trong biểu mẫu
+- Nhãn tìm khách được in đậm. Kết quả tên và số điện thoại hiển thị ngay dưới ô tìm kiếm dưới dạng danh sách chọn, không cần mở dropdown thứ hai.
+- Danh sách có vùng cuộn và phân trang máy chủ, giữ khách đã chọn khi đổi từ khóa hoặc trang; áp dụng cho đặt lịch và các biểu mẫu dùng chung bộ chọn khách.
+
+
+## Bán gói và hóa đơn — 22/10/2026
+- Danh mục liệu trình tách khỏi Gói của khách: OWNER nhập mẫu, nhân viên có quyền bán chọn khách/mẫu/giá/hạn trả, thêm nhiều Quà tặng0đ và tên đợt khuyến mãi.
+- Tư vấn mặc định tại form khách; form bán/hóa đơn có lựa chọn thay thế. Danh mục dịch vụ có mức hoa hồng tiền cố định, chưa hiển thị bảng tính trả hoa hồng.
+- Tạo hóa đơn: tìm khách, chọn dịch vụ, sửa nội dung/giá; nếu chọn gói khả dụng của khách thì giá khóa0 và yêu cầu ký trước khi lưu. Không bấm thu tiền cho hóa đơn0.
+- Hóa đơn có người tạo, nút Chi tiết/chữ ký; chi tiết hiện chữ ký trực tiếp khi được phép, quà tặng và lịch sử. Khách hàng có nút Lịch sử phân trang, mở từng hóa đơn. Menu nhật ký thao tác/buổi sử dụng được ẩn; routes cũ giữ để không phá tham chiếu lịch sử.
+- Hoàn thành buổi gói từ lịch hoặc gói mở ngay hóa đơn mới0đ. Hủy ký không ghi/trừ buổi. Không tạo chữ ký/người tạo giả cho dữ liệu cũ.
+
+Lịch sử khách có bộ chọn Hóa đơn và buổi đã thực hiện / Lịch hẹn / Gói đã mua hoặc được tặng; từng loại phân trang độc lập. Hoàn thành lịch lẻ cho người có quyền tài chính sửa nội dung/giá hóa đơn mới ngay trước khi xác nhận.
+
+Chữ ký trong chi tiết hóa đơn: hiển thị ngay hình ký theo từng buổi, ngày thực hiện và tên gói. Hóa đơn mua gói có cả buổi của quà tặng kèm, phân trang5. Hóa đơn/lượt cũ có chữ ký đã lưu được tra qua liên kết gói/lịch, không cần tạo lại hóa đơn. Khi không có chữ ký được phép xem phải hiện trạng thái rõ ràng thay vì ẩn cả mục.
+
+
+## Thu ngân tham khảo EasySalon — 22/10/2026
+- Tham khảo bố cục danh mục cạnh hóa đơn, ô tìm kiếm và chuyển loại dịch vụ/gói đã quan sát trên EasySalon. Dùng màu và thành phần SpaCare, không sao chép dữ liệu tài khoản tham khảo.
+- Ba phần: Khách hàng (tìm tên/SĐT phân trang, thêm khách và tự chọn khách vừa tạo); danh mục thẻ (Dịch vụ lẻ/Bán gói/Dùng liệu trình, tìm không dấu, phân trang8); hóa đơn xem trước và tổng tiền.
+- Desktop danh mục/hóa đơn cạnh nhau, hóa đơn sticky; tablet/điện thoại xếp dọc, thẻ2 cột. Không có thanh tìm trùng ở header trang này. Đổi khách/loại/xóa lựa chọn xóa chữ ký cũ và lựa chọn liên quan.
+- Bán gói có nhiều quà tặng0đ và tên đợt; dùng gói chỉ hiện ACTIVE/còn buổi của khách đã chọn, giá0 và yêu cầu chữ ký. Backend tiếp tục xác minh mọi điều kiện khi lưu.
+- Lưu xong mở Chi tiết hóa đơn để xem chữ ký và chọn Thu tiền mặt/Chuyển khoản; form payment xác nhận thực nhận vẫn dùng chung. Reset bản soạn sau khi lưu thành công; lỗi giữ nội dung để sửa/retry. Chọn danh mục không tạo nháp DB.
+- Nút Tạo hóa đơn ở danh sách và Bán gói ở gói khách cùng dẫn về Thu ngân; lịch sử/hóa đơn cũ giữ cách truy cập cũ. Không bổ sung giỏ nhiều dịch vụ/sản phẩm hay chính sách tài chính từ EasySalon.
+
+
+## Các màn tham khảo EasySalon — 22/10/2026
+- Thanh bộ lọc chung cho lịch, hóa đơn, cọc, gói, dịch vụ, nhân viên, thu chi/chốt sổ. Bộ lọc lưu URL để tải lại/Back giữ lựa chọn; đổi bộ lọc về trang1. Tìm kiếm vẫn riêng và áp dụng cùng bộ lọc tại backend.
+- Lịch: Hôm nay/7 ngày tới/khoảng ngày, chọn trạng thái/nhân viên. Danh sách giữ đầy đủ dời/hoãn/hủy; Lịch theo ngày là agenda phân trang, có giờ/khách/dịch vụ/nhân viên và hoàn thành. Không hứa lịch đã tải đủ toàn bộ ngày khi còn trang khác.
+- Khách: cột lần đến/lịch tới theo quyền; hồ sơ có ghi chú/tư vấn/tổng hợp trong phạm vi, ba tab Hóa đơn-chữ ký/Lịch hẹn/Liệu trình. Nút đặt lịch điền sẵn khách; nút thu ngân chọn sẵn khách (chỉ tài chính).
+- Dịch vụ: nhập nhóm, lọc nhóm/trạng thái; nhóm gói kế thừa dịch vụ và chọn được ở Thu ngân. Không tự gán nhóm cho dữ liệu cũ.
+- Thu chi: mã phiếu/người tạo, chọn tiền mặt/ngân hàng/thu-chi/ngày/nhân viên; ba số thu/chi/chênh lệch tính cả tập lọc. Giữ lưu ý về cọc/thanh toán và đảo sai sót.
+- Nhân viên: lọc trạng thái, bấm tên mở hồ sơ sản lượng và xem lịch được giao; giữ sửa/khóa theo OWNER. Không có bảng lương giả.
+- Kiểm tra trực quan bằng SSR component thực + dữ liệu minh họa, CSS mobile, không tràn ngang ở viewport thực tế502px. Đây là kiểm tra bố cục tĩnh, không thay kiểm thử tương tác hay database trên ứng dụng đang chạy.
+
+
+## Giao diện Lương / Hoa hồng — 22/10/2026
+Mở hai mục trong Quản trị > Nhân viên, bỏ trạng thái chưa triển khai. STAFF chỉ đọc của mình, OWNER có chọn nhân viên và tháng.
+Lương: cấu hình lương từng người; lập nháp tháng với cơ bản/thưởng/khấu trừ/lý do; xem phân rã, số buổi và khoản tồn trước tháng; duyệt; ghi nhận chi qua tiền mặt/chuyển khoản có checkbox thực chi. Bảng duyệt/chi không có sửa/xóa. Danh sách phân trang10. Cài lương không đồng nghĩa đã chi; duyệt không tạo phiếu chi.
+Hoa hồng: tổng tiền/số ca-buổi/thành phần chưa chốt, từng dòng dịch vụ/người làm/ngày/nguồn và trạng thái vào bảng/đã chi. Không lấy doanh thu khách trả làm hoa hồng.
+Hóa đơn lẻ không lịch có nút Hoàn thành dịch vụ / ghi hoa hồng, chọn người trực tiếp làm; tạo hóa đơn hoặc bán gói chưa ghi Commission. Buổi gói không lịch cho người có quyền chọn nhân viên trước ký; đổi người xóa chữ ký. Có lịch giữ người của lịch.
+Các phiếu chi PAYROLL hiển thị Chi lương và không có Đảo sai sót thông thường. Không có chuyển tiền thật hoặc tài khoản ngân hàng nhân viên trong MVP này.
+
+
+## Cài hoa hồng theo dịch vụ — 22/10/2026
+Trang Hoa hồng của OWNER có vùng Hoa hồng theo dịch vụ, nút ＋ Tạo hoa hồng mở chọn dịch vụ + tiền cố định mỗi lần. Danh sách tìm theo tên, phân trang10, Sửa hoa hồng từng dịch vụ; dịch vụ ngừng có nhãn. Chưa có dịch vụ dẫn sang Thêm dịch vụ. STAFF chỉ xem khoản hưởng, không có cấu hình.

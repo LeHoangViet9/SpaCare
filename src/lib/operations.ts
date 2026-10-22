@@ -2,6 +2,9 @@ import { isValidSignature, type Signature } from './signature';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package-input';
+import { payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
+import { productInputs, productNameKey, stockBalance, productTotal } from './product-rules';
 import type { Actor } from './auth';
 import { hashPassword } from './password';
 import { connect } from './db';
@@ -10,6 +13,7 @@ import {
   Control,
   Customer,
   Service,
+  PackageTemplate,
   Appointment,
   Invoice,
   Deposit,
@@ -21,6 +25,9 @@ import {
   Day,
   Audit,
   Idempotency,
+  Commission,
+  Payroll,
+  Product, ProductGroup, StockMovement,
 } from './models';
 import {
   ensure,
@@ -47,13 +54,20 @@ const remainingBefore = z.number().int().min(1).max(1000);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
 
 const schemas = {
-  customer: z.object({ name: text, phone, notes: note }),
-  updateCustomer: z.object({ id: objectId, name: text, phone, notes: note }),
-  updateService: z.object({ id: objectId, name: text, price: moneySchema, duration: z.number().int().min(5).max(480) }),
+  ...productInputs,
+  ...payrollInputs,
+  customer: z.object({ name: text, phone, notes: note, consultantId: objectId.optional() }),
+  updateCustomer: z.object({ id: objectId, name: text, phone, notes: note, consultantId: objectId.optional() }),
+  updateService: z.object({ id: objectId, name: text, price: moneySchema, duration: z.number().int().min(5).max(480), commission: zeroMoney.default(0), category: z.string().trim().max(100).default('') }),
+  packageTemplate: packageTemplateInput,
+  updatePackageTemplate: packageTemplateInput.extend({ id: objectId }),
+  packageTemplateStatus: z.object({ id: objectId, active: z.boolean() }),
   serviceStatus: z.object({ id: objectId, active: z.boolean() }),
   updateUser: z.object({ id: objectId, name: text, email: z.string().trim().email().toLowerCase(), cashier: z.boolean() }),
   userStatus: z.object({ id: objectId, active: z.boolean() }),
   service: z.object({
+    category: z.string().trim().max(100).default(''),
+    commission: zeroMoney.default(0),
     name: text,
     price: moneySchema,
     duration: z.number().int().min(5).max(480),
@@ -75,11 +89,16 @@ const schemas = {
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, signature, remainingBefore }),
-  completeAppointment: z.object({ id: objectId, existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional() }),
-  sellPackage: z.object({ customerId: objectId, serviceId: objectId, name: text, totalSessions: z.number().int().min(1).max(1000), total: moneySchema, dueDate: dateOnly }),
+  completeAppointment: z.object({ id: objectId, existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
+  sellPackage: packageSaleInput,
   invoice: z.object({
+    staffId: objectId.optional(),
+    treatmentId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(),
     customerId: objectId,
     serviceId: objectId,
+    description: text.optional(),
+    total: zeroMoney.optional(),
+    consultantId: objectId.optional(),
     dueDate: dateOnly.optional(),
   }),
   deposit: z.object({ customerId: objectId, amount: moneySchema, method, note }),
@@ -98,7 +117,7 @@ const schemas = {
     name: text,
     totalSessions: z.number().int().min(1).max(1000),
   }),
-  use: z.object({ treatmentId: objectId, signature, remainingBefore }),
+  use: z.object({ treatmentId: objectId, signature, remainingBefore, staffId: objectId.optional() }),
   pauseTreatment: z.object({ id: objectId, holdUntil: dateOnly, reason: text }),
   extendTreatmentHold: z.object({ id: objectId, holdUntil: dateOnly, reason: text }),
   resumeTreatment: z.object({ id: objectId, reason: text, expiresOn: dateOnly.optional() }),
@@ -110,6 +129,9 @@ const schemas = {
 export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
+  'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
+  'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
+  'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
   'updateCustomer', 'updateService', 'serviceStatus', 'updateUser', 'userStatus',
   'service',
@@ -119,6 +141,8 @@ const ownerActions = new Set<Operation>([
   'reopenDay',
 ]);
 const cashierActions = new Set<Operation>([
+  'sellProduct',
+  'completeInvoiceService',
   'invoice',
   'deposit',
   'cash',
@@ -169,13 +193,20 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         return previous.result;
       }
       const create = async (model: mongoose.Model<any>, values: Record<string, unknown>) =>
-        (await model.create([{ ...scope, ...values }], { session }))[0];
+        (await model.create([{ ...scope, ...(model === Invoice ? { createdBy: actor.id, creatorName: user.name } : {}), ...values }], { session }))[0];
       const get = async (model: mongoose.Model<any>, id: string) => {
         const doc = await model.findOne({ ...scope, _id: id }).session(session);
         ensure(doc, 'Không tìm thấy dữ liệu trong spa này.', 404);
         return doc;
       };
       const today = spaDay();
+      const consultant = async (customer: any, selectedId?: string) => {
+        const consultantId = selectedId || (customer.consultantId ? String(customer.consultantId) : undefined);
+        if (!consultantId) return {};
+        const person = await get(User, consultantId);
+        ensure(person.active, 'Nhân viên tư vấn đã ngừng hoạt động.');
+        return { consultantId, consultantName: person.name };
+      };
       const touchDay = async () => {
         const day = await Day.findOneAndUpdate(
           { ...scope, day: today, status: 'OPEN' },
@@ -207,12 +238,37 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if (!references.length) return false;
         return !!await Appointment.exists({ ...scope, staffId: actor.id, status: { $in: ['CONFIRMED', 'COMPLETED'] }, $or: references }).session(session);
       };
-      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId?: string, staffId = actor.id) => {
+      const accrueCommission = async (invoice: any, staffId: string, sourceType: string, sourceId: string, earnedAt = new Date()) => {
+        const staff = await get(User, staffId);
+        const service = await get(Service, String(invoice.serviceId));
+        const existing = await Commission.findOne({ ...scope, sourceType, sourceId }).session(session);
+        if (existing) return existing;
+        const commission = await create(Commission, { staffId, staffName: staff.name, serviceId: service._id, serviceName: service.name,
+          customerId: invoice.customerId, invoiceId: invoice._id, sourceType, sourceId, amount: money(invoice.commission ?? service.commission ?? 0), earnedAt });
+        invoice.performedBy = staffId; invoice.performedAt = earnedAt;
+        await invoice.save({ session });
+        return commission;
+      };
+      const pendingCommissions = async (staffId: string, month: string) => {
+        const bounds = monthBounds(month);
+        return Commission.find({ ...scope, staffId, payrollId: { $exists: false }, earnedAt: { $lt: bounds.end } }).sort({ earnedAt: 1, _id: 1 }).session(session);
+      };
+      const fillPayroll = (payroll: any, commissions: any[]) => {
+        payroll.commissionTotal = commissions.reduce((sum, c) => sum + c.amount, 0);
+        payroll.commissionCount = commissions.length;
+        payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
+        payroll.commissionIds = commissions.map(c => c._id);
+        payroll.total = salaryTotal(payroll.baseSalary, payroll.commissionTotal, payroll.bonus, payroll.deductions);
+      };
+      const payrollSnapshot = (p: any) => Object.fromEntries(['staffId', 'staffName', 'month', 'baseSalary', 'commissionTotal', 'commissionCount', 'carryoverCount', 'bonus', 'deductions', 'total', 'note', 'status', 'approvedBy', 'approvedAt', 'paidBy', 'paidAt', 'receiptId'].map(key => [key, p[key]]));
+      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId?: string, staffId = d.staffId || actor.id) => {
+        ensure(!d.staffId || d.staffId === actor.id || actor.role === 'OWNER' || actor.cashier, 'Chỉ chủ spa hoặc thu ngân được chọn nhân viên thực hiện khác.', 403);
         const treatment = await get(Treatment, d.treatmentId);
         ensure(treatment.status === 'ACTIVE' && treatment.remaining > 0, 'Gói đang bảo lưu hoặc không còn buổi khả dụng. Chủ spa phải mở lại gói trước.');
         ensure(treatment.remaining === d.remainingBefore, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
         const customer = await get(Customer, String(treatment.customerId));
         const staff = await get(User, staffId);
+        ensure(staff.active, 'Nhân viên thực hiện không hoạt động.');
         const performedAt = new Date();
         const signatureDigest = sha(JSON.stringify(d.signature));
         const sessionNumber = treatment.totalSessions - treatment.remaining + 1;
@@ -224,6 +280,16 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const recorded = await create(TreatmentUse, { treatmentId: d.treatmentId, ...(appointmentId ? { appointmentId } : {}),
           actorId: actor.id, staffId, customerId: customer._id, sessionNumber, method: 'DRAWN_SIGNATURE',
           signature: d.signature, signatureDigest, performedAt, snapshot, digest: sha(snapshot) });
+        const purchase = await get(Invoice, String(treatment.invoiceId));
+        const serviceId = treatment.serviceId || purchase.serviceId;
+        const service = serviceId ? await get(Service, String(serviceId)) : null;
+        const sessionInvoice = await create(Invoice, { customerId: customer._id, ...(service ? { serviceId: service._id } : {}),
+          ...(appointmentId ? { appointmentId } : {}), treatmentId: treatment._id, treatmentUseId: recorded._id,
+          kind: 'SESSION', description: treatment.name + ' · Buổi ' + sessionNumber, total: invoiceCharge(service?.price || 0, undefined, true), paid: 0, status: 'PAID',
+          commission: service?.commission || 0,
+          ...(purchase.consultantId ? { consultantId: purchase.consultantId, consultantName: purchase.consultantName } : await consultant(customer)) });
+        linkedInvoiceId = String(sessionInvoice._id);
+        if (service) await accrueCommission(sessionInvoice, staffId, 'TREATMENT_USE', String(recorded._id), performedAt);
         treatment.remaining -= 1;
         if (!treatment.remaining) treatment.status = 'COMPLETED';
         await treatment.save({ session });
@@ -234,10 +300,135 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       let linkedInvoiceId: string | undefined;
       let treatmentUseId: string | undefined;
       let replacementAppointmentId: string | undefined;
+      let financialBefore: Record<string, unknown> | undefined;
       switch (op) {
+        case 'productGroup':
+        case 'updateProductGroup': {
+          const d = schemas[op].parse(data);
+          const nameKey = productNameKey(d.name);
+          const existingId = 'id' in d && typeof d.id === 'string' ? d.id : undefined;
+          ensure(!await ProductGroup.exists({ ...scope, nameKey, ...(existingId ? { _id: { $ne: existingId } } : {}) }).session(session), 'Tên nhóm sản phẩm đã tồn tại.', 409);
+          if (existingId) { target = await get(ProductGroup, existingId); target.name = d.name; target.nameKey = nameKey; await target.save({ session }); }
+          else target = await create(ProductGroup, { name: d.name, nameKey });
+          break;
+        }
+        case 'product':
+        case 'updateProduct': {
+          const d = schemas[op].parse(data);
+          const existingId = 'id' in d && typeof d.id === 'string' ? d.id : undefined;
+          if (d.groupId) await get(ProductGroup, d.groupId);
+          ensure(!await Product.exists({ ...scope, sku: d.sku, ...(existingId ? { _id: { $ne: existingId } } : {}) }).session(session), 'Mã sản phẩm đã tồn tại.', 409);
+          const values = { name: d.name, sku: d.sku, unit: d.unit, price: d.price, groupId: d.groupId || undefined, description: d.description || undefined, imageUrl: (d.imageUrl && d.imageUrl.trim()) ? d.imageUrl.trim() : undefined, minStock: d.minStock ?? 0 };
+          if (existingId) { target = await get(Product, existingId); Object.assign(target, values); await target.save({ session }); }
+          else target = await create(Product, values);
+          break;
+        }
+        case 'productStatus': {
+          const d = schemas.productStatus.parse(data); target = await get(Product, d.id); target.active = d.active; await target.save({ session }); break;
+        }
+        case 'stockMovement': {
+          const d = schemas.stockMovement.parse(data); const product = await get(Product, d.productId);
+          const before = product.stock; product.stock = stockBalance(before, d.direction, d.quantity);
+          await product.save({ session });
+          target = await create(StockMovement, { ...d, productName: product.name, sku: product.sku, unit: product.unit, actorId: actor.id, actorName: user.name, kind: 'MANUAL', before, after: product.stock });
+          break;
+        }
+        case 'sellProduct': {
+          const d = schemas.sellProduct.parse(data); const customer = await get(Customer, d.customerId); const product = await get(Product, d.productId);
+          ensure(product.active, 'Sản phẩm đã ngừng bán.');
+          if (d.dueDate) dayBounds(d.dueDate);
+          const before = product.stock; product.stock = stockBalance(before, 'OUT', d.quantity);
+          const unitPrice = d.unitPrice ?? product.price;
+          target = await create(Invoice, { customerId: customer._id, productId: product._id, productName: product.name, productSku: product.sku, productUnit: product.unit, quantity: d.quantity, unitPrice, description: product.name, total: productTotal(unitPrice, d.quantity), paid: 0, kind: 'PRODUCT', ...(d.dueDate ? { dueDate: d.dueDate } : {}), ...await consultant(customer, d.consultantId) });
+          await product.save({ session });
+          await create(StockMovement, { productId: product._id, productName: product.name, sku: product.sku, unit: product.unit, actorId: actor.id, actorName: user.name, kind: 'SALE', direction: 'OUT', quantity: d.quantity, before, after: product.stock, reason: 'Bán hàng', invoiceId: target._id });
+          linkedInvoiceId = String(target._id);
+          break;
+        }
+        case 'setServiceCommission': {
+          const d = schemas.setServiceCommission.parse(data);
+          target = await get(Service, d.serviceId);
+          financialBefore = { serviceId: target._id, commission: target.commission ?? 0 };
+          target.commission = d.commission;
+          await target.save({ session });
+          break;
+        }
+        case 'setStaffSalary': {
+          const d = schemas.setStaffSalary.parse(data);
+          target = await User.findOne({ ...scope, _id: d.staffId }).select('+baseSalary').session(session);
+          ensure(target, 'Không tìm thấy nhân viên trong spa.', 404);
+          financialBefore = { staffId: target._id, baseSalary: target.baseSalary ?? null };
+          target.baseSalary = d.baseSalary;
+          await target.save({ session });
+          break;
+        }
+        case 'savePayroll': {
+          const d = schemas.savePayroll.parse(data);
+          ensure(d.month <= today.slice(0, 7), 'Chưa lập bảng lương tháng tương lai.');
+          ensure(!(d.bonus || d.deductions) || !!d.note.trim(), 'Nhập lý do cho thưởng hoặc khấu trừ.');
+          const staff = await User.findOne({ ...scope, _id: d.staffId }).select('+baseSalary').session(session);
+          ensure(staff, 'Không tìm thấy nhân viên trong spa.', 404);
+          const existing = await Payroll.findOne({ ...scope, staffId: d.staffId, month: d.month }).session(session);
+          ensure(!existing || existing.status === 'DRAFT', 'Bảng lương đã duyệt, không được sửa số liệu.', 409);
+          ensure(existing ? d.id === String(existing._id) : !d.id, 'Bảng lương đã tồn tại hoặc đã thay đổi. Mở đúng bản nháp để cập nhật.', 409);
+          financialBefore = existing ? payrollSnapshot(existing) : { status: null };
+          const baseSalary = d.baseSalary ?? existing?.baseSalary ?? staff.baseSalary;
+          ensure(baseSalary !== undefined, 'Cần cài lương cơ bản hoặc nhập lương tháng trước.');
+          const commissions = await pendingCommissions(d.staffId, d.month);
+          const { id, ...input } = d;
+          const values: any = { ...input, baseSalary, staffName: staff.name };
+          fillPayroll(values, commissions);
+          if (existing) { Object.assign(existing, values); await existing.save({ session }); target = existing; }
+          else target = await create(Payroll, values);
+          break;
+        }
+        case 'approvePayroll': {
+          const d = schemas.approvePayroll.parse(data);
+          target = await get(Payroll, d.id);
+          financialBefore = payrollSnapshot(target);
+          if (target.status !== 'DRAFT') { ensure(target.total === d.expectedTotal, 'Số tiền bảng lương đã thay đổi.', 409); break; }
+          const commissions = await pendingCommissions(String(target.staffId), target.month);
+          const ids = commissions.map(c => String(c._id)).sort().join(',');
+          ensure(ids === target.commissionIds.map((id: any) => String(id)).sort().join(','), 'Hoa hồng đã thay đổi. Cập nhật bản nháp trước khi duyệt.', 409);
+          fillPayroll(target, commissions);
+          ensure(target.total === d.expectedTotal, 'Số tiền đã thay đổi. Kiểm tra lại bảng lương.', 409);
+          await Commission.updateMany({ ...scope, _id: { $in: target.commissionIds }, payrollId: { $exists: false } }, { $set: { payrollId: target._id } }, { session });
+          target.status = 'APPROVED'; target.approvedBy = actor.id; target.approvedAt = new Date();
+          await target.save({ session });
+          break;
+        }
+        case 'payPayroll': {
+          const d = schemas.payPayroll.parse(data);
+          target = await get(Payroll, d.id);
+          financialBefore = payrollSnapshot(target);
+          if (target.status === 'PAID') break;
+          ensure(target.status === 'APPROVED', 'Chủ spa cần duyệt bảng lương trước khi chi.');
+          ensure(d.method !== 'BANK_TRANSFER' || (d.transferReference || d.note).trim().length >= 3, 'Nhập ghi chú/tham chiếu chuyển khoản lương.');
+          if (target.total > 0) {
+            const entry = await receipt({ amount: target.total, direction: 'OUT', method: d.method, kind: 'PAYROLL',
+              payrollId: target._id, employeeId: target.staffId, note: d.note || `Lương ${target.month} · ${target.staffName}`, transferReference: d.transferReference });
+            target.receiptId = entry._id;
+          }
+          target.status = 'PAID'; target.paidBy = actor.id; target.paidAt = new Date();
+          await target.save({ session });
+          break;
+        }
+        case 'completeInvoiceService': {
+          const d = schemas.completeInvoiceService.parse(data);
+          target = await get(Invoice, d.id);
+          ensure(target.serviceId && (!target.kind || target.kind === 'SERVICE'), 'Chỉ hoàn thành hóa đơn dịch vụ lẻ.');
+          ensure(!target.appointmentId, 'Hoàn thành dịch vụ có lịch tại mục Lịch hẹn.');
+          ensure(!await Treatment.exists({ ...scope, invoiceId: target._id }).session(session), 'Hóa đơn bán gói không phải buổi thực hiện.');
+          if (target.performedAt) { ensure(String(target.performedBy) === d.staffId, 'Dịch vụ đã ghi nhận cho nhân viên khác.', 409); break; }
+          const staff = await get(User, d.staffId);
+          ensure(staff.active, 'Nhân viên không hoạt động.');
+          await accrueCommission(target, d.staffId, 'INVOICE', String(target._id));
+          break;
+        }
         case 'customer': {
           const d = schemas.customer.parse(data);
           const customers = await Customer.find(scope).select('phone').session(session);
+          if (d.consultantId) await consultant({}, d.consultantId);
           ensure(!customers.some(c => phone.safeParse(c.phone).data === d.phone), 'Số điện thoại đã tồn tại.', 409);
           target = await create(Customer, d);
           break;
@@ -245,11 +436,26 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'updateCustomer': {
           const { id, ...d } = schemas.updateCustomer.parse(data);
           target = await get(Customer, id);
+          if (d.consultantId) await consultant({}, d.consultantId);
+          if (!d.consultantId) target.consultantId = undefined;
           const customers = await Customer.find({ ...scope, _id: { $ne: id } }).select('phone').session(session);
           ensure(!customers.some(c => phone.safeParse(c.phone).data === d.phone), 'Số điện thoại đã tồn tại.', 409);
           Object.assign(target, d);
           await target.save({ session });
           break;
+        }
+        case 'packageTemplate':
+        case 'updatePackageTemplate': {
+          const d = op === 'packageTemplate' ? schemas.packageTemplate.parse(data) : schemas.updatePackageTemplate.parse(data);
+          const service = await get(Service, d.serviceId);
+          ensure(service.active, 'Dịch vụ không hoạt động.');
+          if ('id' in d) { target = await get(PackageTemplate, String(d.id)); const { id, ...values } = d; Object.assign(target, values); await target.save({ session }); }
+          else target = await create(PackageTemplate, d);
+          break;
+        }
+        case 'packageTemplateStatus': {
+          const d = schemas.packageTemplateStatus.parse(data);
+          target = await get(PackageTemplate, d.id); target.active = d.active; await target.save({ session }); break;
         }
         case 'updateService': {
           const { id, ...d } = schemas.updateService.parse(data);
@@ -340,9 +546,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             let invoice = await Invoice.findOne({ ...scope, appointmentId: target._id }).session(session);
             if (!invoice) {
               const service = await get(Service, String(target.serviceId));
-              invoice = await create(Invoice, { appointmentId: target._id, customerId: target.customerId, serviceId: target.serviceId, description: service.name, total: money(service.price), paid: 0 });
+                const customer = await get(Customer, String(target.customerId));
+                invoice = await create(Invoice, { appointmentId: target._id, customerId: target.customerId, serviceId: target.serviceId, description: service.name, total: money(service.price), paid: 0, kind: 'SERVICE', commission: service.commission || 0, ...await consultant(customer) });
             }
             linkedInvoiceId = String(invoice._id);
+              await accrueCommission(invoice, String(target.staffId), 'APPOINTMENT', String(target._id));
           }
           if (d.status === 'POSTPONED') ensure(d.reason.length > 0, 'Cần lý do hoãn lịch.');
           appointmentBefore = target.toObject();
@@ -362,6 +570,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           if (oldUse) {
             ensure(target.status === 'COMPLETED', 'Trạng thái lịch và buổi ghi nhận không khớp.', 409);
             treatmentUseId = String(oldUse._id);
+            const existing = await Invoice.findOne({ ...scope, treatmentUseId: oldUse._id }).session(session);
+            if (existing) linkedInvoiceId = String(existing._id);
             break;
           }
           const treatment = await get(Treatment, String(target.treatmentId));
@@ -380,7 +590,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           target = await get(Appointment, d.id);
           const finance = actor.role === 'OWNER' || actor.cashier;
           ensure(finance || String(target.staffId) === actor.id, 'Chỉ được hoàn thành lịch của mình.', 403);
-          ensure(finance || (!d.existingInvoiceId && !d.dueDate), 'Chỉ thu ngân được chọn hóa đơn cũ hoặc hạn trả.', 403);
+          ensure(finance || (!d.existingInvoiceId && !d.dueDate && !d.description && d.total === undefined && !d.consultantId), 'Chỉ thu ngân được chọn hoặc nhập thông tin hóa đơn.', 403);
           ensure(!target.treatmentId, 'Lịch thuộc gói không tạo hóa đơn dịch vụ lẻ.');
           ensure(['CONFIRMED', 'COMPLETED'].includes(target.status), 'Chỉ lập hóa đơn cho lịch đang xác nhận hoặc đã hoàn thành.');
           ensure(target.startAt <= new Date(), 'Chưa tới thời gian thực hiện lịch.');
@@ -393,16 +603,18 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             invoice = await get(Invoice, d.existingInvoiceId);
             ensure(String(invoice.customerId) === String(target.customerId) && String(invoice.serviceId) === String(target.serviceId), 'Hóa đơn phải đúng khách và dịch vụ của lịch.');
             ensure(!invoice.appointmentId, 'Hóa đơn đã liên kết lịch khác.', 409);
+            ensure(!invoice.performedAt, 'Hóa đơn đã ghi nhận thực hiện dịch vụ, không gắn thêm lịch.', 409);
             ensure(!await Treatment.exists({ ...scope, invoiceId: invoice._id }).session(session), 'Hóa đơn gói liệu trình không dùng cho lịch dịch vụ lẻ.');
             invoice.appointmentId = target._id;
             await invoice.save({ session });
           }
           if (!invoice) {
-            await get(Customer, String(target.customerId));
             const service = await get(Service, String(target.serviceId));
-            invoice = await create(Invoice, { appointmentId: target._id, customerId: target.customerId, serviceId: target.serviceId, description: service.name, total: money(service.price), paid: 0, ...(d.dueDate ? { dueDate: d.dueDate } : {}) });
+            const customer = await get(Customer, String(target.customerId));
+            invoice = await create(Invoice, { appointmentId: target._id, customerId: target.customerId, serviceId: target.serviceId, description: d.description || service.name, total: invoiceCharge(service.price, d.total, false), paid: 0, kind: 'SERVICE', commission: service.commission || 0, ...await consultant(customer, d.consultantId), ...(d.dueDate ? { dueDate: d.dueDate } : {}) });
           }
           appointmentBefore = target.toObject();
+          if (target.status === 'CONFIRMED') await accrueCommission(invoice, String(target.staffId), 'APPOINTMENT', String(target._id));
           target.status = 'COMPLETED';
           await target.save({ session });
           linkedInvoiceId = String(invoice._id);
@@ -443,25 +655,53 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         }
         case 'sellPackage': {
           const d = schemas.sellPackage.parse(data);
-          await get(Customer, d.customerId);
-          const service = await get(Service, d.serviceId);
+          const customer = await get(Customer, d.customerId);
+          const template = await get(PackageTemplate, d.templateId);
+          ensure(template.active, 'Gói mẫu đã ngừng bán.');
+          const service = await get(Service, String(template.serviceId));
           ensure(service.active, 'Dịch vụ không hoạt động.');
           packagePaymentDeadline(d.dueDate, today);
-          const invoice = await create(Invoice, { customerId: d.customerId, serviceId: d.serviceId, description: d.name + ' · ' + service.name, total: money(d.total), paid: 0, dueDate: d.dueDate });
-          target = await create(Treatment, { customerId: d.customerId, serviceId: d.serviceId, invoiceId: invoice._id, name: d.name, totalSessions: d.totalSessions, remaining: d.totalSessions });
+          ensure(!d.gifts.length || d.promotion.trim().length > 0, 'Nhập đợt khuyến mãi khi có quà tặng.');
+          const advisor = await consultant(customer, d.consultantId);
+          const invoice = await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', promotion: d.promotion, commission: service.commission || 0, ...advisor });
+          target = await create(Treatment, { customerId: d.customerId, serviceId: service._id, templateId: template._id, invoiceId: invoice._id, name: template.name, totalSessions: template.totalSessions, remaining: template.totalSessions });
+          for (const gift of d.gifts) {
+            const giftTemplate = await get(PackageTemplate, gift.templateId);
+            ensure(giftTemplate.active, 'Gói quà tặng đã ngừng bán.');
+            const giftService = await get(Service, String(giftTemplate.serviceId));
+            ensure(giftService.active, 'Dịch vụ quà tặng không hoạt động.');
+            const giftInvoice = await create(Invoice, { customerId: customer._id, serviceId: giftService._id, description: 'Quà tặng · ' + giftTemplate.name, kind: 'GIFT', total: 0, paid: 0, status: 'PAID', giftOfInvoiceId: invoice._id, promotion: d.promotion, ...advisor });
+            await create(Treatment, { customerId: customer._id, invoiceId: giftInvoice._id, serviceId: giftService._id, templateId: giftTemplate._id, name: giftTemplate.name, totalSessions: giftTemplate.totalSessions, remaining: giftTemplate.totalSessions, giftOfInvoiceId: invoice._id, promotion: d.promotion });
+          }
           linkedInvoiceId = String(invoice._id);
           break;
         }
         case 'invoice': {
           const d = schemas.invoice.parse(data);
-          await get(Customer, d.customerId);
+          const customer = await get(Customer, d.customerId);
           const service = await get(Service, d.serviceId);
+          if (d.treatmentId) {
+            const plan = await get(Treatment, d.treatmentId);
+            const purchase = await get(Invoice, String(plan.invoiceId));
+            ensure(String(plan.customerId) === d.customerId && String(plan.serviceId || purchase.serviceId) === d.serviceId, 'Gói không khớp khách hoặc dịch vụ.');
+            const recorded = await recordUse(schemas.use.parse({ treatmentId: d.treatmentId, signature: d.signature, remainingBefore: d.remainingBefore, staffId: d.staffId }));
+            treatmentUseId = String(recorded._id);
+            target = await get(Invoice, linkedInvoiceId!);
+            if (d.description) target.description = d.description;
+            if (d.consultantId) Object.assign(target, await consultant(customer, d.consultantId));
+            await target.save({ session });
+            break;
+          }
           ensure(service.active, 'Dịch vụ không hoạt động.');
+          ensure(!d.signature && !d.remainingBefore, 'Chỉ dùng chữ ký xác nhận khi chọn liệu trình.');
+          ensure(!d.staffId, 'Chọn nhân viên thực hiện khi hoàn thành dịch vụ, không phải lúc tạo hóa đơn lẻ.');
           if (d.dueDate) dayBounds(d.dueDate);
+          ensure((d.total ?? service.price) > 0, 'Dịch vụ mua lẻ phải có giá lớn hơn 0.');
           target = await create(Invoice, {
             ...d,
-            description: service.name,
-            total: money(service.price),
+            ...await consultant(customer, d.consultantId), kind: 'SERVICE', commission: service.commission || 0,
+            description: d.description || service.name,
+            total: invoiceCharge(service.price, d.total, false),
             paid: 0,
           });
           break;
@@ -543,6 +783,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'reverseCash': {
           const d = schemas.reverseCash.parse(data);
           const original = await get(CashEntry, d.id);
+          ensure(original.kind !== 'PAYROLL', 'Khoản chi lương không được đảo qua thao tác thu chi thông thường.');
           ensure(!original.reversed && original.kind !== 'REVERSAL', 'Giao dịch không thể đảo.');
           if (original.kind === 'DEPOSIT') {
             const deposit = await Deposit.findOne({
@@ -670,11 +911,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         details.before = appointmentBefore;
         details.after = target.toObject();
       }
+      if (financialBefore) {
+        details.before = financialBefore;
+        details.after = op === 'setServiceCommission' ? { serviceId: target._id, commission: target.commission } : op === 'setStaffSalary' ? { staffId: target._id, baseSalary: target.baseSalary } : payrollSnapshot(target);
+      }
       if (replacementAppointmentId) details.replacementAppointmentId = replacementAppointmentId;
       if (linkedInvoiceId) details.invoiceId = linkedInvoiceId;
       delete details.password;
       if (treatmentUseId) details.treatmentUseId = treatmentUseId;
-      if (op === 'use' || op === 'completeTreatmentAppointment') {
+      if (op === 'use' || op === 'completeTreatmentAppointment' || (op === 'invoice' && 'signature' in data && data.signature)) {
         delete details.evidenceReference;
         delete details.signature;
         details.signatureDigest = sha(JSON.stringify((data as z.infer<typeof schemas.use>).signature));

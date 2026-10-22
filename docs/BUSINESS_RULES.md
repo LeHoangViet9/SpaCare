@@ -260,3 +260,55 @@ Chỉ OWNER duyệt bảo lưu, gia hạn bảo lưu và mở lại. Xét lý do
 ### BR-TECH-011 — PROPOSED kỹ thuật đang áp dụng
 Nét ký là vector có giới hạn, lưu cùng snapshot ngữ cảnh, SHA-256, actor và staff thực hiện. Chữ ký không nằm trong danh sách workspace/audit, chỉ endpoint đọc có phiên/cùng spa và OWNER hoặc người ghi/thực hiện buổi. Buổi không lịch giữ quyền STAFF hiện hành, staffId=actor; buổi theo lịch giữ phân công và quyền hoàn thành cũ. remainingBefore ràng buộc số buổi đã hiển thị lúc ký; dữ liệu đổi trả409 yêu cầu ký lại. Retry cùng key trả bản ghi cũ; khác key với ảnh chụp số buổi cũ không được trừ thêm. Chữ ký vector không phải xác thực danh tính bằng chứng thư số.
 Không tự khóa/hủy gói theo expiresOn hoặc tự đặt hạn ban đầu khi chưa có chính sách đầy đủ; ngày chủ spa duyệt được lưu để tra cứu.
+
+
+## Khách hàng vượt 500 bản ghi - 22/10/2026
+
+Nguồn: người dùng yêu cầu khắc phục giới hạn danh sách khi số khách lớn. CONFIRMED về nhu cầu tra cứu/chọn toàn bộ khách trong spa, không áp trần 500 khách. PROPOSED kỹ thuật: GET /api/customers phân trang, tìm theo tên/điện thoại/ghi chú hoặc ID; giới hạn tối đa 100 mỗi request là giới hạn tải, không phải giới hạn số khách được lưu. OWNER/STAFF đã xác thực xem khách cùng spa; quyền sửa vẫn chỉ OWNER. Không thay quyền ghi tài chính. Các danh sách giao dịch/báo cáo cũ vẫn còn giới hạn riêng, không coi đã xử lý toàn bộ.
+
+
+## Tra cứu lịch sử không giới hạn 500 - 22/10/2026
+
+CONFIRMED về yêu cầu: bỏ trần 500 ở toàn bộ danh sách và thông báo trên giao diện. PROPOSED kỹ thuật: tải 1..100 dòng mỗi request, count trên toàn bộ dữ liệu được quyền xem, thứ tự ổn định theo thời điểm và _id, tìm/lọc trước khi phân trang. Quyền đọc và ghi tài chính giữ nguyên: STAFF xem lịch được giao, hóa đơn trực tiếp/gói được giao, cọc và phân bổ trong phạm vi hóa đơn được phép, sổ thu chi của mình; OWNER/thu ngân giữ phạm vi tài chính hiện có. Backend kiểm tra quyền section theo menu. OWNER mới xem audit, danh sách nhân viên, danh mục dịch vụ; ngày/báo cáo chỉ OWNER/thu ngân. Không đổi transaction, idempotency hoặc audit của thao tác ghi. Tổng ngày, số gói/buổi và báo cáo dùng truy vấn tổng hợp toàn bộ dữ liệu đúng scope.
+
+
+## Xác nhận mới — 22/10/2026: danh mục gói, khuyến mãi, tư vấn và hóa đơn
+Nguồn: yêu cầu người dùng và lựa chọn trong phiên. Các rule sau là CONFIRMED, ưu tiên hơn mô tả cũ mâu thuẫn.
+- BR-PKG-005: tạo sẵn danh mục gói; lúc bán chỉ chọn/gán khách. Snapshot dịch vụ/tên/số buổi/giá, không đổi gói đã bán khi sửa danh mục. Quản lý danh mục OWNER, bán gói giữ quyền OWNER/thu ngân hiện hành (quyền kỹ thuật PROPOSED).
+- BR-GIFT-001: một lần bán có thể tặng nhiều gói; nhập tên đợt khuyến mãi cho lần bán có quà. Giá quà luôn 0, mỗi gói có số buổi riêng. Backend bỏ quyền nhập giá quà. Tất cả hóa đơn/gói tặng cùng giao dịch bán; lỗi một quà phải rollback toàn bộ, retry không nhân đôi quà.
+- BR-INV-002: tạo hóa đơn chọn dịch vụ rồi sửa nội dung/giá. Giá mua lẻ nguyên VNĐ dương. Ghi nhận một buổi gói đúng khách/dịch vụ, ACTIVE/còn buổi và có chữ ký hợp lệ tạo một hóa đơn SESSION tổng=paid=0, trạng thái PAID cùng transaction ghi Use/trừ buổi/hoàn thành lịch nếu có. Không Payment/CashEntry cho 0đ. Nợ hóa đơn mua gói không thay đổi. Retry hoàn thành cùng lịch/key không nhân đôi hóa đơn hay trừ thêm buổi.
+- BR-CONSULT-001: khách có tư vấn mặc định; bán gói/hóa đơn cho chọn tư vấn riêng, để trống dùng mặc định. Tư vấn cùng spa và active; tên tư vấn và người tạo snapshot vào hóa đơn, người tạo lấy phiên. Xóa tư vấn mặc định không xóa lịch sử hóa đơn.
+- BR-COMMISSION-001: cấu hình mức tiền cố định riêng từng dịch vụ (nguyên VNĐ không âm). Mức được snapshot cho hóa đơn mới, không tự tính trả/ghi thu chi. BR-OPEN-011 chỉ đóng phần hình thức mức cố định; thời điểm/đối tượng hưởng, cách chia và trường hợp quà tặng vẫn OPEN. Lương/kỳ chốt lương không thay đổi.
+- BR-HISTORY-001: bỏ mục nhật ký riêng trên menu, tích hợp tra cứu vào hóa đơn/lịch sử khách; không xóa audit. Chữ ký chỉ OWNER hoặc actor/staff của buổi theo quyền đã có; thu ngân không tự được thêm quyền xem chữ ký. Lịch sử khách chỉ chứa hóa đơn trong phạm vi tài chính người xem.
+Ví dụ: bán gói A 10 buổi 2tr, tặng B 3 buổi tạo hóa đơn mua 2tr và hóa đơn quà 0đ. Khách ký dùng B một buổi: B còn2, có hóa đơn buổi 0đ và chữ ký; nợ A giữ nguyên, không phát sinh khoản thu.
+
+
+## Giao diện Thu ngân — 22/10/2026
+CONFIRMED về nhu cầu: người dùng yêu cầu tham khảo luồng EasySalon để làm SpaCare. PROPOSED kỹ thuật: route cashier chỉ OWNER/thu ngân, khớp quyền lập invoice/sellPackage hiện hành; STAFF thường giữ quyền xem/thu các hóa đơn được giao qua mục Hóa đơn. Nháp trước khi bấm Lưu chỉ ở state trình duyệt, tìm/chọn/chỉnh không tạo dữ liệu DB. Lưu dùng invoice/sellPackage hiện có cùng Idempotency-Key/transaction; nhận tiền vẫn riêng bằng payment có xác nhận thực nhận. Không tự mở sổ, ghi thu hay áp cọc khi lưu hóa đơn. Không đổi chính sách hoa hồng, lương, giảm giá hoặc quyền tài chính vì tham khảo ứng dụng khác.
+
+
+## Tham khảo phân hệ và đọc dữ liệu — 22/10/2026
+CONFIRMED về yêu cầu tham khảo EasySalon cho các màn liên quan; các lựa chọn đọc/giao diện dưới đây là PROPOSED kỹ thuật, không chốt thêm quy chế tài chính:
+- Bộ lọc kết hợp tenant/quyền bằng AND, thực hiện trước count/skip/limit. Chọn nhân viên khác không làm vượt phạm vi lịch hoặc sổ tiền của STAFF. Ngày lọc lịch là startAt UTC+7; sổ tiền dùng day đã ghi, không suy lại ngày từ createdAt.
+- Hóa đơn lọc thanh toán theo total/paid (gồm dữ liệu status cũ), quá hạn chỉ là dueDate trước hôm nay và còn nợ; không khóa gói hay tự áp phí. Hóa đơn0 thuộc nhóm đã thanh toán, không tạo dòng tiền.
+- Hồ sơ khách hiển thị nợ/cọc/hóa đơn trong quyền đọc. STAFF không có hóa đơn thuộc phạm vi ở khách đó không được xem số dư cọc. Lịch/đến gần nhất chỉ trong lịch nhân viên được phép xem; số liệu hồ sơ không được gọi là tổng toàn spa nếu đang giới hạn quyền.
+- Nhóm dịch vụ là nhãn quản lý tùy chọn, không đổi giá/lịch sử/số buổi. Chỉ OWNER tạo/sửa như quyền danh mục đang có. Gói mẫu lấy nhóm từ dịch vụ liên kết.
+- Hồ sơ nhân viên chỉ OWNER, đếm lịch được giao/hoàn thành, buổi thực hiện và khách tư vấn. Sản lượng không phải tiền lương hay hoa hồng đã hưởng; không suy công thức trả tiền.
+
+
+## BR-PAY-001 — Lương tháng cộng hoa hồng
+CONFIRMED. Nguồn: người dùng chọn trong phiên22/10/2026. Lương cơ bản riêng từng người, cộng hoa hồng cố định cho người trực tiếp thực hiện khi hoàn thành dịch vụ; khách còn nợ không chặn ghi nhận. Buổi gói tặng0đ vẫn hưởng. Không ghi hoa hồng thực hiện chỉ vì bán gói/tạo hóa đơn.
+BR-OPEN-011 đóng phần hình thức/mốc/người hưởng/quà tặng trong phạm vi trên. Không có hoa hồng tư vấn/bán hàng mới. BR-OPEN-013 đóng phần lương cơ bản tháng cộng hoa hồng; công, thuế, BHXH, quy chế điều chỉnh và lịch chi cụ thể chưa được xác nhận. BR-OPEN-012 vẫn không bổ sung MANAGER.
+PROPOSED kỹ thuật đang triển khai:
+- Snapshot mức hoa hồng từ invoice khi có (đã snapshot lúc tạo), nếu chưa có dùng Service hiện tại tại lần ghi nhận. Use mới lấy mức Service tại lúc ghi buổi. Không thay mức đã ghi, không backfill công việc hoàn thành cũ.
+- Mỗi source ca/buổi và mỗi invoice thực hiện tối đa một Commission. Hoàn thành lịch gói chỉ ghi theo Use, không ghi thêm theo Appointment; retry không nhân đôi. Hóa đơn dịch vụ lẻ không lịch: OWNER/thu ngân xác nhận hoàn thành và chọn người làm; STAFF không tự nhận hóa đơn độc lập cho mình. Không gắn hóa đơn đã thực hiện vào lịch mới để tránh ghi trùng.
+- Buổi không lịch mặc định nhân viên phiên; OWNER/thu ngân có thể chỉ định người trực tiếp làm. STAFF không chọn người khác. Đổi người trước ký phải xóa chữ ký cũ; snapshot ký/Commission dùng cùng người thực hiện.
+- OWNER nhập thưởng/phụ cấp và khấu trừ với lý do, không tự suy từ chấm công. Tiền nguyên VNĐ, thực nhận không âm; một bảng/người/tháng. Tháng tương lai chưa lập bảng.
+- Nháp lưu snapshot; cập nhật nháp phải đúng id, không vô tình ghi đè bảng đã có. Duyệt kiểm tra expectedTotal và tập hoa hồng chưa chốt, thay đổi trả409 yêu cầu cập nhật nháp. Duyệt gắn các khoản vào đúng bảng trong transaction.
+- Mỗi bảng gom hoa hồng chưa chốt trước đầu tháng sau (gồm tồn trước tháng); không lấy từ bảng đã duyệt khác. Sau duyệt khoản đến muộn giữ chưa chốt để kỳ sau. Lương cơ bản không tự chia theo công hoặc ngày vào/nghỉ.
+- Chỉ OWNER chi bảng APPROVED, phải xác nhận thực chi. Tiền dương cần sổ hôm nay OPEN, BANK_TRANSFER cần ghi chú/tham chiếu. Tiền0 chuyển PAID không tạo CashEntry0. Một bảng chỉ có một CashEntry PAYROLL; retry không chi hai lần.
+- Không sửa bảng APPROVED/PAID, không hard delete khoản hoa hồng/bảng lương. Chưa có mở lại hoặc đảo chi lương; reverseCash thông thường từ chối PAYROLL để tránh lệch bảng và sổ. Quy trình xử lý trả lương nhầm cần thiết kế riêng.
+
+
+## Cài hoa hồng theo dịch vụ — 22/10/2026
+CONFIRMED: mỗi dịch vụ có một mức hoa hồng cố định dùng chung cho người trực tiếp thực hiện. OWNER tạo/cập nhật mức qua nút Tạo hoa hồng hoặc Sửa hoa hồng. Không thay đổi ledger đã ghi, bảng lương đã duyệt hay snapshot hóa đơn đã tạo. Quyền OWNER và snapshot vẫn theo triển khai hiện hành.

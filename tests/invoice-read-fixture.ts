@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { mock } from 'node:test';
+import { Invoice, Customer, Treatment, TreatmentUse, Audit } from '../src/lib/models';
+import { readInvoice } from '../src/lib/invoice-read';
+import type { Actor } from '../src/lib/auth';
+const id = 'a'.repeat(24), spaId = 'b'.repeat(24), packageId = 'c'.repeat(24), actorId = 'd'.repeat(24);
+const signature = { version: 1, strokes: [[[0, 0], [0.2, 0.2], [0.4, 0.3]]] };
+const invoice = { _id: id, customerId: 'e'.repeat(24), appointmentId: 'f'.repeat(24) };
+let queried: any, offset = 0;
+function query(result: any) {
+  return { select() { return this; }, sort() { return this; }, skip(n: number) { offset = n; return this; }, limit(n: number) { assert.equal(n, 5); return this; }, async lean() { return result; } };
+}
+mock.method(Invoice, 'findOne', () => query(invoice));
+mock.method(Invoice, 'find', () => query([]));
+mock.method(Customer, 'findOne', () => query({ name: 'Customer' }));
+mock.method(Treatment, 'find', () => query([{ _id: packageId, name: 'Package' }]));
+mock.method(TreatmentUse, 'countDocuments', async (filter: any) => { queried = filter; return 7; });
+mock.method(TreatmentUse, 'find', () => query([{ _id: 'use', treatmentId: packageId, signature, sessionNumber: 2, performedAt: new Date() }]));
+mock.method(Audit, 'find', () => query([]));
+const owner: Actor = { id: actorId, spaId, name: 'Owner', role: 'OWNER', cashier: true };
+const result = await readInvoice(owner, id, 99);
+assert.equal(result.signaturePage, 2);
+assert.equal(offset, 5);
+assert.equal(result.signatureTotal, 7);
+assert.deepEqual(result.signatures[0].signature, signature);
+assert.equal(result.signatures[0].packageName, 'Package');
+assert.equal(queried.spaId, spaId);
+assert.ok(queried.$and[0].$or.some((c: any) => c.appointmentId === invoice.appointmentId));
+assert.ok(queried.$and[0].$or.some((c: any) => c.treatmentId?.$in.includes(packageId)));
+await readInvoice({ ...owner, role: 'STAFF' }, id);
+assert.deepEqual(queried.$and[1], { $or: [{ actorId }, { staffId: actorId }] });
+mock.restoreAll();

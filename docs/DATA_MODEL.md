@@ -132,3 +132,43 @@ Sổ thu chi của STAFF thông thường chỉ trả CashEntry có actorId là 
 - Treatment.status thêm PAUSED. holdUntil YYYY-MM-DD, holdReason, heldAt/heldBy ghi lần duyệt/gia hạn gần nhất; resumedAt/resumedBy ghi mở lại; expiresOn tùy chọn lưu ngày sử dụng mới do OWNER duyệt khi mở lại. remaining không đổi bởi các action này. Audit giữ before/after và lý do cho toàn lịch sử các lần bảo lưu/mở lại. Không backfill hạn cho gói cũ; không tự đổi trạng thái theo thời gian.
 - TreatmentUse mới: method=DRAWN_SIGNATURE; signature={version:1,strokes:Array<Array<[x,y]>>}, tọa độ chuẩn hóa0..1, tối đa30nét/1000điểm, ít nhất3điểm và có độ dài nét. signature mặc định select:false. signatureDigest SHA-256; sessionNumber; customerId/staffId; snapshot gồm tên khách/gói/người thực hiện, actor, số buổi trước khi ghi, số thứ tự buổi, performedAt và signatureDigest; digest băm snapshot. appointmentId giữ unique partial index cũ.
 - Ghi Use, giảm remaining, cập nhật lịch nếu có, Audit và Idempotency cùng transaction. Không ghi bản sao nét ký vào audit/list response. Bản ghi cũ giữ method/reference/snapshot cũ; không migration dữ liệu, không giả tạo chữ ký. Khởi động lại app để nạp schema mới; không cần index mới cho thay đổi này.
+
+
+## Đọc khách hàng theo trang - 22/10/2026
+
+Không đổi Customer schema/index hay dữ liệu. Endpoint đọc phân trang dùng spaId từ session, sắp createdAt/_id giảm dần để thứ tự ổn định khi cùng thời điểm tạo. Tìm kiếm regex đã escape từ chuỗi literal tối đa 100 ký tự. Count đếm toàn bộ kết quả cùng scope, không đếm trên preview 500 khách. Thiết kế kỹ thuật PROPOSED; đánh giá thêm index theo truy vấn thực tế khi số khách tăng.
+
+
+## Đọc workspace theo trang - 22/10/2026
+
+Không đổi schema/index. Thay các truy vấn history limit 500 bằng count + skip/limit theo trang; mỗi truy vấn giữ spaId từ session, kèm phạm vi người dùng khi cần. Sắp createdAt/_id giảm dần, lịch sắp startAt/_id. Nạp tham chiếu của trang và các lựa chọn danh mục, hóa đơn còn nợ, cọc còn dư, gói còn dùng được; không nạp toàn bộ lịch sử để phân trang trên điện thoại. Phạm vi cọc/phân bổ STAFF dựa trên toàn bộ hóa đơn được phép, không dựa trên trang hiện tại. Báo cáo group CashEntry theo ngày ở DB trên toàn khoảng lọc; tổng quan/metric không phụ thuộc trang. Audit loại chữ ký, snapshot/digest buổi khỏi list uses. Thiết kế đọc là PROPOSED kỹ thuật.
+
+
+## Schema thương mại — 22/10/2026
+- PackageTemplate (mới, cùng spa/timestamps): name, serviceId, totalSessions 1..1000, price, active. OWNER tạo/sửa/ngừng bán; không xóa cứng hay sửa gói đã gán.
+- Customer.consultantId tùy chọn tham chiếu User cùng spa, active khi gán.
+- Service.commission: tiền cố định không âm, default0. Invoice.commission tùy chọn snapshot cấu hình, không phải khoản hoa hồng đã được hưởng/trả.
+- Invoice thêm createdBy/creatorName, consultantId/consultantName, kind SERVICE/PACKAGE/SESSION/GIFT, promotion, giftOfInvoiceId, treatmentId/treatmentUseId. Các trường mới tùy chọn để giữ hóa đơn cũ. Unique partial {spaId,treatmentUseId} khi treatmentUseId tồn tại; giữ unique appointmentId. Không backfill người tạo/chữ ký hay tạo hóa đơn 0đ cho lịch sử cũ tự động.
+- Treatment thêm templateId, giftOfInvoiceId, promotion; giữ một hóa đơn mua riêng mỗi gói qua unique invoiceId hiện có. SESSION invoice tham chiếu Treatment/Use, không tạo Treatment thứ hai.
+- Một sale transaction ghi hóa đơn mua + gói chính + từng hóa đơn/gói tặng + audit/idempotency. Mỗi buổi mới ghi Use + invoice0 + trừ buổi + lịch nếu có trong transaction. Không Promise.all ghi trong transaction.
+- GET chi tiết mới không trả nét ký nếu không có quyền; không ghi signature vào audit. Lịch sử khách phân trang10, scope từ phiên.
+Triển khai: khởi động lại ứng dụng để nạp schema. Chạy db:setup để tạo collection/index bổ sung trên database được cấu hình sau khi đối chiếu; không syncIndexes/drop/backfill, không chạy trên dữ liệu vận hành trong phiên này. Giữ đúng cấu hình seed owner cũ. Chưa thực thi migration trên production.
+
+
+## Nhóm dịch vụ và dữ liệu tra cứu — 22/10/2026
+Service.category: String tùy chọn, backend trim/max100; dữ liệu cũ không nhóm vẫn giữ, không backfill. Không thêm indexes trong thay đổi này; khởi động lại để nạp schema mới. Nhóm gói là nhóm Service liên kết, không thêm nguồn category thứ hai vào PackageTemplate.
+Các bộ lọc workspace và số liệu hồ sơ không ghi thêm document. CashEntry.aggregate đếm toàn bộ tập đã lọc cùng scope; ép ObjectId qua cast model trước aggregate. Customer listing tra lastVisit COMPLETED và nextVisit CONFIRMED theo lô trên khách của trang và quyền lịch. Hồ sơ nhân viên không trả password/session. Không xóa hoặc cập nhật lịch sử khi đổi bố cục.
+
+
+## Schema lương và hoa hồng — 22/10/2026
+- User.baseSalary tùy chọn, tiền nguyên không âm, select:false. Chỉ endpoint payroll riêng được select thêm, owner toàn spa/staff chính mình. Workspace/staff/auth không trả lương cơ bản.
+- Commission mới: spaId, staffId/staffName, serviceId/serviceName, customerId, invoiceId; sourceType APPOINTMENT|TREATMENT_USE|INVOICE và sourceId; amount snapshot, earnedAt; payrollId tùy chọn chỉ gắn khi duyệt. Unique {spaId,sourceType,sourceId}; unique {spaId,invoiceId}; index {spaId,staffId,earnedAt:-1}. Snapshot tiền không sửa; không xóa, không tự backfill.
+- Payroll mới: staffId/staffName, month YYYY-MM, baseSalary, commissionTotal/count, carryoverCount, commissionIds; bonus,deductions,total,note; status DRAFT|APPROVED|PAID; approvedBy/At,paidBy/At,receiptId. Unique {spaId,staffId,month}. Danh sách API không trả commissionIds. Các lần đổi/duyệt/chi có before/after tài chính trong Audit, nguồn Commission giữ liên kết payrollId.
+- Invoice.performedBy/performedAt cho thực hiện dịch vụ, không phải người tạo hoặc tư vấn. Ca lịch gói Commission lấy Use làm source duy nhất, các invoice SESSION vẫn0đ. Ghi Commission, snapshot người thực hiện, Use/lịch, Audit và Idempotency cùng transaction.
+- CashEntry.kind thêm PAYROLL, payrollId/employeeId tùy chọn. Unique partial {spaId,payrollId} khi payrollId tồn tại. Payroll.receiptId trỏ phiếu OUT thực chi. Không tự chuyển khoản ngân hàng hoặc dùng payment khách để trả lương.
+- Duyệt chọn/gắn Commission và khóa Payroll cùng transaction/Control guard; ghi chi cập nhật Payroll + CashEntry + Audit/Idempotency cùng transaction, không ghi song song. Đọc aggregate cast ObjectId đúng spa/người dùng.
+Triển khai: khởi động lại để nạp schema, chạy db:setup đúng database để tạo collections/indexes mới sau khi đối chiếu, giữ seed owner cũ. Không syncIndexes/drop/backfill hay chạy setup lên database vận hành trong phiên này.
+
+
+## Cài hoa hồng theo dịch vụ — 22/10/2026
+Không thêm schema. Nút Tạo hoa hồng cập nhật Service.commission hiện có; mỗi dịch vụ một mức, không tạo bản ghi Commission thu nhập trước khi thực hiện. Commission.amount và Invoice.commission đã snapshot không bị cập nhật theo cấu hình.

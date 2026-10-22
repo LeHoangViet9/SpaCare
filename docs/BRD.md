@@ -64,3 +64,41 @@ Nguồn: yêu cầu người dùng trong phiên sửa code. Phần này thay th�
 - Chữ ký trống/hủy không làm thay đổi dữ liệu. Chữ ký gắn khách, gói, buổi, người thực hiện và thời điểm; có thể tra cứu theo quyền. Phiếu lịch sử cũ giữ nguyên, không tạo chữ ký giả.
 - OWNER duyệt bảo lưu theo lý do hợp lý từng trường hợp, nhập ngày kết thúc theo từng gói; giữ nguyên số buổi. Gói đang bảo lưu không được dùng, kể cả đã hết thời gian nhập. Chỉ OWNER mở lại. Gia hạn bảo lưu và gia hạn sử dụng là hai quyết định riêng, không tự cộng ngày.
 - Chưa chốt giá trị phần gói khi đổi dịch vụ, hạn gốc/mốc tính hạn theo loại gói, phương án xác nhận khi app không dùng được và các OPEN khác vẫn giữ nguyên.
+
+
+## Bỏ trần lịch sử danh sách - 22/10/2026
+
+Nguồn: yêu cầu người dùng bỏ giới hạn 500 ở các danh sách còn lại và bỏ thông báo giới hạn trên giao diện. Các danh sách tra cứu được toàn bộ lịch sử trong phạm vi spa/quyền; phân trang tại backend. Báo cáo khoảng ngày tổng hợp toàn bộ giao dịch phù hợp. Mục này thay thế các mô tả giới hạn tổng bản ghi trong bản MVP trước đây.
+
+
+## Yêu cầu bán gói, quà tặng và hóa đơn — 22/10/2026 (ưu tiên mới nhất)
+Nguồn: người dùng yêu cầu trong phiên và trả lời ba câu hỏi xác nhận. Thay thế phạm vi cũ hóa đơn chỉ lấy giá danh mục, bán gói nhập lại từng lần và buổi gói không có hóa đơn.
+- OWNER khai báo danh mục gói (dịch vụ, tên, số buổi, giá); khi bán chọn gói và khách. Gói đã bán giữ snapshot, sửa danh mục không đổi quyền lợi cũ.
+- Lần bán có đợt khuyến mãi và nhiều gói tặng kèm. Quà tặng luôn 0đ, có số buổi riêng; không tạo dòng tiền/công nợ mới cho phần tặng.
+- Dịch vụ cấu hình hoa hồng bằng số tiền cố định. Chưa chốt thời điểm hưởng, đối tượng hưởng/chia hoa hồng, hoa hồng quà tặng và kỳ trả: giữ các phần này OPEN, không tự lập bảng lương hoặc trả hoa hồng.
+- Khách có người tư vấn mặc định; lần bán có thể chọn người khác. Hóa đơn ghi tên người tạo từ phiên và người tư vấn; không suy đoán người tạo hóa đơn cũ.
+- Hóa đơn chọn dịch vụ rồi cho chỉnh nội dung/giá khi tạo. Dịch vụ lẻ có tiền phải trả; chọn liệu trình phù hợp, khách ký và ghi buổi thì hóa đơn 0đ. Thanh toán tiền gói mua ban đầu vẫn riêng, không xóa nợ gói khi dùng buổi.
+- Ẩn mục nhật ký thao tác/buổi dùng khỏi menu, chuyển tra cứu vận hành vào hóa đơn và lịch sử khách. Dữ liệu audit/buổi/chữ ký vẫn giữ, quyền xem cũ được bảo toàn.
+
+
+## Tham khảo luồng Thu ngân EasySalon — 22/10/2026
+Nguồn: người dùng yêu cầu xem và tham khảo https://my.easysalon.vn/cashier để làm SpaCare. Đã quan sát màn thu ngân, tìm khách, danh mục dịch vụ có tên/giá, tab gói và phần hóa đơn xem trước. Không suy ra quy tắc tài chính từ giao diện tham khảo. Hóa đơn nháp trống mở để xem giao diện đã được đóng; không xác nhận thanh toán hay nhập khách/dịch vụ vào hệ thống tham khảo.
+SpaCare bổ sung trang Thu ngân riêng: chọn/tìm khách hoặc thêm khách tại chỗ; chọn dịch vụ lẻ, bán gói hay dùng liệu trình; danh mục dạng thẻ và hóa đơn xem trước; chỉnh nội dung/giá, nhập khuyến mãi/quà tặng, tư vấn; lưu rồi thu tiền qua form xác nhận hiện có. Không sao chép dữ liệu khách, danh mục hoặc thông tin đăng nhập từ hệ thống tham khảo. Phạm vi mỗi hóa đơn vẫn theo dịch vụ/gói hiện tại, không thêm giỏ nhiều dịch vụ, sản phẩm, thẻ trả trước, thuế hay chính sách giảm giá chưa xác nhận.
+
+
+## Tham khảo các phân hệ EasySalon — 22/10/2026
+Nguồn: người dùng yêu cầu tham khảo cả chức năng khác. Đã đọc trực tiếp giao diện khách hàng (tìm kiếm/lịch sử/lịch gần nhất), lịch hẹn (hôm nay/7 ngày/khoảng ngày/nhân viên), danh mục dịch vụ (nhóm/giá/trạng thái bán), thu chi (phương thức/người tạo), quản lý nhân viên (các khu vực lương). Chỉ tham khảo bố cục và cách tra cứu, không sao chép dữ liệu hay mặc định dùng chính sách của hệ thống khác.
+SpaCare bổ sung hồ sơ khách có số liệu trong quyền đọc và tab lịch sử, thao tác đặt lịch/thu ngân; lịch theo ngày và lọc nhân viên/trạng thái/ngày; nhóm dịch vụ, lọc đang bán/ngừng; hóa đơn lọc còn nợ/quá hạn/đã trả/quà/buổi0; cọc lọc còn dư/hết; sổ quỹ lọc ngày/phương thức/người tạo/thu-chi với tổng toàn bộ bộ lọc; hồ sơ nhân viên và sản lượng thực tế. Kho, nhà cung cấp, CSKH gửi tin, thẻ tiền mặt, chấm công và công thức lương không tự triển khai từ giao diện tham khảo vì chưa có nghiệp vụ tương ứng được xác nhận.
+
+
+## Triển khai lương và hoa hồng — 22/10/2026 (ưu tiên mới nhất)
+Nguồn: người dùng yêu cầu triển khai và trả lời lựa chọn trong phiên: lương tháng + hoa hồng; ghi nhận khi hoàn thành dịch vụ; người trực tiếp thực hiện hưởng; buổi trong gói tặng0đ vẫn hưởng như bình thường. Các nội dung này thay thế mô tả trước về chưa triển khai Lương/Hoa hồng và phần OPEN tương ứng.
+- Cài lương cơ bản từng nhân viên. Bảng lương tháng gồm lương cơ bản + hoa hồng + thưởng/phụ cấp nhập tay − khấu trừ nhập tay; điều chỉnh phải có lý do.
+- Hoa hồng cố định riêng dịch vụ, ghi một lần theo ca/buổi hoàn thành, không phụ thuộc tiền khách trả. Bán gói không tự sinh hoa hồng thực hiện; từng buổi ký mới sinh. Quà tặng cũng ghi như buổi thường.
+- Nhân viên (kể cả thu ngân) chỉ đọc của mình. OWNER cài/lập/duyệt/ghi chi và đọc toàn spa. Không tạo vai trò quản lý mới.
+- Kỹ thuật PROPOSED: nháp → duyệt → đã chi; số liệu duyệt khóa, chi ghi CashEntry thực tế trong ngày đang mở. Hoa hồng chưa gắn bảng lương đến hết tháng gồm cả khoản tồn từ trước; khoản phát sinh sau duyệt để kỳ sau, không sửa bảng đã duyệt. Không tự tính công/giờ, thuế/bảo hiểm hoặc quy chế thưởng/phạt.
+- Ghi nhận mới từ các lần hoàn thành sau triển khai. Không tự backfill hoa hồng công việc đã hoàn thành trong lịch sử bằng mức giá hôm nay; đối soát lịch sử cần quyết định riêng.
+
+
+## Cài hoa hồng theo dịch vụ — 22/10/2026
+CONFIRMED theo yêu cầu người dùng: có nút Tạo hoa hồng trên trang Hoa hồng, chọn dịch vụ và nhập mức tiền cố định (ví dụ Gội đầu 10.000đ, Nặn mụn 20.000đ). Không tạo khoản hưởng thủ công cho nhân viên bằng nút này.

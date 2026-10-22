@@ -13,30 +13,34 @@ test('mobile groups resolve every desktop page, including nested administration 
   assert.deepEqual(menuPath('staff').map(n => n.key), ['admin', 'staff_group', 'staff']);
   assert.deepEqual(menuPath('unknown'), []);
 });
-test('distinct pages; unconfirmed payroll and commission stay unavailable', () => {
+test('distinct payroll pages are available to owner and staff', () => {
  const keys = pageKeys();
- assert.equal(keys.length, 13);
+ assert.equal(keys.length, 20);
  assert.equal(new Set(keys).size, keys.length);
- for (const role of ['OWNER', 'STAFF']) for (const key of ['salary', 'commission', 'unknown']) assert.equal(canViewPage(key, { role, cashier: true }), false);
- assert.equal(menu.find(n => n.key === 'admin').children[0].children.filter(n => n.pending).length, 2);
+ for (const role of ['OWNER', 'STAFF']) for (const key of ['salary', 'commission']) assert.equal(canViewPage(key, { role, cashier: true }), true);
+ assert.equal(canViewPage('unknown', { role: 'OWNER' }), false);
+ assert.equal(menu.find(n => n.key === 'admin').children[0].children.filter(n => n.pending).length, 0);
 });
 test('page access preserves owner and cashier boundaries', () => {
- for (const key of ['staff', 'audit', 'services']) {
+ for (const key of ['product_groups', 'inventory', 'staff', 'audit', 'services', 'package_catalog']) {
   assert.equal(canViewPage(key, { role: 'STAFF', cashier: true }), false);
   assert.equal(canViewPage(key, { role: 'OWNER' }), true);
  }
- for (const key of ['days', 'reports']) {
+ // STAFF được xem danh sách sản phẩm (read-only); quản lý kho/nhóm vẫn chỉ OWNER
+ assert.equal(canViewPage('products', { role: 'STAFF' }), true);
+ assert.equal(canViewPage('products', { role: 'OWNER' }), true);
+ for (const key of ['days', 'reports', 'cashier']) {
   assert.equal(canViewPage(key, { role: 'STAFF' }), false);
   assert.equal(canViewPage(key, { role: 'STAFF', cashier: true }), true);
  }
  for (const key of ['overview', 'appointments', 'customers', 'packages', 'treatment_uses', 'invoices', 'deposits', 'cash']) assert.equal(canViewPage(key, { role: 'STAFF' }), true);
 });
 
-test('quyền quản lý xem lương/hoa hồng còn OPEN: chưa mở trang cho bất kỳ vai trò nào', () => {
+test('payroll navigation allows owner/staff but not an unimplemented manager role', () => {
   for (const role of ['STAFF', 'OWNER', 'MANAGER']) {
     for (const cashier of [false, true]) {
-      for (const page of ['salary', 'commission']) assert.equal(canViewPage(page, { role, cashier }), false);
+      for (const page of ['salary', 'commission']) assert.equal(canViewPage(page, { role, cashier }), role !== 'MANAGER');
     }
   }
-  for (const page of ['staff', 'audit', 'services']) assert.equal(canViewPage(page, { role: 'MANAGER' }), false);
+  for (const page of ['staff', 'audit', 'services', 'package_catalog']) assert.equal(canViewPage(page, { role: 'MANAGER' }), false);
 });
