@@ -7,6 +7,8 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "push:setup": "node scripts/setup-push.mjs",
+    "push:db": "tsx --env-file=.env.local scripts/setup-push-db.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

@@ -3,6 +3,7 @@ import './ui.css';
 import './globals.css';
 import './public.css';
 export const metadata: Metadata = {
+  icons: { apple: '/icons/spacare-192.png' },
   title: 'SpaCare · Chăm sóc sắc đẹp & Quản lý Spa',
   description: 'Không gian chăm sóc sắc đẹp, thư giãn chuyên sâu và quản lý dịch vụ spa chuyên nghiệp.',
 };

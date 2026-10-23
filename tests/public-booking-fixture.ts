@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { publicBookingInput, reservePublicBooking } from '../src/lib/public-booking';
 import mongoose from 'mongoose';
-import { Appointment, Audit, Control, Customer, Idempotency, Service, User } from '../src/lib/models';
+import { Appointment, Audit, Control, Customer, Idempotency, Service, User, Notification } from '../src/lib/models';
 import { randomUUID } from 'node:crypto';
 import { spaDay } from '../src/lib/rules';
 
@@ -20,6 +20,14 @@ const query = (value: unknown): any => ({ session: async () => value, sort: () =
 let writes = 0;
 let staff = [{ _id: 'busy-staff' }];
 let previous: any = null;
+let notifications = 0;
+(Notification as any).create = async (rows: any[], options: any) => {
+  assert.ok(options.session);
+  assert.equal(rows[0].spaId, 'spa');
+  assert.equal(rows[0].userId, 'free-staff');
+  assert.equal(rows[0].url, '/workspace/appointments?search=appointment');
+  notifications++;
+};
 const key = randomUUID();
 (mongoose as any).startSession = async () => ({ withTransaction: async (fn: any) => fn(), endSession: async () => {} });
 (Service as any).findOne = () => query({ _id: data.serviceId, spaId: 'spa', duration: 60, name: 'Service' });
@@ -44,10 +52,11 @@ const key = randomUUID();
 (Idempotency as any).create = async (rows: any[]) => { writes++; previous = rows[0]; };
 await assert.rejects(reservePublicBooking(data, null, key), (error: any) => error.status === 409 && /đã có lịch/.test(error.message));
 assert.equal(writes, 0, 'A full slot must not create a customer, appointment or audit');
-staff = [...staff, { _id: 'free-staff' }];
+staff = [...staff, { _id: 'free-staff', role: 'OWNER' } as any];
 const result = await reservePublicBooking(data, null, key);
 assert.equal(result!.appointmentId, 'appointment');
 assert.equal(writes, 4);
 assert.deepEqual(await reservePublicBooking(data, null, key), result);
 assert.equal(writes, 4, 'Retry must reuse the original appointment');
+assert.equal(notifications, 1, 'Owner receives one notification, including when the booking API is retried');
 await assert.rejects(reservePublicBooking({ ...data, name: 'Changed guest' }, null, key), (error: any) => error.status === 409);

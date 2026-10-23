@@ -266,3 +266,7 @@ API bổ sung / mở rộng (spaId/actorId lấy từ phiên, luôn kiểm tra u
 - refundPackage {invoiceId,amount,method,reason,receivedConfirmation:true,exceptionApproved:true,transferReference?}: OWNER, khoản còn được hoàn = paid-refunded; sổ hôm nay OPEN, kiểm tra bằng chứng chuyển khoản; REFUND OUT riêng.
 - savePayroll thêm attendanceConfirmed:boolean, advance:number. readPayroll thêm salaryPolicy vào people, workdays/workSummary/workTotal/workPage, leaves và leaveSummary đếm theo đơn vị ngày (0.5), summary.serviceCommission/saleCommission; view=commission hợp nhất hai ledger trước phân trang và tổng hợp. Chặn STAFF xem nhân viên khác.
 - Validation Zod trả {error,fields:{tenTruong:thongBaoTiengViet}} để hiển thị lỗi dưới trường; tiền gửi backend vẫn number.
+
+
+## Notifications — 23/10/2026
+GET /api/notifications: OWNER active, scope phiên; trả 30 items mới nhất (title/body/url/readAt/createdAt), unread toàn bộ và publicKey công khai hoặc null; no-store. POST cùng route kiểm tra origin và OWNER; action subscribe {subscription:{endpoint,keys:{p256dh,auth}}}, unsubscribe {endpoint}, read {id}, readAll. Không nhận spaId/userId từ client. read chỉ sửa bản ghi thuộc chính người nhận; unsubscribe chỉ thiết bị của mình. Subscribe chỉ HTTPS dịch vụ push được cho phép; không follow redirect. GET /api/notifications/dispatch: chỉ Bearer CRON_SECRET, xử lý outbox; 401 khi thiếu/sai secret. POST /api/booking thêm Notification trong transaction, gửi push sau commit, không thay response đặt lịch. Cấu hình/giới hạn: PUSH_NOTIFICATIONS.md.

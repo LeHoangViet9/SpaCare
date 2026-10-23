@@ -76,7 +76,7 @@ export default function MobileBottomNav({ user }: { user: Actor | null }) {
       </Link>
 
       <a
-        href="tel:0901234567"
+        href="tel:0329357116"
         className="pub-bottom-item"
         title="Gọi hotline"
       >

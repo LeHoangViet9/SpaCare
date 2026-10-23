@@ -19,6 +19,7 @@ import { readPayroll, payrollQuery } from '../src/lib/payroll-read';
 import { workspaceQuery } from '../src/lib/workspace-query';
 import { reservePublicBooking } from '../src/lib/public-booking';
 import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
+import { Notification } from '../src/lib/models';
 
 test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và chốt ngày', async t => {
   const uri = process.env.MONGODB_URI || '';
@@ -60,6 +61,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const index = results.findIndex(r => r.status === 'fulfilled');
       const winner = (results[index] as PromiseFulfilledResult<any>).value;
       assert.deepEqual(await reservePublicBooking(requests[index].data, null, requests[index].key), winner);
+      assert.equal(await Notification.countDocuments({ ...scope, userId: person._id }), 1);
+      const notification = await Notification.findOne(scope);
+      assert.equal(String(notification!.appointmentId), winner.appointmentId);
+      assert.equal(notification!.url, `/workspace/appointments?search=${winner.appointmentId}`);
       await assert.rejects(reservePublicBooking({ ...requests[index].data, startAt: atHour(11) }, null, requests[index].key), (e: any) => e.status === 409);
       await assert.rejects(reservePublicBooking({ ...requests[index].data, startAt: `${day}T10:30:00+07:00` }, null, randomUUID()), (e: any) => e.status === 409);
       await reservePublicBooking({ ...requests[index].data, startAt: atHour(11) }, null, randomUUID());

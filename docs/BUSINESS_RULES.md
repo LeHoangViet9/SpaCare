@@ -377,3 +377,7 @@ Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn
 
 ## Sửa lỗi đọc hóa đơn 0đ - 23/10/2026
 Hóa đơn quà tặng/buổi liệu trình 0đ theo nghiệp vụ đã xác nhận: total=paid=0 có trạng thái PAID. Vẫn từ chối số âm, không nguyên và thanh toán vượt tổng. Không thay đổi dữ liệu hay tạo giao dịch thu tiền. Lỗi tải workspace phải hiển thị màn hình thử lại; chỉ phản hồi 401 mới hiển thị đăng nhập.
+
+
+## BR-NOTIFY-001 — 23/10/2026
+CONFIRMED: chủ spa nhận thông báo web/push khi khách đặt lịch online. PROPOSED: mỗi OWNER active cùng spa nhận một bản ghi/lịch trong transaction; retry cùng idempotency không ghi trùng. Backend xác thực active/role và scope người nhận/spa; chỉ đăng ký thiết bị khi người dùng chủ động cấp quyền. Push ngoài màn hình không chứa thông tin khách. Không suy thêm SMS/email/nhắc lịch. Chi tiết và giới hạn giao nhận: PUSH_NOTIFICATIONS.md.

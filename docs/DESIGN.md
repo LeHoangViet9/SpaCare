@@ -253,3 +253,7 @@ PROPOSED kỹ thuật đang áp dụng (không phải quy chế spa đã xác nh
 - refundPackage chỉ ghi hoàn ĐÃ THỰC HIỆN, OWNER xác nhận ngoại lệ và lý do. Không tự cho quyền hoàn khi khách dừng gói (BR-TRT-002 giữ), không dùng reverseCash làm hoàn tiền, không tự chuyển tiền. Cộng refunded riêng; paid giữ tổng đã thanh toán, không tái tạo công nợ từ tiền hoàn. Không tự đổi buổi/quyền lợi khi hoàn; điều kiện được hoàn và cách xử lý quyền lợi còn OPEN. REFUND không cho đảo bằng reverseCash thông thường.
 - SKU cũ giữ nguyên khi sửa nếu không gửi; tạo mới sinh nội bộ SP-ObjectId, không phải trường nhân viên nhập. Phiếu kho vẫn chỉ số lượng như module đang có, chi mua hàng vẫn ghi riêng trong sổ thu chi; không thêm hoặc đổi chính sách giá nhập.
 Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn mức phép theo tháng hay năm/cộng dồn, cách làm tròn, OT/ngày lễ, quản lý sổ tạm ứng và bù trừ hoa hồng âm vượt lương; điều kiện ngoại lệ hoàn tiền/quyền lợi sau hoàn.
+
+
+## Chuông và Web Push — 23/10/2026
+PROPOSED kỹ thuật: component Notifications dùng chung desktop/mobile trong workspace của OWNER, 30 thông báo mới nhất và nút cấp quyền/tắt nhận trên thiết bị. Manifest standalone, biểu tượng PNG và service worker chỉ nhận push/click, không cache dữ liệu riêng. Crypto dùng Node OpenSSL theo RFC 8291/8292; outbox transaction, dispatch sau commit và scheduler Bearer tùy cấu hình. Chi tiết: PUSH_NOTIFICATIONS.md. Hotline chân trang/nút gọi đổi 0329357116.

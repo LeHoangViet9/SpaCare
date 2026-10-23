@@ -315,7 +315,20 @@ export const Migration =
     new Schema({ version: { type: Number, unique: true }, appliedAt: Date }),
   );
 
+export const Notification = model('Notification', {
+  userId: id, appointmentId: id, title: String, body: String, url: String, readAt: Date,
+  pushState: { type: String, enum: ['PENDING', 'SENT'], default: 'PENDING' },
+  nextAttemptAt: { type: Date, default: Date.now }, attempts: { type: Number, default: 0 },
+}, [[{ spaId: 1, userId: 1, appointmentId: 1 }, { unique: true }],
+  [{ spaId: 1, userId: 1, createdAt: -1 }], [{ pushState: 1, nextAttemptAt: 1 }]]);
+
+export const PushDevice = model('PushDevice', {
+  userId: id, endpoint: { type: String, required: true },
+  keys: { p256dh: String, auth: String },
+}, [[{ endpoint: 1 }, { unique: true }], [{ spaId: 1, userId: 1 }]]);
+
 export const allModels = [
+  Notification, PushDevice,
   Spa,
   User,
   Session,

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Actor } from './auth';
-import { Appointment, Audit, Control, Customer, Idempotency, Service, User } from './models';
+import { Appointment, Audit, Control, Customer, Idempotency, Service, User, Notification } from './models';
 import { ensure, withinSpaHours } from './rules';
 
 export const publicBookingInput = z.object({
@@ -65,6 +65,13 @@ export async function reservePublicBooking(raw: unknown, actor: Actor | null, ke
         startAt: startAt.toISOString(), duration };
       await Audit.create([{ ...scope, actorId: currentUser?._id || customer._id, action: 'publicBooking', targetId: appointment._id,
         details: { source: 'PUBLIC_WEB', actorKind: currentUser ? 'USER' : 'GUEST_CUSTOMER', customerId: customer._id, staffId, startAt, endAt } }], { session });
+      for (const owner of staff.filter(person => person.role === 'OWNER')) {
+        await Notification.create([{ ...scope, userId: owner._id, appointmentId: appointment._id,
+          title: 'Lịch đặt online mới',
+          body: `${customer.name || input.name} · ${service.name} · ${startAt.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`,
+          url: `/workspace/appointments?search=${appointment._id}`,
+        }], { session });
+      }
       await Idempotency.create([{ ...scope, userId: currentUser?._id || customer._id, key, fingerprint, result }], { session });
       return result;
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });

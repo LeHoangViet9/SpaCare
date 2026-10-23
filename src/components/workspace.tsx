@@ -1,5 +1,6 @@
 'use client';
 import ValidatedForm from '@/components/validated-form';
+import Notifications, { disablePush } from '@/components/notifications';
 import Link from 'next/link';
 import MoneyInput from './money-input';
 import { formatCurrency, parseMoney, moneyField } from '@/lib/currency';
@@ -217,6 +218,7 @@ export default function Workspace() {
   }
   async function logout() {
     try {
+      if (data?.user.role === 'OWNER') await disablePush();
       const r = await fetch('/api/auth/logout', { method: 'POST' });
       if (!r.ok) throw new Error((await r.json()).error);
       setData(null); changeTab('overview'); setError(''); setNotice('');
@@ -456,6 +458,7 @@ export default function Workspace() {
       </div>
     </aside>
     <main className="main">
+      {owner && <Notifications key={data.user.id} />}
       <header className="topbar">
         <span>SpaCare <b>/</b> {currentBreadcrumbs.join(' / ')}</span>
         <div><span className="online-dot" />{new Date(`${data.today}T00:00:00+07:00`).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', day: 'numeric', month: 'long' })}</div>
