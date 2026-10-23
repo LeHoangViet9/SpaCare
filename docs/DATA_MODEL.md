@@ -224,3 +224,24 @@ Chạy db:setup có kiểm soát khi triển khai để tạo collections/indexe
 
 ## Thông báo — 23/10/2026 (PROPOSED kỹ thuật)
 Notification: spaId, userId, appointmentId, title/body/url, readAt, pushState PENDING|SENT, nextAttemptAt, attempts, timestamps. Unique (spaId,userId,appointmentId); index (spaId,userId,createdAt desc) và (pushState,nextAttemptAt). Lưu cùng transaction booking. PushDevice: spaId/userId, endpoint, keys.p256dh/auth, timestamps; endpoint unique, index (spaId,userId). Endpoint/keys là dữ liệu nhạy cảm, không trả trong danh sách/log. allModels bổ sung hai collections/indexes, không reset/backfill. Xem PUSH_NOTIFICATIONS.md.
+
+
+## User.phone — 23/10/2026
+User thêm phone tùy chọn ở schema để giữ tài khoản legacy; actions tạo/sửa STAFF bắt buộc phone đã chuẩn hóa. Email ở schema trở thành tùy chọn; OWNER seed và CUSTOMER register vẫn yêu cầu email như cũ. Unique partial indexes user_phone_present {phone:1} với phone kiểu string và user_email_present {email:1} với email kiểu string. Chạy npm run db:staff-phone trước dùng bản mới trên DB cũ: tạo indexes thay thế thành công rồi mới gỡ unique email toàn bộ tài liệu cũ; không sửa/xóa tài khoản. Script chưa chạy trong phiên này; không dùng syncIndexes/dropDatabase. setup.ts cũng gọi migration này. Nếu tạo index lỗi, giữ index cũ và dừng, xử lý trùng thủ công có đối chiếu.
+
+
+## Bỏ ô tham chiếu ảnh chuyển khoản — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: bỏ trường nhập tham chiếu ảnh chuyển khoản trong form thu tiền hóa đơn; không bắt ghi chú thay thế. Quy tắc này thay yêu cầu ghi tham chiếu/ghi chú ảnh khi thu chuyển khoản trước đây. Vẫn bắt xác nhận đã kiểm tra tài khoản và thực nhận tiền, giữ quyền, trạng thái ngày, transaction, idempotency và audit. PROPOSED kỹ thuật: paymentEvidence dùng chung chỉ kiểm tra receivedConfirmation; transferReference vẫn là trường tùy chọn trong API/schema và giữ toàn bộ dữ liệu lịch sử. Không thay quy trình xác nhận buổi liệu trình/chữ ký; tham chiếu chi lương riêng không thuộc thay đổi này.
+
+
+## Trạng thái sổ hôm nay và mở sổ lặp — 23/10/2026
+PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở sổ báo đã tồn tại: GET workspace thêm todayDay cho OWNER/thu ngân, query trực tiếp cùng spa/ngày Việt Nam và độc lập bộ lọc/phân trang. Trang days không áp dụng từ khóa search vì không có ô tìm kiếm; vẫn giữ lọc trạng thái/khoảng ngày. UI hiển thị rõ hôm nay chưa mở/đang mở/đã chốt; đã mở không hiện nút tạo thêm, đã chốt chỉ OWNER có Mở lại với lý do. openDay trên sổ OPEN trả sổ hiện có, không đổi tiền đầu ngày, không tạo sổ thứ hai; sổ CLOSED trả 409 và không tự mở lại. Giữ transaction, idempotency và audit snapshot thực tế. Không thay chính sách ai được mở/chốt/mở lại hoặc ghi đè dữ liệu lịch sử.
+
+
+## Xuất PDF hóa đơn và hoa hồng - 23/10/2026
+CONFIRMED: PDF để tải, in hoặc chia sẻ hóa đơn khách hàng và bảng kê hoa hồng theo nhân viên/tháng trên máy tính và điện thoại.
+PROPOSED kỹ thuật: API chỉ đọc từ phiên active và cùng spa. OWNER xem phạm vi spa; STAFF giữ quyền đọc hóa đơn hiện có, chỉ xuất hoa hồng của mình. Không ghi tài chính hoặc xác nhận thu tiền/chi lương. Bảng kê lấy toàn bộ tháng theo giờ Việt Nam, tách dịch vụ/bán gói, giữ điều chỉnh âm.
+Không thêm schema/index; ExportDocument là DTO tạm thời, không lưu PDF vào database.
+## Sửa kiểm tra hoa hồng 0đ - 23/10/2026
+PROPOSED kỹ thuật, giữ cấu hình dịch vụ hiện có: hoàn thành lịch chấp nhận hoa hồng nguyên VNĐ bằng 0; vẫn từ chối số âm/sai kiểu/vượt giới hạn. Giữ transaction, idempotency, audit và unique nguồn phát sinh; không đổi schema hoặc quyền API. Integration kiểm tra hoàn thành lặp chỉ có một hoa hồng 0đ, không sửa dữ liệu lịch sử.
+

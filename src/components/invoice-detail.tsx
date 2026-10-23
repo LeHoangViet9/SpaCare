@@ -3,6 +3,7 @@ import { formatCurrency } from '@/lib/currency';
 import { useEffect, useState } from 'react';
 import { SignatureImage } from './signature-pad';
 import { auditActions } from '@/lib/audit-view';
+import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
 export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund }: { record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
@@ -18,6 +19,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
   }, [record.id, record.kind, page, historyKind]);
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
+    {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
     {record.kind === 'customer' && <div className="profile-tabs" role="group" aria-label="Lịch sử khách hàng">{[['invoices', 'Hóa đơn / chữ ký'], ['appointments', 'Lịch hẹn'], ['treatments', 'Liệu trình']].map(([key, title]) => <button key={key} aria-pressed={historyKind === key} onClick={() => { setHistoryKind(key); setPage(1); }}>{title}</button>)}</div>}
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
       <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>

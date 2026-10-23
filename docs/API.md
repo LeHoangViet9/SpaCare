@@ -270,3 +270,24 @@ API bổ sung / mở rộng (spaId/actorId lấy từ phiên, luôn kiểm tra u
 
 ## Notifications — 23/10/2026
 GET /api/notifications: OWNER active, scope phiên; trả 30 items mới nhất (title/body/url/readAt/createdAt), unread toàn bộ và publicKey công khai hoặc null; no-store. POST cùng route kiểm tra origin và OWNER; action subscribe {subscription:{endpoint,keys:{p256dh,auth}}}, unsubscribe {endpoint}, read {id}, readAll. Không nhận spaId/userId từ client. read chỉ sửa bản ghi thuộc chính người nhận; unsubscribe chỉ thiết bị của mình. Subscribe chỉ HTTPS dịch vụ push được cho phép; không follow redirect. GET /api/notifications/dispatch: chỉ Bearer CRON_SECRET, xử lý outbox; 401 khi thiếu/sai secret. POST /api/booking thêm Notification trong transaction, gửi push sau commit, không thay response đặt lịch. Cấu hình/giới hạn: PUSH_NOTIFICATIONS.md.
+
+
+## Nhân viên đăng nhập số điện thoại — 23/10/2026
+POST operations user {name,phone,password,cashier?}; updateUser {id,name,phone,cashier}. OWNER/active/cùng spa như trước, backend chuẩn hóa phone và trả 409 khi trùng. Không bắt email, không thay mật khẩu khi sửa thông tin, giữ email cũ. POST /api/auth/login nhận {identifier,password}, identifier là phone hoặc email; giữ tương thích payload {email,password} và {phone,password}. Kiểm tra active/mật khẩu, throttle theo định danh đã chuẩn hóa, không nhận spaId/role từ client. Workspace STAFF list và staff detail của OWNER thêm phone; tìm nhân viên theo phone. Migration indexes: npm run db:staff-phone; chỉ cập nhật indexes, không seed.
+
+
+## Bỏ ô tham chiếu ảnh chuyển khoản — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: bỏ trường nhập tham chiếu ảnh chuyển khoản trong form thu tiền hóa đơn; không bắt ghi chú thay thế. Quy tắc này thay yêu cầu ghi tham chiếu/ghi chú ảnh khi thu chuyển khoản trước đây. Vẫn bắt xác nhận đã kiểm tra tài khoản và thực nhận tiền, giữ quyền, trạng thái ngày, transaction, idempotency và audit. PROPOSED kỹ thuật: paymentEvidence dùng chung chỉ kiểm tra receivedConfirmation; transferReference vẫn là trường tùy chọn trong API/schema và giữ toàn bộ dữ liệu lịch sử. Không thay quy trình xác nhận buổi liệu trình/chữ ký; tham chiếu chi lương riêng không thuộc thay đổi này.
+
+
+## Trạng thái sổ hôm nay và mở sổ lặp — 23/10/2026
+PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở sổ báo đã tồn tại: GET workspace thêm todayDay cho OWNER/thu ngân, query trực tiếp cùng spa/ngày Việt Nam và độc lập bộ lọc/phân trang. Trang days không áp dụng từ khóa search vì không có ô tìm kiếm; vẫn giữ lọc trạng thái/khoảng ngày. UI hiển thị rõ hôm nay chưa mở/đang mở/đã chốt; đã mở không hiện nút tạo thêm, đã chốt chỉ OWNER có Mở lại với lý do. openDay trên sổ OPEN trả sổ hiện có, không đổi tiền đầu ngày, không tạo sổ thứ hai; sổ CLOSED trả 409 và không tự mở lại. Giữ transaction, idempotency và audit snapshot thực tế. Không thay chính sách ai được mở/chốt/mở lại hoặc ghi đè dữ liệu lịch sử.
+
+
+## Xuất PDF hóa đơn và hoa hồng - 23/10/2026
+CONFIRMED: PDF để tải, in hoặc chia sẻ hóa đơn khách hàng và bảng kê hoa hồng theo nhân viên/tháng trên máy tính và điện thoại.
+PROPOSED kỹ thuật: API chỉ đọc từ phiên active và cùng spa. OWNER xem phạm vi spa; STAFF giữ quyền đọc hóa đơn hiện có, chỉ xuất hoa hồng của mình. Không ghi tài chính hoặc xác nhận thu tiền/chi lương. Bảng kê lấy toàn bộ tháng theo giờ Việt Nam, tách dịch vụ/bán gói, giữ điều chỉnh âm.
+GET /api/invoices/[id]/export; GET /api/payroll/export?month=YYYY-MM&employee=<id hoặc rỗng>: trả ExportDocument JSON, private/no-store. Browser tạo file PDF. 401 thiếu phiên, 403 vượt quyền, 404 không có bản ghi đúng phạm vi, 400 bộ lọc sai. Không nhận spaId/actorId từ client.
+## Sửa kiểm tra hoa hồng 0đ - 23/10/2026
+PROPOSED kỹ thuật, giữ cấu hình dịch vụ hiện có: hoàn thành lịch chấp nhận hoa hồng nguyên VNĐ bằng 0; vẫn từ chối số âm/sai kiểu/vượt giới hạn. Giữ transaction, idempotency, audit và unique nguồn phát sinh; không đổi schema hoặc quyền API. Integration kiểm tra hoàn thành lặp chỉ có một hoa hồng 0đ, không sửa dữ liệu lịch sử.
+

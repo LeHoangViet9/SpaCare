@@ -2,6 +2,7 @@ import { leavesOverlap, summarizeLeave, attendanceSalary, dayUnits, leaveDays } 
 import { packageCommissionDelta } from './sale-commission';
 import { isValidSignature, type Signature } from './signature';
 import mongoose from 'mongoose';
+import { staffPhone } from './login-identity';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package-input';
@@ -69,7 +70,7 @@ const schemas = {
   updatePackageTemplate: packageTemplateInput.extend({ id: objectId }),
   packageTemplateStatus: z.object({ id: objectId, active: z.boolean() }),
   serviceStatus: z.object({ id: objectId, active: z.boolean() }),
-  updateUser: z.object({ id: objectId, name: text, email: z.string().trim().email().toLowerCase(), cashier: z.boolean() }),
+  updateUser: z.object({ id: objectId, name: text, phone: staffPhone, cashier: z.boolean() }),
   userStatus: z.object({ id: objectId, active: z.boolean() }),
   service: z.object({
     category: z.string().trim().max(100).default(''),
@@ -80,7 +81,7 @@ const schemas = {
   }),
   user: z.object({
     name: text,
-    email: z.string().trim().email().toLowerCase(),
+    phone: staffPhone,
     password: z.string().min(12).max(128),
     cashier: z.boolean().default(false),
   }),
@@ -174,7 +175,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const control = await Control.findOneAndUpdate(
         { spaId: initial.spaId },
         { $inc: { revision: 1 } },
-        { session, new: true },
+        { session, returnDocument: 'after' },
       );
       ensure(control, 'Chạy npm run db:setup trước khi dùng ứng dụng.', 503);
       const user = await User.findOne({
@@ -217,7 +218,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const day = await Day.findOneAndUpdate(
           { ...scope, day: today, status: 'OPEN' },
           { $inc: { revision: 1 } },
-          { session, new: true },
+          { session, returnDocument: 'after' },
         );
         ensure(day, 'Hãy mở sổ hôm nay trước khi ghi tiền. Nếu đã chốt, chủ spa cần mở lại.');
       };
@@ -250,7 +251,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const existing = await Commission.findOne({ ...scope, sourceType, sourceId }).session(session);
         if (existing) return existing;
         const commission = await create(Commission, { staffId, staffName: staff.name, serviceId: service._id, serviceName: service.name,
-          customerId: invoice.customerId, invoiceId: invoice._id, sourceType, sourceId, amount: money(invoice.commission ?? service.commission ?? 0), earnedAt });
+          customerId: invoice.customerId, invoiceId: invoice._id, sourceType, sourceId, amount: money(invoice.commission ?? service.commission ?? 0, true), earnedAt });
         invoice.performedBy = staffId; invoice.performedAt = earnedAt;
         await invoice.save({ session });
         return commission;
@@ -567,7 +568,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const { id, ...d } = schemas.updateUser.parse(data);
           target = await get(User, id);
           ensure(target.role === 'STAFF', 'Chỉ sửa tài khoản nhân viên.', 403);
-          ensure(!await User.exists({ _id: { $ne: id }, email: d.email }).session(session), 'Email đã tồn tại.', 409);
+          ensure(!await User.exists({ _id: { $ne: id }, phone: d.phone }).session(session), 'Số điện thoại đã tồn tại.', 409);
           Object.assign(target, d);
           await target.save({ session });
           break;
@@ -586,10 +587,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           break;
         case 'user': {
           const d = schemas.user.parse(data);
-          ensure(!await User.exists({ email: d.email }).session(session), 'Email đã tồn tại.', 409);
+          ensure(!await User.exists({ phone: d.phone }).session(session), 'Số điện thoại đã tồn tại.', 409);
           target = await create(User, {
             name: d.name,
-            email: d.email,
+            phone: d.phone,
             passwordHash: hashPassword(d.password),
             role: 'STAFF',
             cashier: d.cashier,
@@ -969,11 +970,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const d = schemas.openDay.parse(data);
           dayBounds(d.day);
           ensure(d.day === today, 'Bản MVP chỉ mở sổ ngày hiện tại.');
-          ensure(
-            !await Day.exists({ ...scope, day: d.day }).session(session),
-            'Ngày đã có sổ; chủ spa có thể mở lại sổ đã chốt.',
-          );
-          target = await create(Day, d);
+          const existingDay = await Day.findOne({ ...scope, day: d.day }).session(session);
+          ensure(!existingDay || existingDay.status === 'OPEN', 'Sổ hôm nay đã chốt. Chủ spa cần dùng Mở lại sổ, không tạo sổ mới.', 409);
+          target = existingDay || await create(Day, d);
           break;
         }
         case 'closeDay': {
@@ -1026,7 +1025,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         details.signatureDigest = sha(JSON.stringify((data as z.infer<typeof schemas.use>).signature));
         details.evidenceRecorded = true;
       }
-      if (op === 'closeDay' || op === 'reopenDay') details.daySnapshot = target.toObject();
+      if (op === 'openDay' || op === 'closeDay' || op === 'reopenDay') details.daySnapshot = target.toObject();
+      if (op === 'openDay') details.opening = target.opening;
       await create(Audit, { actorId: actor.id, action: op, targetId: target._id, details });
       const result = { id: String(target._id), message: 'Đã lưu thành công.', ...(linkedInvoiceId ? { invoiceId: linkedInvoiceId } : {}), ...(replacementAppointmentId ? { replacementAppointmentId } : {}), ...(treatmentUseId ? { treatmentUseId } : {}) };
       await create(Idempotency, { userId: actor.id, key, fingerprint, result });

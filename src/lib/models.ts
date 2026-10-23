@@ -35,7 +35,8 @@ export const User = model(
   'User',
   {
     name: String,
-    email: { type: String, required: true },
+    email: { type: String },
+    phone: { type: String },
     passwordHash: { type: String, required: true, select: false },
     salaryPolicy: { type: Schema.Types.Mixed, select: false },
     baseSalary: { ...amount, required: false, select: false },
@@ -44,7 +45,8 @@ export const User = model(
     cashier: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
   },
-  [[{ email: 1 }, { unique: true }]],
+  [[{ email: 1 }, { unique: true, name: 'user_email_present', partialFilterExpression: { email: { $type: 'string' } } }],
+    [{ phone: 1 }, { unique: true, name: 'user_phone_present', partialFilterExpression: { phone: { $type: 'string' } } }]],
 );
 
 export const Session = model(

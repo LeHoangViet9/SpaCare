@@ -1,6 +1,7 @@
 'use client';
 import { formatCurrency } from '@/lib/currency';
 import EmployeeAttendance from './employee-attendance';
+import PdfExport from './pdf-export';
 import { useEffect, useState } from 'react';
 type Row = Record<string, any>;
 type Field = { key: string; label: string; type?: string; min?: number; step?: number; max?: number; optional?: boolean; options?: [string, string][]; hint?: string };
@@ -55,7 +56,7 @@ export default function PayrollPanel({ user, section, today, refreshKey, onOpen 
   return <div className="payroll-workspace">
     <section className="list-filters"><div className="filter-controls"><label>Tháng<input type="month" value={month} required onChange={e => { if (e.target.value) { setMonth(e.target.value); setPage(1); setLeavePage(1); setWorkPage(1); } }} /></label>
       {owner && <label>Nhân viên<select value={employee} onChange={e => { setEmployee(e.target.value); setPage(1); setLeavePage(1); setWorkPage(1); }}><option value="">Tất cả</option>{people.map(p => <option key={p._id} value={p._id}>{p.name}{p.active ? '' : ' (đã ngừng)'}</option>)}</select></label>}
-    </div></section>
+    </div>{section === 'commission' && <PdfExport endpoint={'/api/payroll/export?' + new URLSearchParams({ month, employee }).toString()} />}</section>
     {error && <div className="alert error" role="alert">{error} <button onClick={() => setRetry(n => n + 1)}>Thử lại</button></div>}
     {section === 'salary' && <div className="report-stats">{[['DRAFT', 'Lương nháp'], ['APPROVED', 'Chờ chi'], ['PAID', 'Đã chi']].map(([key, title]) => {
       const item = data?.salarySummary?.find((r: Row) => r._id === key);

@@ -18,7 +18,7 @@ export default function AppointmentAgenda({ rows, data, onCustomer, onComplete, 
   rows: Row[]; data: Row; onCustomer: (id: string) => void; onComplete: (row: Row) => void; busy: boolean;
   pagination?: { page: number; pageSize: number; total: number; loading?: boolean; onChange: (page: number, pageSize: number) => void };
 }) {
-  const lookup = (key: string, id: string) => data[key].find((r: Row) => r._id === id)?.name || '-';
+  const lookup = (key: string, id: string, field = 'name') => data[key].find((r: Row) => r._id === id)?.[field] || '-';
   const groups = new Map<string, Row[]>();
   for (const row of [...rows].sort((a, b) => a.startAt.localeCompare(b.startAt))) {
     const day = new Date(row.startAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -51,6 +51,7 @@ export default function AppointmentAgenda({ rows, data, onCustomer, onComplete, 
                   return <article key={row._id} className={`timeline-appointment${outside ? ' outside-hours' : ''}`} style={{ gridColumn: `${gridStart} / span ${span}` }} title={`${clock} · ${lookup('customers', row.customerId)} · ${lookup('services', row.serviceId)}`}>
                     <div className="timeline-appointment-content">
                       <button className="text-button" onClick={() => onCustomer(row.customerId)}>{clock} · {lookup('customers', row.customerId)}</button>
+                      <span>{lookup('customers', row.customerId, 'phone')}</span>
                       <span>{lookup('services', row.serviceId)} · {statuses[row.status]}</span>
                       {row.status === 'CONFIRMED' && <button className="timeline-complete" disabled={busy} onClick={() => onComplete(row)}>Hoàn thành</button>}
                     </div>

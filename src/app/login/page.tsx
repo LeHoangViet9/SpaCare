@@ -25,12 +25,12 @@ function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ identifier: email.trim(), password }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Email hoặc mật khẩu không chính xác.');
+        throw new Error(data.error || 'Số điện thoại/email hoặc mật khẩu không chính xác.');
       }
 
       // Role-based routing
@@ -107,14 +107,14 @@ function LoginForm() {
 
         <ValidatedForm onSubmit={handleLogin} style={{ display: 'grid', gap: '16px' }}>
           <div>
-            <label style={{ fontSize: '13px', fontWeight: 600 }}>Email</label>
+            <label style={{ fontSize: '13px', fontWeight: 600 }}>Số điện thoại hoặc email</label>
             <input
-              type="email"
+              type="text"
               autoComplete="username"
               required
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="email@example.com"
+              placeholder="Số điện thoại hoặc email"
               style={{ marginTop: '4px' }}
             />
           </div>

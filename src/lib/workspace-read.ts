@@ -15,6 +15,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const scope = { spaId: user.spaId };
   const finance = user.role === 'OWNER' || user.cashier;
   const today = spaDay();
+  const todayDay = finance ? await Day.findOne({ ...scope, day: today }).lean() : null;
   const assignedQuery = user.role === 'OWNER' ? scope : await invoiceScope({ ...user, role: 'STAFF', cashier: false });
   const assignedBills = user.role === 'OWNER' ? [] : await Invoice.find(assignedQuery).select('_id customerId').lean();
   const assignableIds = new Set(assignedBills.map(i => String(i._id)));
@@ -30,7 +31,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     audit: user.role === 'OWNER' ? scope : { ...scope, _id: { $in: [] } },
   };
   const models: Record<string, any> = { packageTemplates: PackageTemplate, customers: Customer, services: Service, staff: User, appointments: Appointment, invoices: Invoice, deposits: Deposit, allocations: Allocation, cash: CashEntry, treatments: Treatment, uses: TreatmentUse, days: Day, audit: Audit };
-  const fields: Record<string, string> = { staff: user.role === 'OWNER' ? 'name email role cashier active' : 'name role cashier active', uses: '-snapshot -digest -signatureDigest -evidenceReference' };
+  const fields: Record<string, string> = { staff: user.role === 'OWNER' ? 'name email phone role cashier active' : 'name role cashier active', uses: '-snapshot -digest -signatureDigest -evidenceReference' };
   const search = query.search;
   const expression = { $regex: literalPattern(search), $options: 'i' };
   const customerIds = search ? await Customer.find({ ...scope, $or: [{ name: expression }, { phone: expression }, { notes: expression }] }).distinct('_id') : [];
@@ -38,10 +39,11 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const serviceIds = search ? await Service.find({ ...scope, name: expression }).distinct('_id') : [];
   const treatmentIds = search ? await Treatment.find({ ...scope, $or: [{ name: expression }, { customerId: { $in: customerIds } }] }).distinct('_id') : [];
   function searchFilter(collection: string) {
+      if (collection === 'days') return {};
     if (!search) return {};
     const textFields: Record<string, string[]> = {
       packageTemplates: ['name'],
-      customers: ['name', 'phone', 'notes'], services: ['name'], staff: ['name', ...(user.role === 'OWNER' ? ['email'] : [])],
+      customers: ['name', 'phone', 'notes'], services: ['name'], staff: ['name', ...(user.role === 'OWNER' ? ['email', 'phone'] : [])],
       appointments: ['notes', 'changeReason', 'status'], invoices: ['description', 'status', 'dueDate'], deposits: ['note'],
       allocations: ['reason'], cash: ['note', 'transferReference', 'kind', 'method', 'day'], treatments: ['name', 'status'],
       uses: ['reason', 'method'], days: ['day', 'status', 'note'], audit: ['action', 'targetId', 'details.reason', 'details.note', 'details.name', 'details.description', 'details.before.name', 'details.after.name'],
@@ -146,6 +148,6 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     report = await readReport(user, query);
   }
   const paymentInfo = finance || invoices.length ? { bankName: process.env.BANK_NAME || '', accountNumber: process.env.BANK_ACCOUNT_NUMBER || '', accountName: process.env.BANK_ACCOUNT_NAME || '', qrImagePath: /^\/[a-zA-Z0-9_./-]+$/.test(process.env.BANK_QR_IMAGE_PATH || '') && !(process.env.BANK_QR_IMAGE_PATH || '').includes('..') && !(process.env.BANK_QR_IMAGE_PATH || '').startsWith('//') ? process.env.BANK_QR_IMAGE_PATH : '' } : undefined;
-  return { user, today, pages, products, productGroups, packageTemplates, customers, services, staff, appointments, invoices, deposits, allocations: listed('allocations'), cash: listed('cash'), treatments: packages, uses: listed('uses'), days: listed('days'), audit: listed('audit'), paymentInfo, report,
+  return { user, today, todayDay, pages, products, productGroups, packageTemplates, customers, services, staff, appointments, invoices, deposits, allocations: listed('allocations'), cash: listed('cash'), treatments: packages, uses: listed('uses'), days: listed('days'), audit: listed('audit'), paymentInfo, report,
     totals: { debt: debt[0]?.total || 0, credit: credit[0]?.total || 0, inflow: flow.find(f => f._id === 'IN')?.total || 0, outflow: flow.find(f => f._id === 'OUT')?.total || 0, bookings, treatments: treatmentStats[0]?.count || 0, remaining: treatmentStats[0]?.remaining || 0, activeTreatments: treatmentStats[0]?.active || 0, uses: useCount } };
 }

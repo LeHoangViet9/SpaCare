@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { allModels, Spa, User, Control, Migration, StaffLeave } from '../src/lib/models';
 import { hashPassword } from '../src/lib/password';
+import { migrateUserIndexes } from '../src/lib/user-indexes';
 async function setup() {
   await connect();
+  await migrateUserIndexes();
   // Additive migration: create collections/indexes; never drop or rewrite legacy data.
   for (const model of allModels) { await model.createCollection(); await model.createIndexes(); }
   // Upgrade only the old leave uniqueness constraint, after the new index exists.

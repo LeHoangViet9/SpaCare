@@ -12,6 +12,8 @@ const { GET: invoice } = await import('../src/app/api/invoices/[id]/route');
 const { GET: history } = await import('../src/app/api/customers/[id]/history/route');
 const { GET: staff } = await import('../src/app/api/staff/[id]/route');
 const { GET: payroll } = await import('../src/app/api/payroll/route');
+const { GET: invoiceExport } = await import('../src/app/api/invoices/[id]/export/route');
+const { GET: commissionExport } = await import('../src/app/api/payroll/export/route');
 const { GET: products } = await import('../src/app/api/products/route');
 const { GET: notifications, POST: changeNotifications } = await import('../src/app/api/notifications/route');
 const request = (payload: unknown, origin = 'http://localhost:3100') => new Request('http://localhost:3100/api/auth/login', {
@@ -26,6 +28,8 @@ assert.equal((await changeNotifications(request({ action: 'read' }, 'https://for
 assert.equal((await workspace(new Request('http://localhost:3100/api/workspace?section=audit&spaId=foreign'))).status, 401);
 assert.equal((await customers(new Request('http://localhost:3100/api/customers?spaId=foreign'))).status, 401);
 const params = Promise.resolve({ id: 'a'.repeat(24) });
+assert.equal((await invoiceExport(new Request('http://localhost:3100/api/invoices/test/export'), { params })).status, 401);
+assert.equal((await commissionExport(new Request('http://localhost:3100/api/payroll/export?month=2026-10'))).status, 401);
 assert.equal((await invoice(new Request('http://localhost:3100/api/invoices/test'), { params })).status, 401);
 assert.equal((await history(new Request('http://localhost:3100/api/customers/test/history'), { params })).status, 401);
 assert.equal((await staff(new Request('http://localhost:3100/api/staff/test'), { params })).status, 401);

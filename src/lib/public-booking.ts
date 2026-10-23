@@ -25,7 +25,7 @@ export async function reservePublicBooking(raw: unknown, actor: Actor | null, ke
       ensure(service, 'Dịch vụ không tồn tại hoặc đã ngừng cung cấp.', 404);
       const scope = { spaId: service.spaId };
       // Serialize with internal appointment changes using the same guard.
-      const guard = await Control.findOneAndUpdate(scope, { $inc: { revision: 1 } }, { session, new: true });
+      const guard = await Control.findOneAndUpdate(scope, { $inc: { revision: 1 } }, { session, returnDocument: 'after' });
       ensure(guard, 'Spa chưa sẵn sàng nhận lịch trực tuyến.', 503);
       const currentUser = actor ? await User.findOne({ ...scope, _id: actor.id, active: true }).session(session) : null;
       if (actor) ensure(currentUser, 'Tài khoản không hoạt động hoặc không thuộc spa này.', 403);

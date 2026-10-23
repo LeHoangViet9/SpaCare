@@ -381,3 +381,24 @@ Hóa đơn quà tặng/buổi liệu trình 0đ theo nghiệp vụ đã xác nh�
 
 ## BR-NOTIFY-001 — 23/10/2026
 CONFIRMED: chủ spa nhận thông báo web/push khi khách đặt lịch online. PROPOSED: mỗi OWNER active cùng spa nhận một bản ghi/lịch trong transaction; retry cùng idempotency không ghi trùng. Backend xác thực active/role và scope người nhận/spa; chỉ đăng ký thiết bị khi người dùng chủ động cấp quyền. Push ngoài màn hình không chứa thông tin khách. Không suy thêm SMS/email/nhắc lịch. Chi tiết và giới hạn giao nhận: PUSH_NOTIFICATIONS.md.
+
+
+## BR-STAFF-PHONE-001 — 23/10/2026
+CONFIRMED: OWNER tạo nhân viên bằng họ tên, số điện thoại và mật khẩu; không yêu cầu email. Nhân viên dùng số điện thoại để đăng nhập. Quy tắc này thay yêu cầu email bắt buộc khi tạo nhân viên trước đây. Giữ kiểm tra OWNER/active/cùng spa, transaction/idempotency/audit và không ghi mật khẩu vào audit.
+PROPOSED kỹ thuật: chuẩn hóa +84 về 0, bỏ khoảng trắng/dấu chấm/gạch/ngoặc; nhận 10–11 chữ số bắt đầu bằng 0. Phone unique toàn hệ thống tài khoản để đăng nhập không mơ hồ; không so với điện thoại hồ sơ Customer. Mật khẩu nhân viên giữ giới hạn hiện có 12–128 ký tự. Email tài khoản cũ vẫn đăng nhập được, không tự suy số điện thoại từ hồ sơ khách. Người dùng cũ chưa có số phải được OWNER nhập khi sửa.
+
+
+## Bỏ ô tham chiếu ảnh chuyển khoản — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: bỏ trường nhập tham chiếu ảnh chuyển khoản trong form thu tiền hóa đơn; không bắt ghi chú thay thế. Quy tắc này thay yêu cầu ghi tham chiếu/ghi chú ảnh khi thu chuyển khoản trước đây. Vẫn bắt xác nhận đã kiểm tra tài khoản và thực nhận tiền, giữ quyền, trạng thái ngày, transaction, idempotency và audit. PROPOSED kỹ thuật: paymentEvidence dùng chung chỉ kiểm tra receivedConfirmation; transferReference vẫn là trường tùy chọn trong API/schema và giữ toàn bộ dữ liệu lịch sử. Không thay quy trình xác nhận buổi liệu trình/chữ ký; tham chiếu chi lương riêng không thuộc thay đổi này.
+
+
+## Trạng thái sổ hôm nay và mở sổ lặp — 23/10/2026
+PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở sổ báo đã tồn tại: GET workspace thêm todayDay cho OWNER/thu ngân, query trực tiếp cùng spa/ngày Việt Nam và độc lập bộ lọc/phân trang. Trang days không áp dụng từ khóa search vì không có ô tìm kiếm; vẫn giữ lọc trạng thái/khoảng ngày. UI hiển thị rõ hôm nay chưa mở/đang mở/đã chốt; đã mở không hiện nút tạo thêm, đã chốt chỉ OWNER có Mở lại với lý do. openDay trên sổ OPEN trả sổ hiện có, không đổi tiền đầu ngày, không tạo sổ thứ hai; sổ CLOSED trả 409 và không tự mở lại. Giữ transaction, idempotency và audit snapshot thực tế. Không thay chính sách ai được mở/chốt/mở lại hoặc ghi đè dữ liệu lịch sử.
+
+
+## Xuất PDF hóa đơn và hoa hồng - 23/10/2026
+CONFIRMED: PDF để tải, in hoặc chia sẻ hóa đơn khách hàng và bảng kê hoa hồng theo nhân viên/tháng trên máy tính và điện thoại.
+PROPOSED kỹ thuật: API chỉ đọc từ phiên active và cùng spa. OWNER xem phạm vi spa; STAFF giữ quyền đọc hóa đơn hiện có, chỉ xuất hoa hồng của mình. Không ghi tài chính hoặc xác nhận thu tiền/chi lương. Bảng kê lấy toàn bộ tháng theo giờ Việt Nam, tách dịch vụ/bán gói, giữ điều chỉnh âm.
+## Sửa kiểm tra hoa hồng 0đ - 23/10/2026
+PROPOSED kỹ thuật, giữ cấu hình dịch vụ hiện có: hoàn thành lịch chấp nhận hoa hồng nguyên VNĐ bằng 0; vẫn từ chối số âm/sai kiểu/vượt giới hạn. Giữ transaction, idempotency, audit và unique nguồn phát sinh; không đổi schema hoặc quyền API. Integration kiểm tra hoàn thành lặp chỉ có một hoa hồng 0đ, không sửa dữ liệu lịch sử.
+

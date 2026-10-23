@@ -144,3 +144,20 @@ Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn
 
 ## Thông báo và hotline — 23/10/2026
 CONFIRMED theo yêu cầu người dùng: thêm chuông và push trên điện thoại cho chủ spa khi có đặt lịch online; hotline 0329357116. Chi tiết kỹ thuật PROPOSED, cấu hình và giới hạn: PUSH_NOTIFICATIONS.md.
+
+
+## Tài khoản nhân viên dùng số điện thoại — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: thêm/sửa nhân viên dùng số điện thoại thay email; đăng nhập số điện thoại và mật khẩu. Giữ tài khoản/email lịch sử để không khóa người dùng cũ.
+
+
+## Bỏ ô tham chiếu ảnh chuyển khoản — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: bỏ trường nhập tham chiếu ảnh chuyển khoản trong form thu tiền hóa đơn; không bắt ghi chú thay thế. Quy tắc này thay yêu cầu ghi tham chiếu/ghi chú ảnh khi thu chuyển khoản trước đây. Vẫn bắt xác nhận đã kiểm tra tài khoản và thực nhận tiền, giữ quyền, trạng thái ngày, transaction, idempotency và audit. PROPOSED kỹ thuật: paymentEvidence dùng chung chỉ kiểm tra receivedConfirmation; transferReference vẫn là trường tùy chọn trong API/schema và giữ toàn bộ dữ liệu lịch sử. Không thay quy trình xác nhận buổi liệu trình/chữ ký; tham chiếu chi lương riêng không thuộc thay đổi này.
+
+
+## Trạng thái sổ hôm nay và mở sổ lặp — 23/10/2026
+PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở sổ báo đã tồn tại: GET workspace thêm todayDay cho OWNER/thu ngân, query trực tiếp cùng spa/ngày Việt Nam và độc lập bộ lọc/phân trang. Trang days không áp dụng từ khóa search vì không có ô tìm kiếm; vẫn giữ lọc trạng thái/khoảng ngày. UI hiển thị rõ hôm nay chưa mở/đang mở/đã chốt; đã mở không hiện nút tạo thêm, đã chốt chỉ OWNER có Mở lại với lý do. openDay trên sổ OPEN trả sổ hiện có, không đổi tiền đầu ngày, không tạo sổ thứ hai; sổ CLOSED trả 409 và không tự mở lại. Giữ transaction, idempotency và audit snapshot thực tế. Không thay chính sách ai được mở/chốt/mở lại hoặc ghi đè dữ liệu lịch sử.
+
+
+## Xuất PDF hóa đơn và hoa hồng - 23/10/2026
+CONFIRMED: PDF để tải, in hoặc chia sẻ hóa đơn khách hàng và bảng kê hoa hồng theo nhân viên/tháng trên máy tính và điện thoại.
+PROPOSED kỹ thuật: API chỉ đọc từ phiên active và cùng spa. OWNER xem phạm vi spa; STAFF giữ quyền đọc hóa đơn hiện có, chỉ xuất hoa hồng của mình. Không ghi tài chính hoặc xác nhận thu tiền/chi lương. Bảng kê lấy toàn bộ tháng theo giờ Việt Nam, tách dịch vụ/bán gói, giữ điều chỉnh âm.

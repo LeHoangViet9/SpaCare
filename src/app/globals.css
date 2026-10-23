@@ -1741,6 +1741,10 @@ label textarea { margin-top: 8px; }
 .notification-item { width: 100%; display: grid; gap: 6px; text-align: left; margin-top: 10px; padding: 14px; white-space: normal; overflow-wrap: anywhere; }
 .notification-item span { font-weight: normal; line-height: 1.5; }
 .notification-item.unread { background: #e8f3ef; border-color: #356454; }
+.pdf-export { margin: 12px 0 18px; min-width: 0; }
+.pdf-export .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pdf-export small { display: block; margin-top: 8px; line-height: 1.5; }
+@media (max-width: 700px) { .pdf-export .actions button { flex: 1 1 120px; min-height: 44px; } }
 @media (max-width: 700px) {
   .notification-center { position: relative; top: auto; right: auto; display: flex; justify-content: flex-end; padding: 8px 16px 0; z-index: 60; }
   .notification-panel { top: 80px; max-height: calc(100dvh - 170px); padding: 16px; }

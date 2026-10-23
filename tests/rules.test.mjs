@@ -62,10 +62,12 @@ test('selected package payment date accepts today and rejects past/invalid dates
  assert.throws(() => packagePaymentDeadline('2026-10-20', '2026-10-21'));
  assert.throws(() => packagePaymentDeadline('2026-02-30', '2026-01-01'));
 });
-test('cash requires receipt confirmation; transfer also requires group-image note/reference', () => {
+test('cash and bank transfers require receipt confirmation without image references or notes', () => {
  assert.throws(() => paymentEvidence('CASH', false, ''));
  assert.doesNotThrow(() => paymentEvidence('CASH', true, ''));
- assert.throws(() => paymentEvidence('BANK_TRANSFER', true, '  '));
+ assert.throws(() => paymentEvidence('BANK_TRANSFER', false, 'Group photo 123'));
+ assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, ''));
+ assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, '  '));
  assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, 'Group photo 123'));
  assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, '', 'GROUP/2026/123'));
 });
@@ -90,11 +92,11 @@ test('hạn thanh toán bao gồm ngày cuối và chuyển tháng/năm, không 
   assert.equal(packagePaymentDeadline('2028-02-29', '2028-02-29'), '2028-02-29');
   assert.throws(() => packagePaymentDeadline('2027-02-29', '2027-02-01'));
 });
-test('ghi chú/tham chiếu chuyển khoản rỗng và xác nhận thực nhận không hợp lệ bị từ chối', () => {
+test('chuyển khoản chấp nhận thiếu tham chiếu nhưng không chấp nhận xác nhận thực nhận sai kiểu', () => {
   for (const received of [false, undefined, null, 'true', 1]) {
     assert.throws(() => paymentEvidence('BANK_TRANSFER', received, 'GROUP-PHOTO-123'));
   }
-  for (const reference of ['', ' ', 'ab']) assert.throws(() => paymentEvidence('BANK_TRANSFER', true, '', reference));
+  for (const reference of ['', ' ', 'ab']) assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, '', reference));
   assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, 'Ảnh nhóm lúc 10:30'));
 });
 

@@ -20,6 +20,7 @@ import { workspaceQuery } from '../src/lib/workspace-query';
 import { reservePublicBooking } from '../src/lib/public-booking';
 import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
 import { Notification } from '../src/lib/models';
+import { migrateUserIndexes } from '../src/lib/user-indexes';
 
 test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và chốt ngày', async t => {
   const uri = process.env.MONGODB_URI || '';
@@ -28,6 +29,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
   let spaId: mongoose.Types.ObjectId | undefined;
   const extraSpaIds: mongoose.Types.ObjectId[] = [];
   try {
+    // Apply the same non-destructive account index migration as database setup.
+    // createIndexes alone cannot remove the legacy email_1 constraint on missing emails.
+    await migrateUserIndexes();
+    const userIndexes = await User.collection.indexes();
+    assert.ok(!userIndexes.some(index => index.unique && !index.partialFilterExpression && !index.sparse && Object.keys(index.key).length === 1 && index.key.email === 1));
     for (const model of allModels) { await model.createCollection(); await model.createIndexes(); }
     const spa = await Spa.create({ name: `Integration ${randomUUID()}` }); spaId = spa._id;
     const owner = await User.create({ spaId, name: 'Owner test', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'OWNER', cashier: true });
@@ -37,6 +43,14 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const employee: Actor = { ...actor, id: String(staff._id), role: 'STAFF', cashier: false };
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
+    const originalDay = await Day.findOne({ spaId, day: spaDay() });
+    const reusedDay = await call('openDay', { day: spaDay(), opening: 999999 });
+    assert.equal(reusedDay.id, String(originalDay!._id));
+    assert.equal((await Day.findById(originalDay!._id))!.opening, 0);
+    assert.equal(await Day.countDocuments({ spaId, day: spaDay() }), 1);
+    const filteredDays = await readWorkspace(actor, workspaceQuery(new URLSearchParams({ section: 'days', status: 'CLOSED', search: 'hidden-stale-search' })));
+    assert.equal(filteredDays.pages.days.total, 0);
+    assert.equal(filteredDays.todayDay!.status, 'OPEN');
     const customer = await call('customer', { name: 'Khách test', phone: '0900000000' });
     const service = await call('service', { name: 'Dịch vụ test', price: 350000, duration: 60 });
     await t.test('public bookings serialize conflicts, retries and internal bookings without partial writes', async () => {
@@ -88,8 +102,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await call('updateCustomer', { id: customer.id, name: 'Updated', phone: '0900000000' });
     await call('updateService', { id: service.id, name: 'Updated service', price: 350000, duration: 60 });
     await assert.rejects(operate(employee, 'updateService', { id: service.id, name: 'Denied', price: 1, duration: 5 }, randomUUID()));
-    await assert.rejects(call('user', { name: 'Duplicate', email: owner.email.toUpperCase(), password: randomUUID() }), /Email đã tồn tại/);
-    await call('updateUser', { id: String(staff._id), name: 'Updated staff', email: staff.email, cashier: false });
+    const phoneAccount = await call('user', { name: 'Phone staff', phone: '0989000002', password: randomUUID() });
+    assert.equal((await User.findById(phoneAccount.id))!.email, undefined);
+    await assert.rejects(call('user', { name: 'Duplicate', phone: '+84 989 000 002', password: randomUUID() }), /Số điện thoại đã tồn tại/);
+    await assert.rejects(call('user', { name: 'Missing phone', password: randomUUID() }));
+    await call('updateUser', { id: String(staff._id), name: 'Updated staff', phone: '0989000001', cashier: false });
     await call('userStatus', { id: String(staff._id), active: false });
     await assert.rejects(operate(employee, 'customer', { name: 'Denied', phone: '0911111111' }, randomUUID()));
     await call('userStatus', { id: String(staff._id), active: true });
@@ -157,6 +174,9 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     assert.equal(completedInvoice.total, 350000);
     assert.equal(completedInvoice.paid, 0);
     assert.equal(completedInvoice.status, 'OPEN');
+    const zeroCommission = await Commission.findOne({ spaId, invoiceId: completedInvoice._id });
+    assert.equal(zeroCommission!.amount, 0);
+    assert.equal(await Commission.countDocuments({ spaId, invoiceId: completedInvoice._id }), 1);
     assert.equal((await Appointment.findById(billable._id))!.status, 'COMPLETED');
     const retried = await call('completeAppointment', { id: String(billable._id) });
     assert.equal(retried.invoiceId, completed[0].invoiceId);
@@ -326,9 +346,9 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const collected = await Promise.all([operate(employee, 'payment', collect, collectionKey), operate(employee, 'payment', collect, collectionKey)]);
     assert.equal(collected[0].id, collected[1].id);
     assert.equal(await CashEntry.countDocuments({ spaId }), moneyBefore + 1);
-    await assert.rejects(operate(employee, 'payment', { ...collect, method: 'BANK_TRANSFER' }, randomUUID()), /tham chiếu/);
-    await operate(employee, 'payment', { ...collect, method: 'BANK_TRANSFER', transferReference: 'GROUP-IMAGE-42' }, randomUUID());
-    assert.equal((await mongoose.model('Payment').findOne({ spaId, transferReference: 'GROUP-IMAGE-42' }))!.receivedConfirmation, true);
+    await assert.rejects(operate(employee, 'payment', { ...collect, method: 'BANK_TRANSFER', receivedConfirmation: false }, randomUUID()));
+    const bankReceipt = await operate(employee, 'payment', { ...collect, method: 'BANK_TRANSFER' }, randomUUID());
+    assert.equal((await mongoose.model('Payment').findById(bankReceipt.id))!.receivedConfirmation, true);
     const credit = await call('deposit', { customerId: customer.id, amount: 800000, method: 'CASH' });
     const apply = { depositId: credit.id, invoiceId: sold[0].invoiceId, amount: 700000, reason: 'Apply to package' };
     await assert.rejects(operate(wrongEmployee, 'allocate', apply, randomUUID()));
@@ -353,7 +373,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       audit: await Audit.countDocuments({ spaId }), keys: await Idempotency.countDocuments({ spaId }),
       control: (await Control.findOne({ spaId }))!.revision,
     });
-    const cashierRecord = await call('user', { name: 'Cashier test', email: randomUUID() + '@example.test', password: randomUUID(), cashier: true });
+    const cashierRecord = await call('user', { name: 'Cashier test', phone: '0989000003', password: randomUUID(), cashier: true });
     const cashier: Actor = { ...employee, id: cashierRecord.id, cashier: true };
 
     await t.test('quyền lấy lại từ DB; STAFF/thu ngân không sửa giao dịch, MANAGER chưa được hỗ trợ', async () => {
@@ -370,9 +390,9 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await call('userStatus', { id: cashier.id, active: false });
       await assert.rejects(perform(cashier, 'invoice', { customerId: customer.id, serviceId: service.id }), status(401));
       await call('userStatus', { id: cashier.id, active: true });
-      await call('updateUser', { id: cashier.id, name: 'Cashier test', email: (await User.findById(cashier.id))!.email, cashier: false });
+      await call('updateUser', { id: cashier.id, name: 'Cashier test', phone: (await User.findById(cashier.id))!.phone, cashier: false });
       await assert.rejects(perform(cashier, 'sellPackage', sale), status(403)); // stale cashier=true must not grant permission
-      await call('updateUser', { id: cashier.id, name: 'Cashier test', email: (await User.findById(cashier.id))!.email, cashier: true });
+      await call('updateUser', { id: cashier.id, name: 'Cashier test', phone: (await User.findById(cashier.id))!.phone, cashier: true });
     });
 
     await t.test('bán gói rollback cả hóa đơn/audit/idempotency khi tạo liệu trình lỗi giữa transaction', async () => {
@@ -720,8 +740,9 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await t.test('sản phẩm: nhập xuất, bán chống âm kho/trùng, snapshot, quyền và rollback', async () => {
       const group = await call('productGroup', { name: 'Chăm sóc da' });
       await assert.rejects(call('productGroup', { name: ' chăm  sóc da ' }), status(409));
-      const product = await call('product', { name: 'Serum test', sku: randomUUID(), unit: 'Chai', groupId: group.id, price: 120000, stock: 999 });
+      const product = await call('product', { name: 'Serum test', sku: randomUUID(), sizeMl: 100, unit: 'Chai', groupId: group.id, price: 120000, stock: 999 });
       assert.equal((await Product.findById(product.id))!.stock, 0);
+      assert.equal((await Product.findById(product.id))!.sizeMl, 100);
       await assert.rejects(operate(employee, 'stockMovement', { productId: product.id, direction: 'IN', quantity: 10, reason: 'Nhập test' }, randomUUID()), status(403));
       const stockKey = randomUUID(), stockData = { productId: product.id, direction: 'IN', quantity: 5, reason: 'Nhập test' };
       const incoming = await call('stockMovement', stockData, stockKey);
@@ -738,9 +759,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const one = await call('sellProduct', { ...saleData, quantity: 1 }, retryKey);
       assert.deepEqual(await call('sellProduct', { ...saleData, quantity: 1 }, retryKey), one);
       assert.equal(await StockMovement.countDocuments({ spaId, invoiceId: one.id }), 1);
-      await call('updateProduct', { id: product.id, name: 'Renamed serum', sku: randomUUID(), unit: 'Hộp', price: 999999, groupId: group.id });
+      await call('updateProduct', { id: product.id, name: 'Renamed serum', sku: randomUUID(), sizeMl: 200, price: 999999, groupId: group.id });
       const bill = (await readInvoice(actor, sold.id)).invoice;
-      assert.equal(bill.productName, 'Serum test'); assert.equal(bill.unitPrice, 120000); assert.equal(bill.productUnit, 'Chai');
+      assert.equal((await Product.findById(product.id))!.sizeMl, 200);
+      assert.equal(bill.productName, 'Serum test'); assert.equal(bill.unitPrice, 120000); assert.equal(bill.productUnit, 'Sản phẩm');
       const originalCreate = StockMovement.create;
       StockMovement.create = (async () => { throw new Error('Forced stock failure'); }) as any;
       const rollbackKey = randomUUID();
@@ -750,7 +772,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await Product.findById(product.id))!.stock, 1);
       assert.equal(await Invoice.countDocuments({ spaId }), beforeInvoices);
       assert.equal(await Idempotency.countDocuments({ spaId, key: rollbackKey }), 0);
-      await assert.rejects(readProducts(employee, productQuery(new URLSearchParams())), status(403));
+      const employeeProducts = await readProducts(employee, productQuery(new URLSearchParams('search=Renamed')));
+      assert.equal(employeeProducts.total, 1);
+      assert.equal(employeeProducts.canManage, false);
+      assert.equal(employeeProducts.rows[0].name, 'Renamed serum');
+      await assert.rejects(readProducts({ ...employee, role: 'CUSTOMER' }, productQuery(new URLSearchParams())), status(403));
       assert.equal((await readProducts(actor, productQuery(new URLSearchParams('search=Renamed')))).total, 1);
       await call('productStatus', { id: product.id, active: false });
       await assert.rejects(call('sellProduct', { ...saleData, quantity: 1 }), /ngừng bán/);
@@ -831,6 +857,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const closedBill = await call('invoice', { customerId: customer.id, serviceId: service.id });
     const closedPayment = await call('payment', { invoiceId: closedBill.id, amount: 100000, method: 'CASH', receivedConfirmation: true });
     await call('closeDay', { day: spaDay(), counted: 450000 });
+    await assert.rejects(call('openDay', { day: spaDay(), opening: 0 }), (error: any) => error.status === 409);
     await assert.rejects(call('cash', { direction: 'IN', amount: 1000, method: 'CASH', note: 'Sau chốt' }));
     await t.test('sổ đã chốt: lỗi đảo tiền rollback cả invoice/payment dù đã xử lý chúng trước touchDay', async () => {
       const originalPayment = (await Payment.findById(closedPayment.id))!;

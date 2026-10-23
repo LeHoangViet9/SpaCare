@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
-import { Invoice, Customer, Treatment, TreatmentUse, Audit } from '../src/lib/models';
+import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa } from '../src/lib/models';
+import { invoiceExport } from '../src/lib/export-read';
 import { readInvoice } from '../src/lib/invoice-read';
 import type { Actor } from '../src/lib/auth';
 const id = 'a'.repeat(24), spaId = 'b'.repeat(24), packageId = 'c'.repeat(24), actorId = 'd'.repeat(24);
 const signature = { version: 1, strokes: [[[0, 0], [0.2, 0.2], [0.4, 0.3]]] };
-const invoice = { _id: id, customerId: 'e'.repeat(24), appointmentId: 'f'.repeat(24) };
+const invoice = { _id: id, customerId: 'e'.repeat(24), appointmentId: 'f'.repeat(24), total: 2000000, paid: 1500000, refunded: 100000, description: 'Package' };
 let queried: any, offset = 0;
 function query(result: any) {
   return { select() { return this; }, sort() { return this; }, skip(n: number) { offset = n; return this; }, limit(n: number) { assert.equal(n, 5); return this; }, async lean() { return result; } };
 }
 mock.method(Invoice, 'findOne', () => query(invoice));
 mock.method(Invoice, 'find', () => query([]));
-mock.method(Customer, 'findOne', () => query({ name: 'Customer' }));
+mock.method(Customer, 'findOne', () => query({ name: 'Customer', phone: '0329357116' }));
+mock.method(Spa, 'findById', () => query({ name: 'SpaCare' }));
 mock.method(Treatment, 'find', () => query([{ _id: packageId, name: 'Package' }]));
 mock.method(TreatmentUse, 'countDocuments', async (filter: any) => { queried = filter; return 7; });
 mock.method(TreatmentUse, 'find', () => query([{ _id: 'use', treatmentId: packageId, signature, sessionNumber: 2, performedAt: new Date() }]));
@@ -29,4 +31,11 @@ assert.ok(queried.$and[0].$or.some((c: any) => c.appointmentId === invoice.appoi
 assert.ok(queried.$and[0].$or.some((c: any) => c.treatmentId?.$in.includes(packageId)));
 await readInvoice({ ...owner, role: 'STAFF' }, id);
 assert.deepEqual(queried.$and[1], { $or: [{ actorId }, { staffId: actorId }] });
+const pdf = await invoiceExport(owner, id);
+assert.ok(pdf.tables[0].rows.some(row => row.includes('0329357116')));
+assert.deepEqual(pdf.tables[2].rows.slice(0,4).map(row=>row[1].replace(/[^\d]/g,'')),['2000000','1500000','100000','500000']);
+invoice.total=0; invoice.paid=0; invoice.refunded=0;
+const free=await invoiceExport(owner,id);
+assert.equal(free.tables[2].rows[0][1].replace(/[^\d]/g,''),'0');
+await assert.rejects(invoiceExport({...owner,role:'CUSTOMER'},id),(e:any)=>e.status===403);
 mock.restoreAll();

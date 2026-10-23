@@ -13,16 +13,18 @@ export function payrollStaffScope(user: Actor, employee = '') {
   ensure(user.role === 'OWNER' || !employee || employee === user.id, 'Chỉ được xem lương và hoa hồng của mình.', 403);
   return { spaId: user.spaId, ...(user.role === 'OWNER' ? employee ? { staffId: employee } : {} : { staffId: user.id }) };
 }
+export function commissionPipeline(filter: Record<string, unknown>): any[] {
+  const match = (Commission.find(filter) as any).cast(Commission);
+  return [{$match:match}, {$addFields:{category:{$ifNull:['$category','SERVICE']}}},
+    {$unionWith:{coll:SaleCommission.collection.name,pipeline:[{$match:match}]}}];
+}
 export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery>) {
   const scope = payrollStaffScope(user, q.employee);
   const { start, end } = monthBounds(q.month);
   const people = await User.find({ spaId: user.spaId, role: { $in: ['OWNER', 'STAFF'] }, ...(user.role === 'OWNER' ? {} : { _id: user.id }) }).select('name active role +baseSalary +salaryPolicy').sort({ name: 1 }).lean();
   const payrollFilter = { ...scope, month: q.month };
   const commissionFilter = { ...scope, earnedAt: { $gte: start, $lt: end } };
-  const combined = (filter: Record<string,unknown>): any[] => {
-    const match = (Commission.find(filter) as any).cast(Commission);
-    return [{$match:match}, {$addFields:{category:{$ifNull:['$category','SERVICE']}}}, {$unionWith:{coll:SaleCommission.collection.name,pipeline:[{$match:match}]}}];
-  };
+  const combined = commissionPipeline;
   const combinedFilter = combined(commissionFilter);
   const total = q.view === 'salary' ? await Payroll.countDocuments(payrollFilter) : (await Commission.aggregate([...combinedFilter,{$count:'total'}]))[0]?.total || 0;
   const page = Math.min(q.page, Math.max(1, Math.ceil(total / 10)));

@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { mock } from 'node:test';
+import { Commission, User } from '../src/lib/models';
+import { commissionExport } from '../src/lib/export-read';
+import type { Actor } from '../src/lib/auth';
+const owner: Actor = {id:'a'.repeat(24),spaId:'b'.repeat(24),name:'Owner',role:'OWNER',cashier:true};
+let pipeline: any[] = [];
+mock.method(User,'findOne',()=>({select(){return this;},async lean(){return {name:'Employee'};}}));
+mock.method(Commission,'aggregate',async (value: any[])=>{
+  pipeline=value;
+  return Array.from({length:25},(_,i)=>({staffId:owner.id,staffName:'Employee',serviceName:'Service',category:i===24?'PACKAGE_SALE':'SERVICE',amount:i===24?-100:1000,earnedAt:new Date('2026-10-23T00:00:00Z')}));
+});
+const result=await commissionExport(owner,'2026-10','');
+assert.equal(result.tables[1].rows.length,25);
+assert.deepEqual(result.tables[0].rows[0].slice(1).map(s=>s.replace(/[^\d-]/g,'')),['24000','-100','23900']);
+assert.equal(String(pipeline[0].$match.spaId),owner.spaId);
+assert.equal(pipeline[0].$match.earnedAt.$gte.toISOString(),'2026-09-30T17:00:00.000Z');
+assert.equal(pipeline[0].$match.earnedAt.$lt.toISOString(),'2026-10-31T17:00:00.000Z');
+assert.ok(!pipeline.some(stage=>stage.$limit||stage.$skip));
+assert.deepEqual(pipeline[2].$unionWith.pipeline[0].$match,pipeline[0].$match);
+await commissionExport({...owner,role:'STAFF'},'2026-10','');
+assert.equal(String(pipeline[0].$match.staffId),owner.id);
+await assert.rejects(commissionExport({...owner,role:'STAFF'},'2026-10','c'.repeat(24)),(e:any)=>e.status===403);
+await assert.rejects(commissionExport({...owner,role:'CUSTOMER'},'2026-10',''),(e:any)=>e.status===403);
+await assert.rejects(commissionExport(owner,'invalid',''));
+mock.restoreAll();

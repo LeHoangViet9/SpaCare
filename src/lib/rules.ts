@@ -59,9 +59,8 @@ export function packagePaymentDeadline(dueDate: string, today = spaDay()) {
   ensure(dueDate >= today, 'Hạn thanh toán không được trước ngày bán.');
   return dueDate;
 }
-export function paymentEvidence(method: string, received: boolean, note: string, reference = '') {
+export function paymentEvidence(_method: string, received: boolean, _note: string, _reference = '') {
   ensure(received === true, 'Cần xác nhận đã thực nhận tiền.');
-  if (method === 'BANK_TRANSFER') ensure((reference || note).trim().length >= 3, 'Cần ghi chú hoặc tham chiếu ảnh chuyển khoản đã gửi nhóm.');
 }
 
 export function staffBookingsToday(

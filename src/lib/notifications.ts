@@ -20,7 +20,7 @@ export async function dispatchNotifications(scope?: { spaId: string; userId?: st
     const now = new Date();
     const row = await Notification.findOneAndUpdate({ ...scope, pushState: 'PENDING',
       nextAttemptAt: { $lte: now }, attempts: { $lt: 8 },
-    }, { $set: { nextAttemptAt: new Date(Date.now() + 120_000) }, $inc: { attempts: 1 } }, { new: true });
+    }, { $set: { nextAttemptAt: new Date(Date.now() + 120_000) }, $inc: { attempts: 1 } }, { returnDocument: 'after' });
     if (!row) break;
     const owner = await User.exists({ _id: row.userId, spaId: row.spaId, active: true, role: 'OWNER' });
     if (!owner) { await Notification.updateOne({ _id: row._id }, { pushState: 'SENT' }); continue; }
