@@ -1,4 +1,5 @@
 'use client';
+import CompactDateInput from './compact-date-input';
 import { formatCurrency } from '@/lib/currency';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -40,7 +41,7 @@ export default function Reports({ report, today, period, onPeriod, pending, owne
   }
   return <section className="reports-workspace" aria-busy={pending}>
     <div className="panel panel-padded report-controls"><div className="filter-shortcuts"><button onClick={() => onPeriod(datePreset('today', today))}>Hôm nay</button><button onClick={() => onPeriod(datePreset('month', today))}>Tháng này</button><button onClick={() => onPeriod({ from: '', to: '' })}>Toàn bộ</button></div>
-      <div className="report-filters"><label>Từ ngày<input type="date" value={period.from} max={period.to || undefined} onChange={e => onPeriod({ ...period, from: e.target.value })} /></label><label>Đến ngày<input type="date" value={period.to} min={period.from || undefined} onChange={e => onPeriod({ ...period, to: e.target.value })} /></label><button disabled={pending} onClick={exportSummary}>Xuất CSV tổng hợp</button></div>
+      <div className="report-filters"><label>Từ ngày<CompactDateInput value={period.from} max={period.to || undefined} onChange={e => onPeriod({ ...period, from: e.target.value })} /></label><label>Đến ngày<CompactDateInput value={period.to} min={period.from || undefined} onChange={e => onPeriod({ ...period, to: e.target.value })} /></label><button disabled={pending} onClick={exportSummary}>Xuất CSV tổng hợp</button></div>
       <div className="profile-tabs" role="group" aria-label="Loại báo cáo">{[['revenue', 'Hóa đơn & doanh số'], ...(owner ? [['staff', 'Nhân viên']] : []), ['cash', 'Thu chi']].map(([key, name]) => <button key={key} aria-pressed={activeTab === key} onClick={() => setTab(key)}>{name}</button>)}</div>
     </div>
     {pending && <p role="status">Đang tổng hợp báo cáo…</p>}

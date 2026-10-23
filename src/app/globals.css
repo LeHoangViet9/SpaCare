@@ -1749,3 +1749,14 @@ label textarea { margin-top: 8px; }
   .notification-center { position: relative; top: auto; right: auto; display: flex; justify-content: flex-end; padding: 8px 16px 0; z-index: 60; }
   .notification-panel { top: 80px; max-height: calc(100dvh - 170px); padding: 16px; }
 }
+.compact-date-control { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 0; height: 44px; padding: 0 8px; border: 1px solid #dce3da; border-radius: 8px; background: #fff; color: var(--ink); box-sizing: border-box; }
+.compact-date-value { min-width: 0; font-size: 13px; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.compact-date-control svg { flex: 0 0 16px; }
+.compact-date-control:focus-within { outline: 3px solid #9cbb9e; outline-offset: 2px; }
+.compact-date-control > input[type="date"] { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 0; border: 0; cursor: pointer; font-size: 16px; }
+@media (max-width: 700px) {
+  .app .list-filters .filter-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app .filter-controls .date-filter-pair { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .app .date-filter-pair > label { display: flex; flex-direction: column; gap: 6px; min-width: 0; width: 100%; }
+  .app .compact-date-control > input[type="date"] { padding: 0; min-height: 0; }
+}

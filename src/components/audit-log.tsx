@@ -1,4 +1,5 @@
 'use client';
+import CompactDateInput from './compact-date-input';
 import { auditActions, auditLines } from '@/lib/audit-view';
 type Row = Record<string, any>;
 type Filters = { search: string; actor: string; action: string; from: string; to: string };
@@ -14,7 +15,7 @@ export default function AuditLog({ data, filters, onFiltersChange, pagination }:
       <input aria-label="Tìm nhật ký" maxLength={100} placeholder="Tìm người, khách, nội dung…" value={search} onChange={e => onFiltersChange({ search: e.target.value })} />
       <select aria-label="Người thực hiện" value={actor} onChange={e => onFiltersChange({ actor: e.target.value })}><option value="">Tất cả người thực hiện</option>{actors.map(id => <option key={id} value={id}>{name(id)}</option>)}</select>
       <select aria-label="Loại thao tác" value={action} onChange={e => onFiltersChange({ action: e.target.value })}><option value="">Tất cả thao tác</option>{Object.entries(auditActions).map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select>
-      <label>Từ ngày <input type="date" value={from} onChange={e => onFiltersChange({ from: e.target.value })} /></label><label>Đến ngày <input type="date" value={to} min={from} onChange={e => onFiltersChange({ to: e.target.value })} /></label>
+      <label>Từ ngày <CompactDateInput value={from} onChange={e => onFiltersChange({ from: e.target.value })} /></label><label>Đến ngày <CompactDateInput value={to} min={from} onChange={e => onFiltersChange({ to: e.target.value })} /></label>
     </div><p className="muted">{pagination?.total || 0} thao tác phù hợp</p>
     {rows.map((r: Row) => <article key={r._id} style={{ borderTop: '1px solid var(--border, #ddd)', padding: '16px 0', overflowWrap: 'anywhere' }}>
       <small>{new Date(r.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} · {r.actorName}</small><h4>{r.title}</h4>
