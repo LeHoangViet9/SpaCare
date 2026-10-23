@@ -74,6 +74,7 @@ export default function Workspace() {
     }, 300);
   }
   function setSearch(value: string) { setSearchValue(value); if (!composingSearch.current) publishSearch(value); }
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cashierRevision, setCashierRevision] = useState(0);
   const [cashierNewCustomer, setCashierNewCustomer] = useState<Row | null>(null);
@@ -156,7 +157,8 @@ export default function Workspace() {
     const response = await fetch('/api/workspace?' + requestQuery, { cache: 'no-store', signal });
     const payload = await response.json();
     if (sequence !== loadSequence.current || currentRequest.current !== requestQuery) return;
-    if (response.status === 401) { setData(null); return; }
+    if (response.status === 401) { setNeedsLogin(true); setData(null); return; }
+    setNeedsLogin(false);
     if (!response.ok) throw new Error(payload.error || 'Không thể tải dữ liệu.');
     setData({ ...payload, _requestKey: requestQuery });
   }, [requestQuery]);
@@ -174,6 +176,7 @@ export default function Workspace() {
     try {
       const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(fields)) });
       const body = await r.json(); if (!r.ok) throw new Error(body.error);
+      setNeedsLogin(false);
       await load();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
@@ -221,6 +224,7 @@ export default function Workspace() {
     } catch (e) { setError((e as Error).message); }
   }
   if (loading) return <div className="loading">✧ SpaCare <small>Đang kết nối không gian làm việc…</small></div>;
+  if (!data && !needsLogin) return <main className="loading"><h1>Không thể tải không gian làm việc</h1><p className="alert error" role="alert">{error || 'Dữ liệu chưa tải được. Vui lòng thử lại.'}</p><button className="primary" onClick={() => { setLoading(true); setError(''); load().catch(e => setError(e.message)).finally(() => setLoading(false)); }}>Thử tải lại</button><Link href="/">Về trang chủ</Link></main>;
   if (!data) return <main className="login-page"><section className="login-intro"><Brand href="/workspace" /><span className="eyebrow">CHĂM SÓC KHÁCH HÀNG, GỌN GÀNG HƠN</span><h1>Một ngày tại spa.<br />Mọi thứ trong tầm tay.</h1><p>Lịch hẹn, liệu trình và từng khoản thu chi —<br />trong cùng một không gian làm việc.</p><div className="petal">✧</div><small>Phiên bản MVP · Dành cho vận hành nội bộ</small></section><section className="login-card"><span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập SpaCare</h2><p>Dùng tài khoản được chủ spa cấp.</p><ValidatedForm onSubmit={login}><label>Email<input name="email" type="email" autoComplete="username" required placeholder="owner@spacare.local" /></label><label>Mật khẩu<input name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>{error && <div className="alert error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Vào không gian làm việc →'}</button></ValidatedForm></section></main>;
 
   const owner = data.user.role === 'OWNER';

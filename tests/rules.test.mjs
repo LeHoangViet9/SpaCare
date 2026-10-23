@@ -97,3 +97,11 @@ test('ghi chú/tham chiếu chuyển khoản rỗng và xác nhận thực nhậ
   for (const reference of ['', ' ', 'ab']) assert.throws(() => paymentEvidence('BANK_TRANSFER', true, '', reference));
   assert.doesNotThrow(() => paymentEvidence('BANK_TRANSFER', true, 'Ảnh nhóm lúc 10:30'));
 });
+
+ test('hóa đơn quà tặng và buổi liệu trình 0đ đã thanh toán, vẫn chặn tiền sai', () => {
+  assert.equal(invoiceState(0, 0), 'PAID');
+  assert.equal(invoiceState(100000, 0), 'OPEN');
+  assert.equal(invoiceState(100000, 50000), 'PARTIALLY_PAID');
+  assert.equal(invoiceState(100000, 100000), 'PAID');
+  for (const [total, paid] of [[0, 1], [-1, 0], [0, -1], [NaN, 0], ['0', 0]]) assert.throws(() => invoiceState(total, paid));
+});

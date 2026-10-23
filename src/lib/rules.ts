@@ -12,7 +12,7 @@ export function money(value: unknown, allowZero = false): number {
 }
 export function amountDue(total: number, paid: number): number { return total - paid; }
 export function invoiceState(total: number, paid: number): 'OPEN' | 'PARTIALLY_PAID' | 'PAID' {
-  money(total); money(paid, true);
+  money(total, true); money(paid, true);
   ensure(paid <= total, 'Số thanh toán vượt tổng hóa đơn.');
   return paid === total ? 'PAID' : paid > 0 ? 'PARTIALLY_PAID' : 'OPEN';
 }
