@@ -2,12 +2,13 @@ import type { ExportDocument, ExportTable } from './export-document';
 import { imagePdf } from './pdf-bytes';
 export async function renderPdf(doc: ExportDocument): Promise<File> {
   await document.fonts.ready;
-  const width = 1240, height = 1754, margin = 68, bottom = height - 90, line = 29;
-  const pages: { jpeg: Uint8Array; width: number; height: number }[] = [];
+  const receipt = doc.receipt;
+  const width = receipt ? 680 : 1240, height = 1754, margin = receipt ? 32 : 68, bottom = height - 90, line = 29;
+  const pages: { jpeg: Uint8Array; width: number; height: number; pageWidth?: number }[] = [];
   let canvas: HTMLCanvasElement;
-  let ctx: CanvasRenderingContext2D;
+  let ctx!: CanvasRenderingContext2D;
   let y = 0;
-  const font = (size = 21, bold = false) => { ctx.font = `${bold ? '700 ' : ''}${size}px Arial, sans-serif`; ctx.fillStyle = '#253d37'; ctx.textBaseline = 'top'; };
+  const font = (size = 21, bold = false) => { ctx.font = `${bold ? '700 ' : ''}${size}px Arial, sans-serif`; ctx.fillStyle = receipt ? '#111' : '#253d37'; ctx.textBaseline = 'top'; };
   function wrap(text: string, max: number) {
     const rows: string[] = [];
     for (const paragraph of String(text).normalize('NFC').split(/\r?\n/)) {
@@ -28,9 +29,14 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
   function finish() {
     if (!canvas) return;
     font(17); ctx.fillStyle = '#52666b';
-    ctx.fillText(`SpaCare | Trang ${pages.length + 1}`, margin, height - 55);
+    ctx.fillText(`${receipt?.name || 'SpaCare'} | Trang ${pages.length + 1}`, margin, receipt ? Math.min(height - 55, Math.max(445, y + 45)) : height - 55);
+    if (receipt) {
+      const cropped = document.createElement('canvas'); cropped.width = width; cropped.height = Math.min(height, Math.max(500, y + 100));
+      cropped.getContext('2d')!.drawImage(canvas, 0, 0);
+      canvas = cropped;
+    }
     const raw = atob(canvas.toDataURL('image/jpeg', 0.94).split(',')[1]);
-    pages.push({ jpeg: Uint8Array.from(raw, character => character.charCodeAt(0)), width, height });
+    pages.push({ jpeg: Uint8Array.from(raw, character => character.charCodeAt(0)), width, height: canvas.height, ...(receipt ? { pageWidth: 226.77 } : {}) });
     canvas.width = 0; canvas.height = 0;
   }
   async function nextPage() {
@@ -39,6 +45,15 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
     canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
     const context = canvas.getContext('2d'); if (!context) throw new Error('Trình duyệt không hỗ trợ tạo PDF.');
     ctx = context; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
+    if (receipt) {
+      const center = (text: string) => { ctx.fillText(text, (width - ctx.measureText(text).width) / 2, y); y += line + 5; };
+      y = 36; font(34, true); center(receipt.name); y += 12; font(21);
+      for (const part of wrap(`Địa chỉ: ${receipt.address}`, width - margin * 2)) center(part);
+      center(`Số điện thoại: ${receipt.phone}`); y += 18;
+      font(29, true); center(doc.title); y += 12;
+      font(19); center(`Ngày in: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);
+      y += 14; return;
+    }
     font(32, true); ctx.fillText(doc.title, margin, 54);
     font(20); y = 103;
     for (const part of wrap(doc.subtitle, width - margin * 2)) { ctx.fillText(part, margin, y); y += line; }
@@ -54,6 +69,10 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
     y += 12;
   }
   async function table(table: ExportTable) {
+    if (receipt && table.columns[0] === 'Thông tin') {
+      for (const values of table.rows) await paragraph(`${values[0]}: ${values[1]}`);
+      y += 8; return;
+    }
     if (table.heading) await paragraph(table.heading, true);
     const widths = table.widths.map(ratio => ratio * (width - margin * 2));
     async function row(values: string[], header = false) {
@@ -73,8 +92,10 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
           font(20, header); available = Math.floor((bottom - y - 20) / line);
         }
         const take = Math.min(count - offset, available), rowHeight = take * line + 20;
-        ctx.fillStyle = header ? '#e8eee5' : '#fff'; ctx.fillRect(margin, y, width - margin * 2, rowHeight);
-        ctx.strokeStyle = '#dce3da'; ctx.strokeRect(margin, y, width - margin * 2, rowHeight);
+        ctx.fillStyle = header && !receipt ? '#e8eee5' : '#fff'; ctx.fillRect(margin, y, width - margin * 2, rowHeight);
+        ctx.strokeStyle = receipt ? '#aaa' : '#dce3da';
+        if (receipt) { ctx.beginPath(); ctx.moveTo(margin, y + rowHeight); ctx.lineTo(width - margin, y + rowHeight); ctx.stroke(); }
+        else ctx.strokeRect(margin, y, width - margin * 2, rowHeight);
         font(20, header);
         let x = margin;
         cells.forEach((parts, column) => {
@@ -90,6 +111,13 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
     y += 28;
   }
   for (const block of doc.tables) await table(block);
+  if (receipt) {
+    if (y + 230 > bottom) await nextPage();
+    font(22, true); ctx.fillText('Chữ ký khách hàng', margin, y); ctx.fillText('Người lập hóa đơn', width - margin - 215, y);
+    y += 90; font(20);
+    for (const part of wrap(receipt.cashier, 215)) { ctx.fillText(part, width - margin - 215, y); y += line; }
+    y += 30; await paragraph('Cảm ơn và hẹn gặp lại Quý khách!', true);
+  }
   for (const note of doc.notes) await paragraph(note);
   await paragraph(`Xuất lúc: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);
   finish();

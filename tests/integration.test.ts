@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
-import { allModels, Spa, User, Control, Deposit, Invoice, CashEntry, Treatment, Appointment, Audit, TreatmentUse, Allocation, Payment, Idempotency, Day, Customer, PackageTemplate, Commission, Payroll, Service, Product, ProductGroup, StockMovement, SaleCommission, StaffLeave, Workday } from '../src/lib/models';
+import { allModels, Spa, User, Control, Deposit, Invoice, CashEntry, Treatment, Appointment, Audit, TreatmentUse, Allocation, Payment, Idempotency, Day, Customer, PackageTemplate, Commission, Payroll, Service, Product, ProductGroup, StockMovement, SaleCommission, SharedSaleCommission, StaffLeave, Workday } from '../src/lib/models';
 import { productQuery } from '../src/lib/product-rules';
 import { readProducts } from '../src/lib/product-read';
 import { hashPassword } from '../src/lib/password';
@@ -261,6 +261,34 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const lastPayment = await mongoose.model('Payment').findById(finalReceipt.id);
     await call('reverseCash', { id: String(lastPayment!.receiptId), reason: 'Sai khoản chuyển test' });
     assert.equal((await Invoice.findById(packageBill.id))!.status, 'PARTIALLY_PAID');
+    await t.test('time packages: unlimited signed visits, expiry, gifts, snapshots and retry rollback', async () => {
+      const today = spaDay();
+      const timeTemplate = await call('packageTemplate', { name:'Triệt 2 năm', serviceId:service.id, packageType:'TIME', durationMonths:24, price:2000000 });
+      await assert.rejects(call('sellPackage',{customerId:customer.id,templateId:timeTemplate.id,dueDate:today}));
+      const sold = await call('sellPackage',{customerId:customer.id,templateId:timeTemplate.id,dueDate:today,startsOn:today,promotion:'Time gift',gifts:[{templateId:timeTemplate.id}]});
+      let plan = await Treatment.findById(sold.id);
+      assert.equal(plan!.packageType,'TIME'); assert.equal(plan!.remaining,undefined); assert.ok(plan!.expiresOn);
+      const useData={treatmentId:sold.id,signature:signed,remainingBefore:0}; const key=randomUUID();
+      const first=await call('use',useData,key); assert.deepEqual(await call('use',useData,key),first);
+      await assert.rejects(call('use',useData),(e:any)=>e.status===409);
+      await call('use',{...useData,remainingBefore:1});
+      plan=await Treatment.findById(sold.id); assert.equal(plan!.usedSessions,2); assert.equal(plan!.status,'ACTIVE'); assert.equal(plan!.remaining,undefined);
+      const gift=await Treatment.findOne({spaId,giftOfInvoiceId:plan!.invoiceId}); assert.equal(gift!.packageType,'TIME');
+      await call('updatePackageTemplate',{id:timeTemplate.id,name:'Triệt 3 năm',serviceId:service.id,packageType:'TIME',durationMonths:36,price:3000000});
+      assert.equal((await Treatment.findById(sold.id))!.durationMonths,24);
+      await call('pauseTreatment',{id:sold.id,holdUntil:today,reason:'Test'});
+      await assert.rejects(call('use',{...useData,remainingBefore:2}));
+      await call('resumeTreatment',{id:sold.id,reason:'Test'});
+      // Mutate only this synthetic test record to exercise expiry at the backend.
+      await Treatment.updateOne({_id:sold.id,spaId},{$set:{startsOn:'2020-01-01',expiresOn:'2021-01-01'}});
+      const count=await TreatmentUse.countDocuments({spaId,treatmentId:sold.id});
+      await assert.rejects(call('use',{...useData,remainingBefore:2}));
+      assert.equal(await TreatmentUse.countDocuments({spaId,treatmentId:sold.id}),count);
+      const purchaseCount=await Invoice.countDocuments({spaId});
+      const sessionTemplate=await call('packageTemplate',{name:'Face',serviceId:service.id,totalSessions:10,price:1000000});
+      await assert.rejects(call('sellPackage',{customerId:customer.id,templateId:sessionTemplate.id,dueDate:today,promotion:'Missing date',gifts:[{templateId:timeTemplate.id}]}));
+      assert.equal(await Invoice.countDocuments({spaId}),purchaseCount);
+    });
     // Single-operation package sale, unpaid use, staff collections and deposit access.
     const template = await call('packageTemplate', { name: 'Sale test', serviceId: service.id, totalSessions: 5, price: 900000 });
       const sale = { templateId: template.id, customerId: customer.id, serviceId: service.id, name: 'Sale test', totalSessions: 5, total: 900000, dueDate: spaDay(new Date(Date.now() + 7 * 86400000)) };
@@ -922,6 +950,85 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await SaleCommission.countDocuments({...scope,payrollId:updated._id}),3);
       const own=await readPayroll(employee,payrollQuery(new URLSearchParams({month,view:'commission'})));
       assert.equal(own.summary.saleCommission,75000);assert.equal(own.total,3);
+      assert.equal(own.rows[0].customerName,'Guest'); assert.equal(own.rows[0].customerPhone,'0912345678');
+      const ownerSale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay()});
+      const ownerPlan=await Treatment.findById(ownerSale.id);
+      const ownerPayment={invoiceId:String(ownerPlan!.invoiceId),amount:100000,method:'CASH',receivedConfirmation:true};
+      const ownerKey=randomUUID(); await call('payment',ownerPayment,ownerKey); await call('payment',ownerPayment,ownerKey);
+      const ownerCommissions=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'commission',employee:who.id})));
+      assert.equal(ownerCommissions.total,1); assert.equal(ownerCommissions.summary.saleCommission,5000);
+      assert.equal(String(ownerCommissions.rows[0].staffId),who.id);
+      assert.equal(ownerCommissions.rows[0].customerName,'Guest'); assert.equal(ownerCommissions.rows[0].customerPhone,'0912345678');
+      const staffOnly=await readPayroll(employee,payrollQuery(new URLSearchParams({month,view:'commission'})));
+      assert.equal(staffOnly.total,3); assert.ok(staffOnly.rows.every(r=>String(r.staffId)===employee.id));
+      const salaryView=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'salary'})));
+      assert.ok(salaryView.people.every(p=>p.role==='STAFF')); assert.ok(!salaryView.people.some(p=>String(p._id)===who.id));
+      const ownerSalary=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'salary',employee:who.id})));
+      assert.equal(ownerSalary.total,0); assert.equal(ownerSalary.workTotal,0); assert.equal(ownerSalary.leaveTotal,0); assert.equal(ownerSalary.salarySummary.length,0);
+      for (const [action,data] of [
+        ['setStaffSalary',{staffId:who.id,baseSalary:1000000}],
+        ['setSalaryPolicy',{staffId:who.id,standardDays:26,paidLeaveDays:0,mode:'NONE'}],
+        ['recordWorkday',{staffId:who.id,day:spaDay(),period:'FULL'}],
+        ['recordStaffLeave',{staffId:who.id,day:spaDay(),period:'FULL',type:'PERMITTED'}],
+        ['savePayroll',{staffId:who.id,month,baseSalary:1000000}],
+      ] as const) await assert.rejects(call(action,data));
+      const afterOwnerRejection=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'commission',employee:who.id})));
+      assert.equal(afterOwnerRejection.summary.saleCommission,5000);
+
+
+    });
+    await t.test('shared package sale commissions: equal pool, installments, rollback, refunds and payroll', async () => {
+      const spa=await Spa.create({name:'Shared commission '+randomUUID()}); extraSpaIds.push(spa._id);
+      const scope={spaId:spa._id}; await Control.create(scope);
+      const people=[];
+      for(const role of ['OWNER','STAFF','STAFF']) people.push(await User.create({...scope,name:'Share '+role+' '+people.length,email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role}));
+      const who:Actor={id:String(people[0]._id),spaId:String(spa._id),name:people[0].name,role:'OWNER',cashier:false};
+      const worker:Actor={...who,id:String(people[1]._id),name:people[1].name,role:'STAFF'};
+      const call=(action:string,data:unknown,key=randomUUID())=>operate(who,action,data,key);
+      await call('openDay',{day:spaDay(),opening:0});
+      const customer=await call('customer',{name:'Shared guest',phone:'0912345678'});
+      const service=await call('service',{name:'Shared service',duration:60,price:2000000});
+      const template=await call('packageTemplate',{name:'Shared plan',serviceId:service.id,totalSessions:10,price:2000000});
+      const sale={customerId:customer.id,templateId:template.id,dueDate:spaDay(),participantIds:people.slice(1).map(p=>String(p._id))};
+      const before=await Invoice.countDocuments(scope);
+      await assert.rejects(call('sellPackage',{...sale,participantIds:[worker.id,worker.id]}));
+      await assert.rejects(call('sellPackage',{...sale,participantIds:[worker.id,actor.id]}));
+      await User.updateOne({_id:people[2]._id},{$set:{active:false}});
+      await assert.rejects(call('sellPackage',sale)); await User.updateOne({_id:people[2]._id},{$set:{active:true}});
+      assert.equal(await Invoice.countDocuments(scope),before);
+      const sold=await call('sellPackage',sale); const plan=await Treatment.findById(sold.id); const invoiceId=String(plan!.invoiceId);
+      const purchase=(await Invoice.findById(invoiceId))!; assert.equal(purchase.saleCommissionVersion,2); assert.equal(purchase.saleParticipants.length,2);
+      assert.equal(await SharedSaleCommission.countDocuments(scope),0);
+      const payment={invoiceId,amount:1000001,method:'CASH',receivedConfirmation:true}; const key=randomUUID();
+      const paid=await call('payment',payment,key); assert.deepEqual(await call('payment',payment,key),paid);
+      await call('payment',{...payment,amount:999999});
+      assert.equal(await SharedSaleCommission.countDocuments(scope),4); assert.equal(await SaleCommission.countDocuments(scope),0);
+      let ledger=await SharedSaleCommission.find(scope); assert.equal(ledger.reduce((n,r)=>n+r.amount,0),100000);
+      for(const person of people.slice(1)) assert.equal(ledger.filter(r=>String(r.staffId)===String(person._id)).reduce((n,r)=>n+r.amount,0),50000);
+      // The purchase snapshot survives staff name/activity changes.
+      await User.updateOne({_id:people[2]._id},{$set:{name:'Changed after sale',active:false}});
+      const month=spaDay().slice(0,7);
+      const view=await readPayroll(worker,payrollQuery(new URLSearchParams({month,view:'commission'})));
+      assert.equal(view.summary.saleCommission,50000); assert.ok(view.rows.every(r=>String(r.staffId)===worker.id && r.shareCount===2));
+      assert.equal(view.rows[0].customerName,'Shared guest');
+      await assert.rejects(readPayroll(worker,payrollQuery(new URLSearchParams({month,view:'commission',employee:who.id}))));
+      const draft=await call('savePayroll',{staffId:worker.id,month,baseSalary:0}); const payroll=(await Payroll.findById(draft.id))!;
+      assert.equal(payroll.saleCommissionTotal,50000); assert.equal(payroll.sharedSaleCommissionIds.length,2); assert.equal(payroll.saleCommissionIds.length,0);
+      await call('approvePayroll',{id:draft.id,expectedTotal:50000}); await call('payPayroll',{id:draft.id,method:'CASH',receivedConfirmation:true});
+      assert.equal(await SharedSaleCommission.countDocuments({...scope,payrollId:payroll._id}),2);
+      await call('refundPackage',{invoiceId,amount:500000,method:'CASH',receivedConfirmation:true,reason:'Approved exception test',exceptionApproved:true});
+      ledger=await SharedSaleCommission.find(scope); assert.equal(ledger.reduce((n,r)=>n+r.amount,0),75000);
+      assert.equal((await Payroll.findById(draft.id))!.total,50000); assert.equal((await Payroll.findById(draft.id))!.status,'PAID');
+      assert.equal(await SharedSaleCommission.countDocuments({...scope,staffId:worker.id,amount:-12500,payrollId:{$exists:false}}),1);
+      const invoiceAfter=await Invoice.findById(invoiceId); assert.equal(invoiceAfter!.saleCommissionAccrued,75000);
+      await User.updateOne({_id:people[2]._id},{$set:{active:true}});
+      const three=await call('sellPackage',{...sale,participantIds:people.map(p=>String(p._id))}); const threePlan=await Treatment.findById(three.id);
+      await call('payment',{...payment,invoiceId:String(threePlan!.invoiceId),amount:2000000});
+      const thirds=await SharedSaleCommission.find({...scope,invoiceId:threePlan!.invoiceId});
+      assert.equal(thirds.length,3); assert.equal(thirds.reduce((n,r)=>n+r.amount,0),100000);
+      assert.equal(Math.max(...thirds.map(r=>r.amount))-Math.min(...thirds.map(r=>r.amount)),1);
+      const own=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'commission',employee:who.id})));
+      assert.equal(own.summary.saleCommission,thirds.find(r=>String(r.staffId)===who.id)!.amount);
     });
   } finally {
     if (spaId) {

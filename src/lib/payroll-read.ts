@@ -1,6 +1,6 @@
 import { summarizeLeave } from './leave-rules';
 import { z } from 'zod';
-import { Commission, Payroll, User, Service, StaffLeave, SaleCommission, Workday } from './models';
+import { Commission, Payroll, User, Service, StaffLeave, SaleCommission, Workday, Customer, SharedSaleCommission } from './models';
 import { monthBounds, payrollMonth } from './payroll-rules';
 import { ensure } from './rules';
 import type { Actor } from './auth';
@@ -13,23 +13,37 @@ export function payrollStaffScope(user: Actor, employee = '') {
   ensure(user.role === 'OWNER' || !employee || employee === user.id, 'Chỉ được xem lương và hoa hồng của mình.', 403);
   return { spaId: user.spaId, ...(user.role === 'OWNER' ? employee ? { staffId: employee } : {} : { staffId: user.id }) };
 }
+// Intersect authorized scope with STAFF identities before counting, aggregating or paging.
+export function salaryStaffScope(scope: Record<string, any>, staffIds: string[]) {
+  return { ...scope, staffId: { $in: staffIds.filter(id => !scope.staffId || String(scope.staffId) === id) } };
+}
 export function commissionPipeline(filter: Record<string, unknown>): any[] {
   const match = (Commission.find(filter) as any).cast(Commission);
   return [{$match:match}, {$addFields:{category:{$ifNull:['$category','SERVICE']}}},
-    {$unionWith:{coll:SaleCommission.collection.name,pipeline:[{$match:match}]}}];
+    {$unionWith:{coll:SaleCommission.collection.name,pipeline:[{$match:match}]}},
+    {$unionWith:{coll:SharedSaleCommission.collection.name,pipeline:[{$match:match}]}}];
+}
+// Fetch only customers referenced by already-authorized commission rows.
+export async function commissionCustomers<T extends Record<string, any>>(spaId: string, rows: T[]): Promise<(T & { customerName: string | null; customerPhone: string | null })[]> {
+  const ids = [...new Set(rows.map(r => r.customerId ? String(r.customerId) : '').filter(Boolean))];
+  const customers = ids.length ? await Customer.find({ spaId, _id: { $in: ids } }).select('name phone').lean() : [];
+  const byId = new Map(customers.map(c => [String(c._id), c]));
+  return rows.map(r => { const customer = byId.get(String(r.customerId)); return { ...r, customerName: customer?.name || null, customerPhone: customer?.phone || null }; });
 }
 export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery>) {
-  const scope = payrollStaffScope(user, q.employee);
+  let scope: Record<string, any> = payrollStaffScope(user, q.employee);
   const { start, end } = monthBounds(q.month);
-  const people = await User.find({ spaId: user.spaId, role: { $in: ['OWNER', 'STAFF'] }, ...(user.role === 'OWNER' ? {} : { _id: user.id }) }).select('name active role +baseSalary +salaryPolicy').sort({ name: 1 }).lean();
+  const people = await User.find({ spaId: user.spaId, role: { $in: q.view === 'salary' ? ['STAFF'] : ['OWNER', 'STAFF'] }, ...(user.role === 'OWNER' ? {} : { _id: user.id }) }).select('name active role +baseSalary +salaryPolicy').sort({ name: 1 }).lean();
+  if (q.view === 'salary') scope = salaryStaffScope(scope, people.map(p => String(p._id)));
   const payrollFilter = { ...scope, month: q.month };
   const commissionFilter = { ...scope, earnedAt: { $gte: start, $lt: end } };
   const combined = commissionPipeline;
   const combinedFilter = combined(commissionFilter);
   const total = q.view === 'salary' ? await Payroll.countDocuments(payrollFilter) : (await Commission.aggregate([...combinedFilter,{$count:'total'}]))[0]?.total || 0;
   const page = Math.min(q.page, Math.max(1, Math.ceil(total / 10)));
-  const rows = q.view === 'salary' ? await Payroll.find(payrollFilter).select('-commissionIds -saleCommissionIds').sort({createdAt:-1,_id:-1}).skip((page-1)*10).limit(10).lean()
+  const rows = q.view === 'salary' ? await Payroll.find(payrollFilter).select('-commissionIds -saleCommissionIds -sharedSaleCommissionIds').sort({createdAt:-1,_id:-1}).skip((page-1)*10).limit(10).lean()
     : await Commission.aggregate([...combinedFilter,{$sort:{earnedAt:-1,_id:-1}},{$skip:(page-1)*10},{$limit:10}]);
+  const displayRows = q.view === 'commission' ? await commissionCustomers(user.spaId, rows) : rows;
   const summary = await Commission.aggregate([...combinedFilter,{$group:{_id:'$category',amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const unsettled = await Commission.aggregate([...combined({...scope,payrollId:{$exists:false},earnedAt:{$lt:end}}),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const salarySummary = q.view === 'salary' ? await Payroll.aggregate([
@@ -50,6 +64,6 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   const workdays = q.view === 'salary' ? await Workday.find(workFilter).sort({day:-1,_id:-1}).skip((workPage-1)*10).limit(10).lean() : [];
   const leaveSummary = people.filter(p=>!q.employee || String(p._id)===q.employee).map(p=>({staffId:p._id,...summarizeLeave(allLeaves.filter(r=>String(r.staffId)===String(p._id)),q.month)}));
   return { workdays,workSummary,workTotal,workPage, leaves, leaveSummary, leaveTotal, leavePage, salarySummary, services, people: people.map(p => ({ _id: p._id, name: p.name, active: p.active, role: p.role, baseSalary: p.baseSalary ?? null, salaryPolicy:p.salaryPolicy })),
-    rows: rows.map(r => ({ ...r, ...(q.view === 'commission' ? { payrollMonth: payrolls.find(p => String(p._id) === String(r.payrollId))?.month, payrollStatus: payrolls.find(p => String(p._id) === String(r.payrollId))?.status } : {}) })),
+    rows: displayRows.map(r => ({ ...r, ...(q.view === 'commission' ? { payrollMonth: payrolls.find(p => String(p._id) === String(r.payrollId))?.month, payrollStatus: payrolls.find(p => String(p._id) === String(r.payrollId))?.status } : {}) })),
     page, total, summary: { commission:summary.reduce((n,r)=>n+r.amount,0), serviceCommission:summary.find(r=>r._id==='SERVICE')?.amount || 0, saleCommission:summary.find(r=>r._id==='PACKAGE_SALE')?.amount || 0, sessions:summary.find(r=>r._id==='SERVICE')?.count || 0, unsettled: unsettled[0]?.amount || 0, unsettledCount: unsettled[0]?.count || 0 } };
 }

@@ -67,7 +67,7 @@ export default async function CustomerDashboardPage() {
       spaId: user.spaId,
       customerId,
     })
-      .select('_id name totalSessions remaining status')
+      .select('_id name totalSessions remaining status packageType durationMonths startsOn expiresOn usedSessions')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -76,6 +76,7 @@ export default async function CustomerDashboardPage() {
       name: t.name,
       totalSessions: t.totalSessions,
       remaining: t.remaining,
+      packageType: t.packageType, durationMonths: t.durationMonths, startsOn: t.startsOn, expiresOn: t.expiresOn, usedSessions: t.usedSessions,
       status: t.status,
     }));
 

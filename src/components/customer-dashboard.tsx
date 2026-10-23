@@ -1,4 +1,5 @@
 'use client';
+import { timedPackage, packageLabel } from '@/lib/treatment-rules';
 import { formatCurrency } from '@/lib/currency';
 
 import Link from 'next/link';
@@ -17,6 +18,7 @@ type AppointmentRow = {
 type TreatmentRow = {
   _id: string;
   name: string;
+  packageType?: string; durationMonths?: number; startsOn?: string; expiresOn?: string; usedSessions?: number;
   totalSessions: number;
   remaining: number;
   status: string;
@@ -278,13 +280,13 @@ export default function CustomerDashboardClient({
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginTop: '12px' }}>
                     <div>
-                      <span style={{ fontSize: '12px', color: 'var(--pub-muted)', display: 'block' }}>Số buổi còn lại:</span>
+                      <span style={{ fontSize: '12px', color: 'var(--pub-muted)', display: 'block' }}>{timedPackage(trt) ? 'Thời hạn sử dụng:' : 'Số buổi còn lại:'}</span>
                       <strong style={{ fontSize: '18px', color: 'var(--pub-green)' }}>
-                        {trt.remaining} / {trt.totalSessions} buổi
+                        {packageLabel(trt)}
                       </strong>
                     </div>
 
-                    <div style={{ flex: 1, maxWidth: '180px' }}>
+                    {!timedPackage(trt) && <div style={{ flex: 1, maxWidth: '180px' }}>
                       <div style={{ height: '8px', background: 'var(--pub-line)', borderRadius: '4px', overflow: 'hidden' }}>
                         <span
                           style={{
@@ -298,7 +300,7 @@ export default function CustomerDashboardClient({
                       <small style={{ color: 'var(--pub-muted)', fontSize: '11px', display: 'block', marginTop: '4px' }}>
                         Đã sử dụng {trt.totalSessions - trt.remaining} buổi
                       </small>
-                    </div>
+                    </div>}
                   </div>
                 </div>
 

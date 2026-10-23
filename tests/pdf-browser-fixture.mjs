@@ -9,7 +9,7 @@ const compile = path => ts.transpileModule(readFileSync(path, 'utf8').replace(/^
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
 const source = compile('src/lib/pdf-bytes.ts') + '\n' + compile('src/lib/render-pdf.ts');
 const docs = [
-  { filename: 'invoice.pdf', title: 'HÓA ĐƠN DỊCH VỤ', subtitle: 'SpaCare | Hotline 0329 357 116',
+  { receipt: { name: 'Thanh Thư Spa', address: 'CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên', phone: '0329 357 116', cashier: 'Thanh Thư' }, filename: 'invoice.pdf', title: 'HÓA ĐƠN DỊCH VỤ', subtitle: 'SpaCare | Hotline 0329 357 116',
     notes: ['Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.'],
     tables: [{ columns: ['Thông tin', 'Chi tiết'], widths: [.28,.72], rows: [['Khách hàng','Nguyễn Thị Huyền Trang'],['Số điện thoại','0329357116'],['Mã hóa đơn','0123456789abcdef01234567']] },
       { heading: 'Thanh toán', columns: ['Khoản mục','Số tiền'], widths: [.65,.35], rows: [['Gói chăm sóc da chuyên sâu và phục hồi cấp ẩm', '2.000.000 đ'],['Quà tặng: Chăm sóc da','0 đ'],['Đã thanh toán','1.500.000 đ'],['Còn phải thanh toán','500.000 đ']] }] },

@@ -1,3 +1,4 @@
+import { availableTreatmentFilter } from './treatment-rules';
 import mongoose from 'mongoose';
 import { readReport } from './report-read';
 import { Customer, Service, Product, ProductGroup, PackageTemplate, User, Appointment, Invoice, Deposit, Allocation, CashEntry, Treatment, TreatmentUse, Day, Audit } from './models';
@@ -122,7 +123,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const invoices = invoiceChoices.map(i => ({ ...i, status: invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
   const deposits = await Deposit.find({ $and: [filters.deposits, { $or: [{ balance: { $gt: 0 } }, { _id: { $in: [...listed('deposits').map(d => d._id), ...auditIds('depositId')] } }] }] }).lean();
   const treatments = await Treatment.find({ ...scope, $or: [
-    { status: 'ACTIVE', remaining: { $gt: 0 } }, { _id: { $in: listed('treatments').map(t => t._id) } },
+    availableTreatmentFilter(), { _id: { $in: listed('treatments').map(t => t._id) } },
     { _id: { $in: auditIds('treatmentId') } },
     { _id: { $in: [...appointments.map(a => a.treatmentId), ...listed('uses').map(u => u.treatmentId)].filter(Boolean) } },
     { invoiceId: { $in: invoices.map(i => i._id) } },

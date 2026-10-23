@@ -1,0 +1,12 @@
+import {readFileSync} from 'node:fs';
+import React from 'react';
+import assert from 'node:assert/strict';
+import {renderToStaticMarkup} from 'react-dom/server';
+import SaleParticipants from '../src/components/sale-participants';
+const people=['OWNER','STAFF','STAFF'].map((role,i)=>({_id:String(i),name:'Người '+i,active:true,role}));
+const html=renderToStaticMarkup(<SaleParticipants people={people} value={['0','1']} total={2000000} onChange={()=>{}} />);
+assert.equal((html.match(/<select/g)||[]).length,2);
+assert.match(html,/Người cùng tư vấn/); assert.match(html,/50\.000/); assert.match(html,/100\.000/);
+assert.match(html,/Chủ spa/); assert.match(html,/name="participantIds"/);
+if(process.argv.includes('--preview')) console.log(JSON.stringify('<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+['ui.css','globals.css','public.css'].map(f=>readFileSync('src/app/'+f,'utf8')).join('\n')+'</style><body><main class="app" style="padding:16px;display:block"><section class="panel panel-padded" style="max-width:520px;margin:auto"><h2>Bán liệu trình</h2>'+html+'</section></main></body></html>'));
+else console.log('Shared commission picker renders selected people and equal shares');

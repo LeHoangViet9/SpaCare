@@ -87,7 +87,9 @@ export const Service = model('Service', {
 
 export const PackageTemplate = model('PackageTemplate', {
   name: { type: String, required: true }, serviceId: id,
-  totalSessions: { type: Number, min: 1, max: 1000, required: true }, price: amount,
+  packageType: { type: String, enum: ['SESSIONS', 'TIME'] },
+  durationMonths: { type: Number, min: 1, max: 120 },
+  totalSessions: { type: Number, min: 1, max: 1000 }, price: amount,
   active: { type: Boolean, default: true },
 });
 
@@ -123,7 +125,11 @@ export const Appointment = model(
   [[{ spaId: 1, staffId: 1, startAt: 1, endAt: 1 }], [{ spaId: 1, rescheduledFromId: 1 }, { unique: true, partialFilterExpression: { rescheduledFromId: { $exists: true } } }]],
 );
 
+const saleParticipantSchema = new Schema({ staffId: id, staffName: { type: String, required: true } },
+  { _id: false, versionKey: false, strict: 'throw' });
+
 export const Invoice = model('Invoice', {
+  saleParticipants: [saleParticipantSchema],
   sellerId: optionalId, sellerName: String, saleCommissionVersion: Number, saleCommissionAccrued: Number, refunded: { type: Number, default: 0 },
   performedBy: optionalId,
   performedAt: Date,
@@ -220,6 +226,8 @@ export const Treatment = model(
     invoiceId: id,
     serviceId: optionalId,
     name: String,
+    packageType: { type: String, enum: ['SESSIONS', 'TIME'] },
+    durationMonths: Number, startsOn: String, usedSessions: { type: Number, min: 0 },
     totalSessions: Number,
     remaining: Number,
     status: { type: String, enum: ['ACTIVE', 'PAUSED', 'COMPLETED'], default: 'ACTIVE' },
@@ -263,6 +271,13 @@ export const SaleCommission = model('SaleCommission', {
   category: {type:String, default:'PACKAGE_SALE'}, sourceType:String, sourceId:id,
   amount: {...amount, min:-1_000_000_000_000}, earnedAt:Date, payrollId:optionalId,
 }, [[{spaId:1,sourceType:1,sourceId:1},{unique:true}], [{spaId:1,staffId:1,earnedAt:-1}]]);
+// Additive ledger: keeps the legacy single-seller unique index unchanged.
+export const SharedSaleCommission = model('SharedSaleCommission', {
+  staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
+  category: { type: String, default: 'PACKAGE_SALE' }, sharedSale: { type: Boolean, default: true },
+  sourceType: String, sourceId: id, shareCount: Number,
+  amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: Date, payrollId: optionalId,
+}, [[{ spaId: 1, sourceType: 1, sourceId: 1, staffId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
 export const Workday = model('Workday', {staffId:id, day:String, period:String, note:String, actorId:id}, [[{spaId:1,staffId:1,day:1},{unique:true}]]);
 export const StaffLeave = model('StaffLeave', {
   staffId: id, staffName: String, day: { type: String, required: true }, startDay:String, endDay:String, period:String, paid:Boolean, status:{type:String,enum:['PENDING','APPROVED','REJECTED']}, reviewedBy:optionalId, reviewedAt:Date,
@@ -272,7 +287,7 @@ export const StaffLeave = model('StaffLeave', {
 export const Payroll = model('Payroll', {
   staffId: id, staffName: String, month: { type: String, required: true }, baseSalary: amount,
   commissionTotal: {...amount,min:-1_000_000_000_000}, commissionCount: Number, carryoverCount: Number,
-  attendanceDigest:String, earnedBase: Number, leaveDeduction:Number, attendanceConfirmed:Boolean, workdays:Number, leaveStats:Schema.Types.Mixed, salaryPolicy:Schema.Types.Mixed, advance:{...amount,default:0}, saleCommissionTotal:Number, serviceCommissionTotal:Number, saleCommissionIds:[{type:Schema.Types.ObjectId}],
+  attendanceDigest:String, earnedBase: Number, leaveDeduction:Number, attendanceConfirmed:Boolean, workdays:Number, leaveStats:Schema.Types.Mixed, salaryPolicy:Schema.Types.Mixed, advance:{...amount,default:0}, saleCommissionTotal:Number, serviceCommissionTotal:Number, saleCommissionIds:[{type:Schema.Types.ObjectId}], sharedSaleCommissionIds:[{type:Schema.Types.ObjectId}],
   bonus: { ...amount, default: 0 }, deductions: { ...amount, default: 0 }, total: amount, note: String,
   commissionIds: [{ type: Schema.Types.ObjectId }],
   status: { type: String, enum: ['DRAFT', 'APPROVED', 'PAID'], default: 'DRAFT' },
@@ -354,7 +369,7 @@ export const allModels = [
   Payroll,
   StaffLeave,
   Workday,
-  SaleCommission,
+  SaleCommission, SharedSaleCommission,
   Day,
   Audit,
   Idempotency,

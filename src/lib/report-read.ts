@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Appointment, CashEntry, Commission, Customer, Invoice, TreatmentUse, User, SaleCommission } from './models';
+import { Appointment, CashEntry, Commission, Customer, Invoice, TreatmentUse, User, SaleCommission, SharedSaleCommission } from './models';
 import { ensure } from './rules';
 import type { Actor } from './auth';
 import type { workspaceQuery } from './workspace-query';
@@ -35,7 +35,7 @@ export async function readReport(user: Actor, query: ReturnType<typeof workspace
       TreatmentUse.aggregate([{ $match: dated('performedAt') }, { $group: { _id: '$staffId', sessions: { $sum: 1 } } }]),
       Commission.aggregate([{ $match: dated('earnedAt') }, { $group: { _id: '$staffId', commission: { $sum: '$amount' }, services: { $sum: 1 } } }]),
       Invoice.aggregate([{ $match: dated('createdAt') }, { $group: { _id: '$consultantId', invoices: { $sum: 1 }, sales: { $sum: '$total' } } }]),
-      SaleCommission.aggregate([{$match:dated('earnedAt')},{$group:{_id:'$staffId',saleCommission:{$sum:'$amount'}}}]),
+      SaleCommission.aggregate([{$match:dated('earnedAt')},{$unionWith:{coll:SharedSaleCommission.collection.name,pipeline:[{$match:dated('earnedAt')}]}},{$group:{_id:'$staffId',saleCommission:{$sum:'$amount'}}}]),
     ]);
     const byId = (rows: Row[], id: unknown) => rows.find(r => String(r._id) === String(id)) || {};
     employees = staff.map(s => ({ ...s, appointments: byId(appointments, s._id).appointments || 0, completed: byId(appointments, s._id).completed || 0,

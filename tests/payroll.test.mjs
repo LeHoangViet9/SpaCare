@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { tsImport } from 'tsx/esm/api';
 const { monthBounds, salaryTotal, payrollInputs } = await tsImport('../src/lib/payroll-rules.ts', import.meta.url);
@@ -49,3 +49,38 @@ test('payroll approval needs expected amount and payout requires actual-payment 
  for (const type of ['PERMITTED','UNPERMITTED']) assert.equal(payrollInputs.recordStaffLeave.parse({...value,type}).type,type);
  assert.equal(payrollInputs.recordStaffLeave.safeParse({...value,type:'PAID'}).success,false);
 });
+
+ test('commission customers are limited to referenced IDs in the authenticated spa', async () => {
+  const { commissionCustomers } = await tsImport('../src/lib/payroll-read.ts', import.meta.url);
+  const { Customer } = await tsImport('../src/lib/models.ts', import.meta.url);
+  let filter, selection, calls=0;
+  const stub=mock.method(Customer,'find', value => { filter=value; calls++; return {select(fields){selection=fields; return this;}, async lean(){return [{_id:other,name:'Khách test',phone:'0912345678'}];}}; });
+  try {
+    const rows=[{customerId:other,staffId:id,amount:5000},{customerId:other,amount:10000},{customerId:id,amount:0},{}];
+    const result=await commissionCustomers(spaId,rows);
+    assert.deepEqual(filter,{spaId,_id:{$in:[other,id]}}); assert.equal(selection,'name phone');
+    assert.equal(result[0].customerName,'Khách test'); assert.equal(result[0].customerPhone,'0912345678');
+    assert.equal(result[2].customerName,null); assert.equal(result[3].customerPhone,null);
+    assert.equal(rows[0].customerName,undefined); assert.equal(result[0].amount,5000);
+    assert.deepEqual(await commissionCustomers(spaId,[]),[]); assert.equal(calls,1);
+  } finally { stub.mock.restore(); }
+});
+ test('owner can filter commissions to their own identity', () => {
+   assert.deepEqual(payrollStaffScope({id,spaId,name:'Owner',role:'OWNER',cashier:false},id),{spaId,staffId:id});
+ });
+
+ test('salary scope excludes owners before paging and keeps selected-employee authorization', async () => {
+  const { salaryStaffScope } = await tsImport('../src/lib/payroll-read.ts', import.meta.url);
+  const staff='d'.repeat(24);
+  assert.deepEqual(salaryStaffScope({spaId},[staff]),{spaId,staffId:{$in:[staff]}});
+  assert.deepEqual(salaryStaffScope({spaId,staffId:id},[staff]),{spaId,staffId:{$in:[]}});
+  assert.deepEqual(salaryStaffScope({spaId,staffId:staff},[staff]),{spaId,staffId:{$in:[staff]}});
+  assert.deepEqual(payrollStaffScope({id,spaId,name:'Owner',role:'OWNER',cashier:false},id),{spaId,staffId:id});
+ });
+
+ test('every sale commission ledger receives identical staff, spa and date scopes', async () => {
+  const { commissionPipeline }=await tsImport('../src/lib/payroll-read.ts',import.meta.url);
+  const pipeline=commissionPipeline({spaId,staffId:id,earnedAt:{$gte:new Date('2026-10-01')}});
+  const unions=pipeline.filter(s=>s.$unionWith); assert.equal(unions.length,2);
+  for(const stage of unions) assert.deepEqual(stage.$unionWith.pipeline[0].$match,pipeline[0].$match);
+ });

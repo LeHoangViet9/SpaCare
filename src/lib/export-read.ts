@@ -1,9 +1,9 @@
 import type { Actor } from './auth';
 import type { ExportDocument } from './export-document';
 import { readInvoice } from './invoice-read';
-import { payrollStaffScope, commissionPipeline } from './payroll-read';
+import { payrollStaffScope, commissionPipeline, commissionCustomers } from './payroll-read';
 import { monthBounds } from './payroll-rules';
-import { Commission, Spa, User } from './models';
+import { Commission, User } from './models';
 import { formatCurrency } from './currency';
 import { ensure } from './rules';
 const money = (value: unknown) => formatCurrency(Number(value || 0));
@@ -11,11 +11,11 @@ const date = (value: unknown) => value ? new Date(String(value)).toLocaleString(
 export async function invoiceExport(user: Actor, id: string): Promise<ExportDocument> {
   ensure(['OWNER', 'STAFF'].includes(user.role), 'Không có quyền xuất hóa đơn.', 403);
   const data = await readInvoice(user, id);
-  const spa = await Spa.findById(user.spaId).select('name').lean();
   const bill = data.invoice;
   return {
-    filename: `Hoa-don-${id}.pdf`, title: 'HÓA ĐƠN DỊCH VỤ',
-    subtitle: `${spa?.name || 'SpaCare'} | Hotline: 0329 357 116`,
+    filename: `Hoa-don-${id}.pdf`, title: 'HÓA ĐƠN BÁN HÀNG',
+    subtitle: 'Thanh Thư Spa',
+    receipt: { name: 'Thanh Thư Spa', address: 'CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên', phone: '0329 357 116', cashier: bill.creatorName || 'Chưa ghi nhận' },
     notes: ['Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.',
       'Số tiền phản ánh dữ liệu tại thời điểm xuất. Hóa đơn còn nợ không phải xác nhận đã thanh toán.'],
     tables: [
@@ -23,6 +23,7 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
         ['Mã hóa đơn', id], ['Ngày tạo', date(bill.createdAt)],
         ['Khách hàng', data.customer?.name || '-'], ['Số điện thoại', data.customer?.phone || '-'],
         ['Người lập', bill.creatorName || 'Chưa ghi nhận'],
+        ...(bill.kind === 'PACKAGE' ? [['Tư vấn bán gói', bill.saleParticipants?.length ? bill.saleParticipants.map((p:{staffName:string})=>p.staffName).join(', ') : bill.sellerName || 'Chưa ghi nhận']] : []),
       ] },
       { heading: 'Dịch vụ / gói / sản phẩm', columns: ['Nội dung', 'Thành tiền'], widths: [0.72, 0.28], rows: [
         [bill.description || 'Dịch vụ', money(bill.total)],
@@ -43,9 +44,10 @@ export async function commissionExport(user: Actor, month: string, employee: str
   const selectedId = user.role === 'OWNER' ? employee : user.id;
   const person = selectedId ? await User.findOne({ spaId: user.spaId, _id: selectedId, role: { $in: ['OWNER', 'STAFF'] } }).select('name').lean() : null;
   ensure(!selectedId || person, 'Không tìm thấy nhân viên trong spa.', 404);
-  const rows = await Commission.aggregate([...commissionPipeline({ ...scope, earnedAt: { $gte: start, $lt: end } }),
+  const sourceRows = await Commission.aggregate([...commissionPipeline({ ...scope, earnedAt: { $gte: start, $lt: end } }),
     { $sort: { staffName: 1, staffId: 1, earnedAt: 1, _id: 1 } },
-    { $project: { staffId: 1, staffName: 1, serviceName: 1, category: 1, amount: 1, earnedAt: 1, invoiceId: 1 } }]);
+    { $project: { staffId: 1, staffName: 1, serviceName: 1, category: 1, amount: 1, earnedAt: 1, invoiceId: 1, customerId: 1, shareCount: 1 } }]);
+  const rows = await commissionCustomers(user.spaId, sourceRows);
   const sums = new Map<string, { name: string; service: number; sale: number }>();
   for (const row of rows) {
     const id = String(row.staffId);
@@ -66,7 +68,7 @@ export async function commissionExport(user: Actor, month: string, employee: str
       ] },
       { heading: `Chi tiết (${rows.length} khoản)`, columns: ['Ngày', 'Nhân viên', 'Nội dung', 'Hoa hồng'], widths: [0.2, 0.22, 0.36, 0.22],
         rows: rows.length ? rows.map(row => [date(row.earnedAt), row.staffName || person?.name || '-',
-          `${row.category === 'PACKAGE_SALE' ? 'Bán gói 5%' : 'Dịch vụ'}: ${row.serviceName || '-'}${row.invoiceId ? ' | HĐ #' + String(row.invoiceId).slice(-6) : ''}`, money(row.amount)]) : [['-', '-', 'Chưa có phát sinh trong tháng', money(0)]] },
+          `${row.category === 'PACKAGE_SALE' ? (row.shareCount > 1 ? `Chia 5% / ${row.shareCount} người` : 'Bán gói 5%') : 'Dịch vụ'}: ${row.serviceName || '-'}${row.invoiceId ? ' | HĐ #' + String(row.invoiceId).slice(-6) : ''}\nKhách: ${row.customerName || 'Chưa ghi nhận'}${row.customerPhone ? ' · ' + row.customerPhone : ''}`, money(row.amount)]) : [['-', '-', 'Chưa có phát sinh trong tháng', money(0)]] },
     ],
   };
 }

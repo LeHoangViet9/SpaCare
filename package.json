@@ -7,6 +7,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "db:commission-shares": "tsx --env-file=.env.local scripts/setup-commission-shares.ts",
     "db:staff-phone": "tsx --env-file=.env.local scripts/setup-staff-phone.ts",
     "push:setup": "node scripts/setup-push.mjs",
     "push:db": "tsx --env-file=.env.local scripts/setup-push-db.ts",

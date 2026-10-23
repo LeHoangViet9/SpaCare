@@ -5,3 +5,13 @@ export function packageCommissionDelta(paid:number, refunded:number, total:numbe
  const target = Math.floor((paid-refunded)/20);
  return {target, delta:target-accrued};
 }
+
+// Divide cumulative integer VND, then take each person's delta. Stable ordering
+// keeps installment payments and refunds exactly equal to a single settlement.
+export function sharedCommissionDeltas(target: number, accrued: number, participantIds: string[]) {
+  if (![target, accrued].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 1_000_000_000_000)) throw new Error('Quỹ hoa hồng không hợp lệ.');
+  const ids = [...participantIds].sort();
+  if (!ids.length || new Set(ids).size !== ids.length) throw new Error('Danh sách người tư vấn trống hoặc trùng.');
+  const share = (pool: number, i: number) => Math.floor(pool / ids.length) + (i < pool % ids.length ? 1 : 0);
+  return ids.map((staffId, i) => ({ staffId, total: share(target, i), amount: share(target, i) - share(accrued, i) }));
+}

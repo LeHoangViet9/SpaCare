@@ -7,7 +7,7 @@ export default function EmployeeAttendance({data,owner,userId,employee,today,loa
  onOpen:(title:string,action:string,fields:Field[],defaults?:Row,description?:string)=>void;
  onLeavePage:(p:number)=>void;onWorkPage:(p:number)=>void;
 }) {
- const people:Row[]=data?.people || [];
+ const people:Row[]=(data?.people || []).filter((p:Row)=>p.role === 'STAFF');
  const select:Field={key:'staffId',label:'Nhân viên',options:people.map(p=>[p._id,p.name])};
  const period:Field={key:'period',label:'Thời gian mỗi ngày',options:[['FULL','Cả ngày'],['AM','Nửa ngày buổi sáng'],['PM','Nửa ngày buổi chiều']]};
  function edit(r?:Row) {
@@ -31,7 +31,7 @@ export default function EmployeeAttendance({data,owner,userId,employee,today,loa
  <div className="actions">{(owner || r.status==='PENDING') && <button onClick={()=>edit(r)}>Sửa</button>}{owner && r.status==='PENDING' && <><button onClick={()=>onOpen('Duyệt nghỉ','reviewStaffLeave',[{key:'paid',label:'Nghỉ hưởng lương',type:'checkbox',optional:true}],{id:r._id,status:'APPROVED',paid:r.paid || false})}>Duyệt</button><button onClick={()=>onOpen('Từ chối nghỉ','reviewStaffLeave',[],{id:r._id,status:'REJECTED',paid:false},'Bản bị từ chối không tính vào ngày nghỉ/lương.')}>Từ chối</button></>}</div></article>)}{!data?.leaveTotal && <p>Chưa có bản ghi nghỉ trong tháng.</p>}</div>}
  {data && data.leaveTotal>10 && <div className="customer-picker-pages"><button disabled={loading || data.leavePage<=1} onClick={()=>onLeavePage(data.leavePage-1)}>Trước</button><span>Trang {data.leavePage}/{Math.ceil(data.leaveTotal/10)}</span><button disabled={loading || data.leavePage*10>=data.leaveTotal} onClick={()=>onLeavePage(data.leavePage+1)}>Sau</button></div>}
  </section>
- <section className="panel panel-padded"><div className="section-head"><h3>Ngày công thực tế đã ghi</h3>{owner && <button disabled={loading} onClick={()=>onOpen('Ghi / sửa ngày công','recordWorkday',[select,{key:'day',label:'Ngày làm',type:'date'},period,{key:'note',label:'Ghi chú',optional:true}],{staffId:employee || people[0]?._id,day:today,period:'FULL'},'Ghi theo thực tế. Cùng người/ngày cập nhật bản hiện có; không tự tạo từ lịch hẹn.')}>＋ Ghi ngày công</button>}</div>
+ <section className="panel panel-padded"><div className="section-head"><h3>Ngày công thực tế đã ghi</h3>{owner && <button disabled={loading || !people.length} onClick={()=>onOpen('Ghi / sửa ngày công','recordWorkday',[select,{key:'day',label:'Ngày làm',type:'date'},period,{key:'note',label:'Ghi chú',optional:true}],{staffId:employee || people[0]?._id,day:today,period:'FULL'},'Ghi theo thực tế. Cùng người/ngày cập nhật bản hiện có; không tự tạo từ lịch hẹn.')}>＋ Ghi ngày công</button>}</div>
  {!loading && <div className="payroll-people">{data?.workdays?.map((r:Row)=><article key={r._id}><strong>{people.find(p=>p._id===r.staffId)?.name} · {r.day}</strong><span>{r.period==='FULL'?'1 ngày':r.period==='AM'?'0,5 ngày sáng':'0,5 ngày chiều'}{r.note?' · '+r.note:''}</span></article>)}</div>}
  {data && data.workTotal>10 && <div className="customer-picker-pages"><button disabled={loading || data.workPage<=1} onClick={()=>onWorkPage(data.workPage-1)}>Trước</button><span>Trang {data.workPage}/{Math.ceil(data.workTotal/10)}</span><button disabled={loading || data.workPage*10>=data.workTotal} onClick={()=>onWorkPage(data.workPage+1)}>Sau</button></div>}
  </section></>;

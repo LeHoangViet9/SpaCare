@@ -275,3 +275,53 @@ PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở
 CONFIRMED: PDF để tải, in hoặc chia sẻ hóa đơn khách hàng và bảng kê hoa hồng theo nhân viên/tháng trên máy tính và điện thoại.
 PROPOSED kỹ thuật: API chỉ đọc từ phiên active và cùng spa. OWNER xem phạm vi spa; STAFF giữ quyền đọc hóa đơn hiện có, chỉ xuất hoa hồng của mình. Không ghi tài chính hoặc xác nhận thu tiền/chi lương. Bảng kê lấy toàn bộ tháng theo giờ Việt Nam, tách dịch vụ/bán gói, giữ điều chỉnh âm.
 Nút Tải PDF; sau khi tạo có Xem / In PDF và Chia sẻ PDF. Web Share chia sẻ file nếu được hỗ trợ, fallback mở PDF. Đổi bộ lọc hủy kết quả đang tạo. Canvas font thiết bị, A4 nhiều trang, lặp tiêu đề cột. PDF dạng ảnh, chưa tìm kiếm/copy chữ. Không gửi dữ liệu tới dịch vụ PDF ngoài. tests/pdf-browser-fixture.mjs dùng dữ liệu giả.
+
+
+## Mẫu bill Thanh Thư Spa - 23/10/2026
+Theo yêu cầu người dùng: PDF hóa đơn dạng bill dọc, đầu trang Thanh Thư Spa, địa chỉ CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên; hotline giữ 0329 357 116. Có thông tin khách, dịch vụ/quà tặng, tổng/đã trả/còn nợ, vùng khách ký và người lập, lời cảm ơn. Không tự thêm VAT, giảm giá hay xác nhận đã thanh toán. Vùng ký giấy không thay chữ ký điện tử đã lưu. Bảng kê hoa hồng giữ bố cục riêng.
+
+
+## Liệu trình theo số buổi hoặc thời gian — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: danh mục có hai loại lựa chọn: SESSIONS nhập số buổi, TIME nhập thời hạn và không giới hạn số lần làm (ví dụ triệt 24/36 tháng). Thay thế phần chỉ hỗ trợ số buổi trước đây và chốt BR-OPEN-007 trong phạm vi này. Cả hai loại vẫn ký, ghi lịch sử từng lần, hóa đơn buổi 0đ và hoa hồng thực hiện theo quy tắc hiện có; tài chính mua gói vẫn riêng.
+PROPOSED kỹ thuật: PackageTemplate/Treatment bổ sung packageType, durationMonths (1–120); TIME không lưu totalSessions/remaining, Treatment snapshot startsOn/expiresOn YYYY-MM-DD và usedSessions. Mặc định dữ liệu cũ thiếu packageType là SESSIONS, không backfill hay thay quyền lợi gói đã bán. Mốc từ ngày mua hay lần đầu vẫn OPEN: khi bán TIME (kể cả quà) phải chọn startsOn theo thỏa thuận, không tự mặc định. Hạn tính cộng tháng lịch, chặn ngày không tồn tại, kẹp cuối tháng; bao gồm ngày đầu/cuối theo giờ Việt Nam.
+API packageTemplate/updatePackageTemplate nhận packageType + totalSessions hoặc durationMonths, không cả hai; sellPackage thêm startsOn bắt buộc nếu gói chính/quà thuộc TIME. Tạo/gửi lại vẫn transaction + idempotency + audit và cùng spa. use/invoice/completeTreatmentAppointment giữ remainingBefore: số buổi còn với SESSIONS, bộ đếm usedSessions với TIME để bắt xung đột chữ ký (0 ở lần đầu). Ghi TIME tăng usedSessions, không giảm quota hoặc tự COMPLETED. Backend chặn chưa bắt đầu/hết hạn/bảo lưu khi ghi lần làm và kiểm tra ngày dự định khi tạo/dời lịch. Bảo lưu không tự cộng hạn; OWNER gia hạn riêng như hiện có.
+Giao diện danh mục chọn loại rồi hiện đúng ô; bán gói chọn ngày bắt đầu và xem hạn. Danh sách/thu ngân/lịch sử/khách hàng hiển thị hạn và không giới hạn thay số buổi. Không đổi indexes, không chạy migration dữ liệu vận hành.
+
+
+## Thời gian trên danh sách hóa đơn — 23/10/2026
+Theo yêu cầu người dùng: hiển thị Ngày lập (ngày/tháng/năm, giờ:phút theo Asia/Ho_Chi_Minh) ngay dưới mã hóa đơn trong danh sách Hóa đơn & công nợ, trên cả desktop/mobile; dùng createdAt đã có, không cần mở chi tiết. Bản ghi thiếu thời gian hiển thị Chưa ghi nhận, không tự suy ngày.
+
+
+## Hoa hồng chủ spa và thông tin khách — 23/10/2026
+CONFIRMED: chủ spa trực tiếp bán gói cũng được ghi nhận và hiển thị hoa hồng bán gói 5% như nhân viên theo tiền thực thu đủ điều kiện. Giữ quy tắc cũ về thời điểm hưởng, hoàn/đảo và chống trùng; không tự backfill người bán hoặc hoa hồng lịch sử. Trang Hoa hồng thêm bộ lọc nhanh Của tôi cho OWNER; danh sách người hưởng gồm OWNER/STAFF.
+GET /api/payroll view=commission và PDF hoa hồng bổ sung customerName/customerPhone từ Customer cùng spa, chỉ truy vấn customerId có trong các khoản hoa hồng đã lọc theo quyền, tháng và trang (PDF toàn bộ phạm vi xuất). STAFF chỉ xem khoản của mình, không nhận danh sách khách toàn spa hay ghi chú khách. Dữ liệu thiếu khách hiển thị Chưa ghi nhận. Không thay schema/index, số tiền hoặc trạng thái bảng lương.
+
+
+## Bảng lương cuối tháng — 23/10/2026
+Theo yêu cầu người dùng: trang Lương ưu tiên bảng tổng hợp theo tháng, một dòng mỗi bảng lương nhân viên: lương tính (kèm cơ bản), hoa hồng dịch vụ, hoa hồng bán gói, thưởng, khấu trừ/tạm ứng, thực nhận, trạng thái và thao tác. Trên điện thoại chuyển thẻ có nhãn. Công/nghỉ/ghi chú nằm trong Chi tiết công. Cài lương và công/nghỉ đưa xuống dưới bảng. Dữ liệu dùng snapshot Payroll và tổng toàn bộ lọc hiện có, không tự lập/duyệt/chi cuối tháng và không đổi công thức hay chính sách. Thực nhận đã bao gồm hai loại hoa hồng; không trừ leaveDeduction lần hai.
+
+
+## Chủ spa không tham gia lương/chấm công — 23/10/2026
+CONFIRMED theo yêu cầu mới nhất: Lương, chính sách lương, ngày công và nghỉ phép chỉ áp dụng cho STAFF; loại OWNER khỏi lựa chọn, danh sách, tổng hợp và phân trang. Chủ spa vẫn quản lý/duyệt/ghi chi lương nhân viên. Hoa hồng giữ OWNER/STAFF, chủ spa bán gói vẫn hưởng và xem hoa hồng theo quy tắc thực thu hiện hành. Nội dung này thay phần trước cho phép OWNER là người nhận lương/chấm công.
+PROPOSED kỹ thuật: GET /api/payroll view=salary giao scope được phép với IDs STAFF cùng spa trước mọi count/aggregate/page; view=commission giữ phạm vi cũ. Backend từ chối cấu hình/lập/duyệt/chi bảng lương, ghi công/nghỉ và duyệt nghỉ của OWNER; không chỉ ẩn trên UI. Không xóa hay sửa bảng lương/chấm công/hoa hồng lịch sử; bản OWNER cũ được giữ trong database nhưng không đưa vào danh sách/tổng lương hiện hành. Không thay schema/index hoặc tự chuyển khoản hoa hồng chủ spa thành chi lương.
+
+
+## Chia hoa hồng bán gói cho nhiều người tư vấn — 23/10/2026
+CONFIRMED: bán liệu trình có nút + Người cùng tư vấn; tổng quỹ hoa hồng vẫn 5% tiền thực thu đủ điều kiện, chia đều cho những người được chọn, không phải mỗi người 5%. OWNER vẫn được tham gia và hiện hoa hồng nhưng không thuộc lương/chấm công. Chỉ chia hoa hồng bán gói, không thay hoa hồng thực hiện dịch vụ.
+PROPOSED kỹ thuật: sellPackage nhận participantIds? (1–20 IDs không trùng, gồm OWNER/STAFF active cùng spa); nếu thiếu giữ tương thích sellerId hoặc user phiên. sellerId truyền kèm phải khớp phần tử đầu. Snapshot Invoice.saleParticipants=[{staffId,staffName}], giữ sellerId/sellerName đầu danh sách cho tương thích; không có action sửa nhóm sau bán, không backfill nhóm hóa đơn cũ.
+Gói một người giữ saleCommissionVersion=1/SaleCommission. Nhiều người dùng version=2 và SharedSaleCommission bổ sung: spaId,staffId,staffName,invoiceId,serviceId,serviceName,customerId,category=PACKAGE_SALE,sharedSale=true,sourceType/sourceId,shareCount,amount,earnedAt,payrollId. Unique (spaId,sourceType,sourceId,staffId), index (spaId,staffId,earnedAt desc). Không đổi/xóa unique index ledger cũ. Khởi tạo bổ sung bằng npm run db:commission-shares (hoặc db:setup với cấu hình seed cũ); không chạy vào DB vận hành trong phiên sửa code.
+Quỹ cộng dồn = floor((paid-refunded)/20). Phân số nguyên đồng: chia thương và dư theo staffId chuẩn hóa tăng dần (không phụ thuộc thứ tự chọn); mỗi người ghi chênh lệch quyền hưởng cộng dồn trước/sau sự kiện. Vì vậy thu nhiều đợt/đảo/hoàn có tổng và phần từng người đúng như thu một lần, lệch tối đa 1đ ở quyền hưởng cộng dồn. Không đổi người hưởng khi họ đổi tên/ngừng hoạt động sau bán.
+Payment/Allocation/refund/reversal giữ transaction tuần tự, Control guard, idempotency, audit; ledger share ghi cùng transaction và snapshot invoice tổng accrued. Không tăng 5% theo số người, quà 0đ/công nợ chưa thu không phát sinh. Khoản điều chỉnh âm vào phần chưa chốt, không sửa bảng đã duyệt/chi.
+Đọc hoa hồng/PDF/báo cáo union cả hai ledger với cùng scope người dùng/spa/tháng; STAFF chỉ xem phần của mình. Payroll thêm sharedSaleCommissionIds; tổng bán gói gồm cũ và chia, duyệt khóa IDs cả hai ledger, không đưa khoản của OWNER vào lương STAFF. Giao diện hiển thị số người chia và phần tiền của từng người, giữ thông tin khách. Preview lúc bán chỉ là dự kiến khi thu đủ.
+
+
+## Bảng lương chung trên điện thoại — 23/10/2026
+Theo chỉnh sửa mới nhất của người dùng, thay thiết kế thẻ từng người trên mobile: giữ một bảng chung nhiều cột, mỗi nhân viên một dòng, cuộn ngang trong vùng bảng và cố định cột tên. Có hướng dẫn vuốt ngang, vùng bảng focus được bằng bàn phím; không làm tràn ngang toàn trang. Không đổi dữ liệu/công thức lương.
+
+
+## Rút gọn bảng lương điện thoại — 23/10/2026
+Theo yêu cầu mới nhất tránh vuốt ngang dài: mobile hiển thị một bảng chung 4 cột Nhân viên/Lương/Hoa hồng/Thực nhận, vừa chiều rộng; gộp hoa hồng dịch vụ+bán gói trong cột Hoa hồng, đơn vị đồng ghi chung. Chi tiết mở một dòng toàn chiều rộng bên dưới để xem phân rã/thưởng/khấu trừ/tạm ứng và thao tác theo quyền/trạng thái. Desktop giữ các cột đầy đủ. Thay thiết kế bill thẻ và bảng 1180px cuộn dài trên điện thoại trước đó.
+
+
+## Bảng lương đầy đủ khi xoay điện thoại — 23/10/2026
+Yêu cầu mới nhất thay bảng mobile rút gọn: giữ một bảng chung đầy đủ 12 cột ở mọi kích thước: nhân viên, lương cơ bản, công/nghỉ, lương tính, HH dịch vụ, HH bán gói, thưởng/phụ cấp, khấu trừ, tạm ứng, thực nhận, trạng thái và thao tác. Không gộp/ẩn khoản tài chính vào Chi tiết. Cố định tên khi cuộn trong vùng bảng; có hướng dẫn xoay ngang điện thoại. Không tràn ngang toàn trang, không đổi công thức/quyền/dữ liệu.

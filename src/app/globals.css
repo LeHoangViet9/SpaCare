@@ -1760,3 +1760,38 @@ label textarea { margin-top: 8px; }
   .app .date-filter-pair > label { display: flex; flex-direction: column; gap: 6px; min-width: 0; width: 100%; }
   .app .compact-date-control > input[type="date"] { padding: 0; min-height: 0; }
 }
+
+.sale-participants { min-width:0; border:1px solid var(--line); border-radius:12px; padding:14px; display:grid; gap:12px; }
+.sale-participants legend { font-weight:700; padding-inline:6px; }
+.sale-participant-row { display:flex; gap:10px; align-items:end; min-width:0; }
+.sale-participant-row > label { flex:1; min-width:0; }
+.sale-participant-row > button { flex:none; }
+.sale-share-preview { display:grid; gap:8px; background:#f0f6f1; padding:12px; border-radius:8px; }
+.sale-share-preview span { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.sale-participants small { display:block; line-height:1.6; }
+
+/* Full detailed payroll table on desktop and mobile, including landscape. */
+.salary-table-hint { color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px; }
+.salary-table-scroll { width:100%; max-width:100%; min-width:0; overflow-x:auto; padding:0 0 12px; overscroll-behavior-x:contain; }
+.salary-table { width:100%; min-width:1740px; table-layout:auto; }
+.salary-caption { text-align:left; padding:8px 0 18px; color:var(--muted); font-size:13px; line-height:1.6; }
+.salary-table th { white-space:nowrap; }
+.salary-table td { vertical-align:top; padding:16px 12px; }
+.salary-table .salary-money { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.salary-table small { display:block; margin-top:8px; color:var(--muted); font-size:12px; line-height:1.6; }
+.salary-table .salary-net { background:#edf6ef; color:#245340; }
+.salary-table th:first-child, .salary-table tbody td:first-child { position:sticky; left:0; z-index:1; width:170px; min-width:170px; max-width:170px; background:#fff; box-shadow:2px 0 5px #253d3710; white-space:normal; overflow-wrap:anywhere; }
+.salary-table thead th:first-child { background:#f5f7f2; z-index:2; }
+.salary-cell { min-width:0; }
+.salary-table .actions { display:grid; gap:8px; min-width:130px; }
+.salary-table .actions button { white-space:normal; }
+.salary-table-scroll:focus-visible { outline:2px solid #356454; outline-offset:3px; }
+.salary-settings { padding:20px; }
+.salary-settings > summary { cursor:pointer; font-weight:700; }
+.salary-settings .payroll-people { margin-top:20px; }
+@media (max-width:760px) {
+ .salary-table th:first-child, .salary-table tbody td:first-child { width:135px; min-width:135px; max-width:135px; }
+ .salary-table th, .salary-table td { padding:12px 10px; font-size:13px; }
+ .salary-table .actions { min-width:125px; }
+ .salary-table .actions button { min-height:42px; }
+}

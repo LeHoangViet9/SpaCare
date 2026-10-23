@@ -22,3 +22,9 @@ test('PDF stores binary image lengths and valid byte offsets for multiple pages'
 test('commission export scopes all month rows, preserves negative adjustments and separates totals', () => {
   execFileSync(process.execPath,['--import','tsx',fileURLToPath(new URL('./pdf-export-fixture.ts',import.meta.url))],{env:{...process.env,MONGODB_URI:''},stdio:'pipe',timeout:15000});
 });
+
+ test('receipt PDF preserves 80mm width and image aspect ratio', () => {
+  const text = Buffer.from(imagePdf([{jpeg: new Uint8Array([255,216,255,217]),width:680,height:1360,pageWidth:226.77}])).toString('latin1');
+  assert.match(text, /MediaBox \[0 0 226\.77 453\.54\]/);
+  assert.match(text, /226\.77 0 0 453\.54 0 0 cm/);
+});
