@@ -1334,10 +1334,11 @@
 .public-product-search > div { display: flex; gap: 10px; }
 .public-product-search input { min-width: 0; flex: 1; }
 .public-products-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
-.public-product-card { min-width: 0; overflow: hidden; }
+.public-product-card { min-width: 0; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--pub-line); border-radius: 20px; background: #fff; }
 .public-product-card > img, .public-product-no-image { display: block; width: 100%; height: 260px; object-fit: contain; padding: 16px; background: #fff; }
 .public-product-no-image { display: grid; place-items: center; color: var(--pub-muted); background: var(--pub-sage); }
-.public-product-content { display: grid; gap: 12px; padding: 20px; }
+.public-product-content { display: flex; flex-direction: column; align-items: flex-start; flex: 1; gap: 12px; padding: 20px; }
+.public-product-content > .pub-btn { margin-top: auto; width: 100%; min-height: 48px; }
 .public-product-content h2 { font-size: 22px; line-height: 1.4; margin: 0; overflow-wrap: anywhere; }
 .public-product-content p { margin: 0; font-size: 16px; }
 .public-product-price { font-size: 23px; color: var(--pub-green); }
