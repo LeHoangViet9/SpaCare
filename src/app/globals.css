@@ -1642,8 +1642,27 @@ body:has(.modal-backdrop) { overflow: hidden; }
 
 .required-mark { color: #b42318; font-weight: 700; }
 .field-error { display: block; color: #b42318; font-size: 14px; margin-top: 5px; }
-.date-filter-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.date-filter-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; grid-column: 1 / -1; }
 .date-filter-pair label, .date-filter-pair input { min-width: 0; width: 100%; box-sizing: border-box; }
+/* Native date controls must shrink with their grid/flex cell on mobile Safari. */
+input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"]) {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+.filter-controls > *, .date-filter-pair > *, form > label, form > fieldset,
+.report-filters > label, .pub-form-grid > * { min-width: 0; }
+@media (max-width: 700px) {
+  input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"]) {
+    min-height: 48px;
+    padding-inline: 8px;
+  }
+  input::-webkit-datetime-edit { min-width: 0; padding: 0; }
+  .report-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-filters > label { width: 100%; }
+  .report-filters > button { grid-column: 1 / -1; }
+}
 @media (max-width: 700px) { .filter-controls .date-filter-pair { width: 100%; flex-basis: 100%; gap: 8px; } .app .date-filter-pair input { padding-inline: 8px; font-size: 15px; min-height: 48px; } }
 
 /* Consistent content gutters for standalone employee/payroll panels. */
@@ -1697,3 +1716,6 @@ label textarea { margin-top: 8px; }
   .staff-stats .report-stat:last-child { grid-column: 1 / -1; }
   .staff-workspace .responsive-table td { padding-block: 14px; }
 }
+
+.cashier-mode-help { margin: 0 0 16px; color: var(--muted); line-height: 1.6; }
+.cashier-modes button { white-space: normal; }
