@@ -1841,3 +1841,24 @@ label textarea { margin-top: 8px; }
  .salary-frame .salary-table-hint { padding-inline:16px; }
  .salary-frame .salary-caption { padding-inline:16px; }
 }
+
+.salary-mobile { display:none; }
+@media(max-width:760px) {
+ .salary-mobile { display:block; min-width:0; }
+ .salary-mobile + .salary-table-hint, .salary-mobile ~ .salary-table-scroll { display:none; }
+ .salary-mobile-note { font-size:12px; color:var(--muted); padding:0 14px; }
+ .salary-mobile-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
+ .salary-mobile-table th { background:#f5f7f2; font-size:12px; }
+ .salary-mobile-table th, .salary-mobile-table td { padding:12px 6px; border-bottom:1px solid var(--line); vertical-align:top; text-align:right; overflow-wrap:anywhere; font-size:12px; font-variant-numeric:tabular-nums; }
+ .salary-mobile-table th:first-child, .salary-mobile-table td:first-child { width:30%; text-align:left; padding-left:14px; }
+ .salary-mobile-table td:last-child { color:#245340; }
+ .salary-mobile-table small { display:block; margin-top:6px; font-size:11px; color:var(--muted); }
+ .salary-mobile-table button { font-size:12px; padding:8px; min-height:36px; margin-top:8px; }
+ .salary-mobile-detail td:first-child { width:auto; padding:14px; background:#f7faf6; }
+ .salary-mobile-detail dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; margin:0 0 14px; font-size:13px; }
+ .salary-mobile-detail dt { color:var(--muted); }
+ .salary-mobile-detail dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+ .salary-mobile-detail .actions { display:flex; flex-wrap:wrap; gap:8px; }
+ .salary-mobile-detail .actions button { flex:1 1 120px; min-height:42px; margin:0; }
+ .salary-frame > .inline-note { display:none; }
+}
