@@ -3,12 +3,12 @@ const id = z.string().regex(/^[a-f\d]{24}$/i);
 const name = z.string().trim().min(1).max(200);
 const quantity = z.number().int().min(1).max(1_000_000_000);
 const price = z.number().int().min(1).max(1_000_000_000_000);
-const product = z.object({ name, sku: z.string().trim().min(1).max(60).transform(s => s.toUpperCase()), unit: name.max(30), groupId: z.union([id, z.literal('')]).default(''), price, description: z.string().trim().max(2000).optional(), imageUrl: z.string().trim().url().max(2000).optional().or(z.literal('')), minStock: z.number().int().min(0).max(1_000_000_000).default(0) });
+const product = z.object({ name, sku: z.string().trim().min(1).max(60).transform(s => s.toUpperCase()).optional(), sizeMl: z.number().int().min(1).max(100_000), groupId: z.union([id, z.literal('')]).default(''), price, description: z.string().trim().max(2000).optional(), imageUrl: z.union([z.string().trim().url().max(2000), z.string().regex(/^\/api\/product-images\/[a-f\d]{24}$/i), z.literal('')]).optional(), minStock: z.number().int().min(0).max(1_000_000_000).default(0) });
 export const productInputs = {
   product, updateProduct: product.extend({ id }),
   productStatus: z.object({ id, active: z.boolean() }),
   productGroup: z.object({ name }), updateProductGroup: z.object({ id, name }),
-  stockMovement: z.object({ productId: id, direction: z.enum(['IN', 'OUT']), quantity, reason: z.string().trim().min(3).max(2000) }),
+  stockMovement: z.object({ productId: id, direction: z.enum(['IN', 'OUT']), quantity, reason: z.string().trim().max(2000).default('') }),
   sellProduct: z.object({ customerId: id, productId: id, quantity, unitPrice: price.optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), consultantId: id.optional() }),
 };
 export const productNameKey = (value: string) => value.trim().normalize('NFC').toLocaleLowerCase('vi').replace(/\s+/g, ' ');

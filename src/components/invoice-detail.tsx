@@ -1,10 +1,11 @@
 'use client';
+import { formatCurrency } from '@/lib/currency';
 import { useEffect, useState } from 'react';
 import { SignatureImage } from './signature-pad';
 import { auditActions } from '@/lib/audit-view';
 type Row = Record<string, any>;
-const money = (n: number) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ';
-export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService }: { record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onCompleteService?: (invoice: Row) => void }) {
+const money = formatCurrency;
+export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund }: { record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
   const [data, setData] = useState<Row | null>(null);
@@ -30,6 +31,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
         {data.total > 10 && <div className="customer-picker-pages"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</> : <>
         <p>#{data.invoice._id.slice(-6)} · {new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</p>
         <h3>{data.invoice.description}</h3><p>Tổng: <strong>{money(data.invoice.total)}</strong> · Đã trả: {money(data.invoice.paid)} · Còn nợ: {money(data.invoice.total - data.invoice.paid)}</p>
+        {data.invoice.kind === 'PACKAGE' && <p>Người bán: {data.invoice.sellerName || 'Chưa ghi ở giao dịch cũ'} · Đã hoàn: {money(data.invoice.refunded || 0)}</p>}{onRefund && data.invoice.kind === 'PACKAGE' && data.invoice.paid > (data.invoice.refunded || 0) && <button onClick={()=>onRefund(data.invoice)}>Ghi nhận hoàn tiền gói</button>}
         {data.invoice.kind === 'PRODUCT' && <p>Sản phẩm: {data.invoice.productSku} · {data.invoice.quantity} {data.invoice.productUnit} × {money(data.invoice.unitPrice)} · Đã xuất kho</p>}
         {data.invoice.performedAt && <p>Đã thực hiện: <strong>{data.invoice.performerName || 'Nhân viên đã ghi nhận'}</strong> · {new Date(data.invoice.performedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
         {onCompleteService && data.canCompleteService && <button onClick={() => onCompleteService(data.invoice)}>Hoàn thành dịch vụ / ghi hoa hồng</button>}

@@ -43,4 +43,5 @@ test('payroll navigation allows owner/staff but not an unimplemented manager rol
     }
   }
   for (const page of ['staff', 'audit', 'services', 'package_catalog']) assert.equal(canViewPage(page, { role: 'MANAGER' }), false);
+  for (const key of pageKeys()) assert.equal(canViewPage(key, { role: 'CUSTOMER' }), false);
 });

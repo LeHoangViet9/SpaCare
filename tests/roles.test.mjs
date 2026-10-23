@@ -8,5 +8,5 @@ test('quản lý chưa là vai trò hợp lệ: schema từ chối MANAGER, khô
   for (const role of ['MANAGER', 'ADMIN', 'owner']) {
     await assert.rejects(new User({ ...base, role }).validate(), error => error.errors?.role?.kind === 'enum');
   }
-  for (const role of ['OWNER', 'STAFF']) await new User({ ...base, role }).validate();
+  for (const role of ['OWNER', 'STAFF', 'CUSTOMER']) await new User({ ...base, role }).validate();
 });

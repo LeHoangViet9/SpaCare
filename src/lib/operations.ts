@@ -1,3 +1,5 @@
+import { leavesOverlap, summarizeLeave, attendanceSalary, dayUnits, leaveDays } from './leave-rules';
+import { packageCommissionDelta } from './sale-commission';
 import { isValidSignature, type Signature } from './signature';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
@@ -27,6 +29,8 @@ import {
   Idempotency,
   Commission,
   Payroll,
+  StaffLeave,
+  Workday, SaleCommission,
   Product, ProductGroup, StockMovement,
 } from './models';
 import {
@@ -39,6 +43,7 @@ import {
   invoiceState,
   packagePaymentDeadline,
   paymentEvidence,
+  withinSpaHours,
 } from './rules';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'ID không hợp lệ');
@@ -56,6 +61,7 @@ const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, ''
 const schemas = {
   ...productInputs,
   ...payrollInputs,
+  refundPackage: z.object({exceptionApproved:z.literal(true), invoiceId:objectId, amount:moneySchema, method:z.enum(['CASH','BANK_TRANSFER']), receivedConfirmation:z.literal(true), reason:z.string().trim().min(1).max(2000), transferReference:z.string().trim().max(500).optional()}),
   customer: z.object({ name: text, phone, notes: note, consultantId: objectId.optional() }),
   updateCustomer: z.object({ id: objectId, name: text, phone, notes: note, consultantId: objectId.optional() }),
   updateService: z.object({ id: objectId, name: text, price: moneySchema, duration: z.number().int().min(5).max(480), commission: zeroMoney.default(0), category: z.string().trim().max(100).default('') }),
@@ -130,7 +136,7 @@ export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
   'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
-  'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
+  'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
   'updateCustomer', 'updateService', 'serviceStatus', 'updateUser', 'userStatus',
@@ -249,18 +255,41 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         await invoice.save({ session });
         return commission;
       };
+      const syncSaleCommission = async (invoice:any, sourceType:string, sourceId:string) => {
+        if (invoice.kind !== 'PACKAGE' || invoice.saleCommissionVersion !== 1 || !invoice.sellerId) return;
+        const existing = await SaleCommission.findOne({...scope,sourceType,sourceId}).session(session); if(existing) return;
+        const {target:total,delta} = packageCommissionDelta(invoice.paid,invoice.refunded || 0,invoice.total,invoice.saleCommissionAccrued || 0);
+        if (delta) await create(SaleCommission,{staffId:invoice.sellerId,staffName:invoice.sellerName,serviceId:invoice.serviceId,serviceName:invoice.description,customerId:invoice.customerId,invoiceId:invoice._id,sourceType,sourceId,amount:delta,earnedAt:new Date()});
+        invoice.saleCommissionAccrued=total; await invoice.save({session});
+      };
       const pendingCommissions = async (staffId: string, month: string) => {
-        const bounds = monthBounds(month);
-        return Commission.find({ ...scope, staffId, payrollId: { $exists: false }, earnedAt: { $lt: bounds.end } }).sort({ earnedAt: 1, _id: 1 }).session(session);
+        const filter = {...scope,staffId,payrollId:{$exists:false},earnedAt:{$lt:monthBounds(month).end}};
+        const service = await Commission.find(filter).sort({earnedAt:1,_id:1}).session(session);
+        const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
+        return [...service,...sale];
+      };
+      const attendanceFor = async (staffId:string,month:string,confirmed:boolean) => {
+        const staff = await User.findOne({...scope,_id:staffId}).select('+salaryPolicy').session(session);
+        const leaves = await StaffLeave.find({...scope,staffId,$or:[{startDay:{$lt:monthBounds(month).end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})},endDay:{$gte:month+'-01'}},{startDay:{$exists:false},day:{$gte:month+'-01',$lt:monthBounds(month).end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})}}]}).sort({_id:1}).session(session);
+        const work = await Workday.find({...scope,staffId,day:{$gte:month+'-01',$lt:monthBounds(month).end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})}}).sort({day:1}).session(session);
+        const leaveStats = summarizeLeave(leaves.map(r=>r.toObject()),month);
+        const workdays = work.reduce((n,r)=>n+dayUnits(r.period),0);
+        return {salaryPolicy:staff?.salaryPolicy, leaveStats, workdays:confirmed ? workdays : null,
+          attendanceDigest:sha(JSON.stringify({policy:staff?.salaryPolicy,leaves:leaves.map(r=>r.toObject()),work:work.map(r=>r.toObject())}))};
       };
       const fillPayroll = (payroll: any, commissions: any[]) => {
-        payroll.commissionTotal = commissions.reduce((sum, c) => sum + c.amount, 0);
+        payroll.serviceCommissionTotal = commissions.filter(c=>c.category !== 'PACKAGE_SALE').reduce((n,c)=>n+c.amount,0);
+        payroll.saleCommissionTotal = commissions.filter(c=>c.category === 'PACKAGE_SALE').reduce((n,c)=>n+c.amount,0);
+        payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
         payroll.commissionCount = commissions.length;
         payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
-        payroll.commissionIds = commissions.map(c => c._id);
-        payroll.total = salaryTotal(payroll.baseSalary, payroll.commissionTotal, payroll.bonus, payroll.deductions);
+        payroll.commissionIds = commissions.filter(c=>c.category !== 'PACKAGE_SALE').map(c=>c._id);
+        payroll.saleCommissionIds = commissions.filter(c=>c.category === 'PACKAGE_SALE').map(c=>c._id);
+        let base; try { base = attendanceSalary(payroll.baseSalary,payroll.salaryPolicy,payroll.workdays,payroll.leaveStats || {permitted:0,unpermitted:0,paid:0,unpaid:0}); } catch(e) { ensure(false,(e as Error).message); }
+        Object.assign(payroll,base);
+        payroll.total = money(payroll.earnedBase + payroll.commissionTotal + payroll.bonus - payroll.deductions - (payroll.advance || 0), true);
       };
-      const payrollSnapshot = (p: any) => Object.fromEntries(['staffId', 'staffName', 'month', 'baseSalary', 'commissionTotal', 'commissionCount', 'carryoverCount', 'bonus', 'deductions', 'total', 'note', 'status', 'approvedBy', 'approvedAt', 'paidBy', 'paidAt', 'receiptId'].map(key => [key, p[key]]));
+      const payrollSnapshot = (p: any) => Object.fromEntries(['staffId', 'staffName', 'month', 'baseSalary', 'earnedBase', 'leaveDeduction', 'workdays', 'leaveStats', 'salaryPolicy', 'advance', 'serviceCommissionTotal', 'saleCommissionTotal', 'commissionTotal', 'commissionCount', 'carryoverCount', 'bonus', 'deductions', 'total', 'note', 'status', 'approvedBy', 'approvedAt', 'paidBy', 'paidAt', 'receiptId'].map(key => [key, p[key]]));
       const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId?: string, staffId = d.staffId || actor.id) => {
         ensure(!d.staffId || d.staffId === actor.id || actor.role === 'OWNER' || actor.cashier, 'Chỉ chủ spa hoặc thu ngân được chọn nhân viên thực hiện khác.', 403);
         const treatment = await get(Treatment, d.treatmentId);
@@ -317,10 +346,17 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const d = schemas[op].parse(data);
           const existingId = 'id' in d && typeof d.id === 'string' ? d.id : undefined;
           if (d.groupId) await get(ProductGroup, d.groupId);
-          ensure(!await Product.exists({ ...scope, sku: d.sku, ...(existingId ? { _id: { $ne: existingId } } : {}) }).session(session), 'Mã sản phẩm đã tồn tại.', 409);
-          const values = { name: d.name, sku: d.sku, unit: d.unit, price: d.price, groupId: d.groupId || undefined, description: d.description || undefined, imageUrl: (d.imageUrl && d.imageUrl.trim()) ? d.imageUrl.trim() : undefined, minStock: d.minStock ?? 0 };
+          if (d.imageUrl?.startsWith('/api/product-images/')) {
+            const imageId = d.imageUrl.slice('/api/product-images/'.length);
+            const image = await mongoose.connection.db!.collection('product_images.files').findOne({
+              _id: new mongoose.Types.ObjectId(imageId), 'metadata.spaId': actor.spaId, 'metadata.kind': 'PRODUCT_IMAGE',
+            }, { session });
+            ensure(image, 'Ảnh sản phẩm không thuộc spa này.', 400);
+          }
+          if (d.sku) ensure(!await Product.exists({ ...scope, sku: d.sku, ...(existingId ? { _id: { $ne: existingId } } : {}) }).session(session), 'Mã sản phẩm đã tồn tại.', 409);
+          const values = { name: d.name, ...(d.sku ? { sku: d.sku } : {}), sizeMl: d.sizeMl, price: d.price, groupId: d.groupId || undefined, description: d.description || undefined, imageUrl: (d.imageUrl && d.imageUrl.trim()) ? d.imageUrl.trim() : undefined, minStock: d.minStock ?? 0 };
           if (existingId) { target = await get(Product, existingId); Object.assign(target, values); await target.save({ session }); }
-          else target = await create(Product, values);
+          else target = await create(Product, { ...values, sku: d.sku || 'SP-' + new mongoose.Types.ObjectId().toHexString().toUpperCase(), unit: 'Sản phẩm' });
           break;
         }
         case 'productStatus': {
@@ -353,6 +389,57 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           await target.save({ session });
           break;
         }
+        case 'setSalaryPolicy': {
+          const {staffId,...policy} = schemas.setSalaryPolicy.parse(data);
+          target = await User.findOne({...scope,_id:staffId,role:{$in:['OWNER','STAFF']}}).select('+salaryPolicy').session(session);
+          ensure(target,'Không tìm thấy nhân viên.',404); appointmentBefore = {salaryPolicy:target.salaryPolicy};
+          target.salaryPolicy = policy; await target.save({session}); break;
+        }
+        case 'recordWorkday': {
+          const d = schemas.recordWorkday.parse(data); ensure(d.day <= today,'Không ghi ngày công thực tế trong tương lai.'); const staff = await get(User,d.staffId);
+          ensure(['OWNER','STAFF'].includes(staff.role),'Không phải tài khoản nhân sự.');
+          const leaves = await StaffLeave.find({...scope,staffId:d.staffId,status:{$ne:'REJECTED'}}).session(session);
+          ensure(!leaves.some(r => leavesOverlap(r.toObject(),{day:d.day,period:d.period,type:'WORK'})),'Ngày công trùng thời gian nghỉ đã ghi nhận.',409);
+          target = await Workday.findOne({...scope,staffId:d.staffId,day:d.day}).session(session);
+          appointmentBefore = target?.toObject() || {status:null};
+          if (!target) target = new Workday({...scope,staffId:d.staffId,day:d.day});
+          Object.assign(target,{...d,actorId:actor.id}); await target.save({session}); break;
+        }
+        case 'recordStaffLeave': {
+          const d = schemas.recordStaffLeave.parse(data);
+          ensure(actor.role === 'OWNER' || d.staffId === actor.id,'Chỉ được gửi ngày nghỉ của mình.',403);
+          const staff = await get(User,d.staffId); ensure(['OWNER','STAFF'].includes(staff.role),'Không phải tài khoản nhân sự.');
+          target = d.id ? await get(StaffLeave,d.id) : null;
+          ensure(!target || String(target.staffId) === d.staffId,'Không đổi nhân viên của bản ghi nghỉ.');
+          ensure(!target || actor.role === 'OWNER' || target.status === 'PENDING','Chỉ OWNER sửa bản nghỉ đã duyệt hoặc từ chối.',403);
+          ensure(actor.role === 'OWNER' || !d.paid,'Chỉ OWNER xác định nghỉ hưởng lương.',403);
+          const startDay = d.startDay || d.day!, endDay = d.endDay || startDay;
+          const candidate = {...d,day:startDay,startDay,endDay,status:target?.status || 'PENDING'};
+          const others = await StaffLeave.find({...scope,staffId:d.staffId,...(target ? {_id:{$ne:target._id}} : {})}).session(session);
+          ensure(!others.some(r => leavesOverlap(r.toObject(),candidate)),'Khoảng nghỉ trùng bản ghi khác.',409);
+          const work = await Workday.find({...scope,staffId:d.staffId,day:{$gte:startDay,$lte:endDay}}).session(session);
+          ensure(!work.some(r => leavesOverlap(candidate,{day:r.day,period:r.period,type:'WORK'})),'Khoảng nghỉ trùng ngày công.',409);
+          appointmentBefore = target?.toObject() || {status:null};
+          if (!target) target = new StaffLeave({...scope,staffId:d.staffId});
+          Object.assign(target,{day:startDay,startDay,endDay,period:d.period,type:d.type,note:d.note,paid:d.paid,staffName:staff.name,actorId:actor.id,status:candidate.status});
+          if (target.status === 'APPROVED') {target.reviewedBy=actor.id;target.reviewedAt=new Date();}
+          await target.save({session}); break;
+        }
+        case 'reviewStaffLeave': {
+          const d = schemas.reviewStaffLeave.parse(data); target = await get(StaffLeave,d.id);
+          ensure(target.status === 'PENDING','Bản ghi đã được xử lý; OWNER có thể sửa nội dung.',409);
+          appointmentBefore = target.toObject(); target.status=d.status;target.paid=d.status === 'APPROVED' && d.paid;target.reviewedBy=actor.id;target.reviewedAt=new Date();
+          await target.save({session});break;
+        }
+        case 'refundPackage': {
+          const d = schemas.refundPackage.parse(data); const invoice = await get(Invoice,d.invoiceId);
+          ensure(invoice.kind === 'PACKAGE','Chỉ hoàn tiền cho hóa đơn bán gói.');
+          ensure(d.amount <= invoice.paid - (invoice.refunded || 0),'Số hoàn vượt phần thực thu còn lại.');
+          paymentEvidence(d.method,d.receivedConfirmation,d.reason,d.transferReference);
+          target = await receipt({amount:d.amount,method:d.method,direction:'OUT',kind:'REFUND',customerId:invoice.customerId,note:d.reason,transferReference:d.transferReference});
+          invoice.refunded = (invoice.refunded || 0)+d.amount; await invoice.save({session});
+          await syncSaleCommission(invoice,'REFUND',String(target._id)); break;
+        }
         case 'setStaffSalary': {
           const d = schemas.setStaffSalary.parse(data);
           target = await User.findOne({ ...scope, _id: d.staffId }).select('+baseSalary').session(session);
@@ -367,7 +454,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(d.month <= today.slice(0, 7), 'Chưa lập bảng lương tháng tương lai.');
           ensure(!(d.bonus || d.deductions) || !!d.note.trim(), 'Nhập lý do cho thưởng hoặc khấu trừ.');
           const staff = await User.findOne({ ...scope, _id: d.staffId }).select('+baseSalary').session(session);
-          ensure(staff, 'Không tìm thấy nhân viên trong spa.', 404);
+          ensure(staff && ['OWNER','STAFF'].includes(staff.role), 'Không tìm thấy nhân viên trong spa.', 404);
           const existing = await Payroll.findOne({ ...scope, staffId: d.staffId, month: d.month }).session(session);
           ensure(!existing || existing.status === 'DRAFT', 'Bảng lương đã duyệt, không được sửa số liệu.', 409);
           ensure(existing ? d.id === String(existing._id) : !d.id, 'Bảng lương đã tồn tại hoặc đã thay đổi. Mở đúng bản nháp để cập nhật.', 409);
@@ -376,7 +463,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(baseSalary !== undefined, 'Cần cài lương cơ bản hoặc nhập lương tháng trước.');
           const commissions = await pendingCommissions(d.staffId, d.month);
           const { id, ...input } = d;
-          const values: any = { ...input, baseSalary, staffName: staff.name };
+          const attendance = await attendanceFor(d.staffId,d.month,d.attendanceConfirmed);
+          const values: any = { ...input, ...attendance, baseSalary, staffName: staff.name };
           fillPayroll(values, commissions);
           if (existing) { Object.assign(existing, values); await existing.save({ session }); target = existing; }
           else target = await create(Payroll, values);
@@ -389,10 +477,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           if (target.status !== 'DRAFT') { ensure(target.total === d.expectedTotal, 'Số tiền bảng lương đã thay đổi.', 409); break; }
           const commissions = await pendingCommissions(String(target.staffId), target.month);
           const ids = commissions.map(c => String(c._id)).sort().join(',');
-          ensure(ids === target.commissionIds.map((id: any) => String(id)).sort().join(','), 'Hoa hồng đã thay đổi. Cập nhật bản nháp trước khi duyệt.', 409);
+          const attendance = await attendanceFor(String(target.staffId),target.month,target.attendanceConfirmed);
+          ensure(target.attendanceDigest ? attendance.attendanceDigest === target.attendanceDigest : !attendance.salaryPolicy,'Ngày nghỉ, công hoặc chính sách đã đổi. Cập nhật nháp trước khi duyệt.',409);
+          ensure(ids === [...target.commissionIds,...(target.saleCommissionIds || [])].map((id: any) => String(id)).sort().join(','), 'Hoa hồng đã thay đổi. Cập nhật bản nháp trước khi duyệt.', 409);
           fillPayroll(target, commissions);
           ensure(target.total === d.expectedTotal, 'Số tiền đã thay đổi. Kiểm tra lại bảng lương.', 409);
           await Commission.updateMany({ ...scope, _id: { $in: target.commissionIds }, payrollId: { $exists: false } }, { $set: { payrollId: target._id } }, { session });
+          await SaleCommission.updateMany({...scope,_id:{$in:target.saleCommissionIds || []},payrollId:{$exists:false}},{$set:{payrollId:target._id}},{session});
           target.status = 'APPROVED'; target.approvedBy = actor.id; target.approvedAt = new Date();
           await target.save({ session });
           break;
@@ -520,6 +611,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const startAt = new Date(d.startAt);
           ensure(startAt >= new Date(), 'Không đặt lịch trong quá khứ.');
           const endAt = new Date(startAt.getTime() + service.duration * 60_000);
+            ensure(withinSpaHours(startAt, endAt), 'Lịch phải nằm trong giờ hoạt động 09:00–22:00.');
           const conflict = await Appointment.findOne({
             ...scope,
             status: 'CONFIRMED',
@@ -635,6 +727,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const duration = target.endAt.getTime() - target.startAt.getTime();
           ensure(duration > 0, 'Thời lượng lịch cũ không hợp lệ.');
           const endAt = new Date(startAt.getTime() + duration);
+            ensure(withinSpaHours(startAt, endAt), 'Lịch phải nằm trong giờ hoạt động 09:00–22:00.');
           const conflict = await Appointment.exists({ ...scope, _id: { $ne: target._id }, status: 'CONFIRMED', staffId: d.staffId, startAt: { $lt: endAt }, endAt: { $gt: startAt } }).session(session);
           ensure(!conflict, 'Nhân viên đã có lịch trong khoảng này.', 409);
           appointmentBefore = target.toObject();
@@ -663,7 +756,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           packagePaymentDeadline(d.dueDate, today);
           ensure(!d.gifts.length || d.promotion.trim().length > 0, 'Nhập đợt khuyến mãi khi có quà tặng.');
           const advisor = await consultant(customer, d.consultantId);
-          const invoice = await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', promotion: d.promotion, commission: service.commission || 0, ...advisor });
+          const seller = await get(User, d.sellerId || actor.id);
+          ensure(seller.active && ['OWNER','STAFF'].includes(seller.role), 'Nhân viên bán gói không hợp lệ.');
+          const invoice = await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', sellerId:seller._id, sellerName:seller.name, saleCommissionVersion:1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
           target = await create(Treatment, { customerId: d.customerId, serviceId: service._id, templateId: template._id, invoiceId: invoice._id, name: template.name, totalSessions: template.totalSessions, remaining: template.totalSessions });
           for (const gift of d.gifts) {
             const giftTemplate = await get(PackageTemplate, gift.templateId);
@@ -734,6 +829,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           await updatePaid(invoice, d.amount);
           // No CashEntry here: allocation is not new money received.
           target = await create(Allocation, { ...d, approvedBy: actor.id });
+          await syncSaleCommission(invoice,'ALLOCATION',String(target._id));
           break;
         }
         case 'reverseAllocation': {
@@ -746,6 +842,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(deposit.balance <= deposit.amount, 'Số dư cọc vượt tiền gốc.');
           await deposit.save({ session });
           await updatePaid(invoice, -target.amount);
+          ensure((invoice.refunded || 0) <= invoice.paid,'Không thể đảo tiền đã hoàn cho khách.');
+          await syncSaleCommission(invoice,'REVERSE_ALLOCATION',String(target._id));
           target.reversed = true;
           await target.save({ session });
           break;
@@ -773,6 +871,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             amount: d.amount,
             receiptId: entry._id,
           });
+          await syncSaleCommission(invoice,'PAYMENT',String(target._id));
           break;
         }
         case 'cash': {
@@ -783,7 +882,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'reverseCash': {
           const d = schemas.reverseCash.parse(data);
           const original = await get(CashEntry, d.id);
-          ensure(original.kind !== 'PAYROLL', 'Khoản chi lương không được đảo qua thao tác thu chi thông thường.');
+          ensure(!['PAYROLL','REFUND'].includes(original.kind), 'Khoản chi lương/hoàn tiền không được đảo qua thao tác thu chi thông thường.');
           ensure(!original.reversed && original.kind !== 'REVERSAL', 'Giao dịch không thể đảo.');
           if (original.kind === 'DEPOSIT') {
             const deposit = await Deposit.findOne({
@@ -803,6 +902,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ensure(payment, 'Không tìm thấy lần thanh toán.');
             const invoice = await get(Invoice, String(payment.invoiceId));
             await updatePaid(invoice, -payment.amount);
+            ensure((invoice.refunded || 0) <= invoice.paid,'Không thể đảo tiền đã hoàn cho khách.');
+            await syncSaleCommission(invoice,'REVERSE_PAYMENT',String(payment._id));
             payment.reversed = true;
             await payment.save({ session });
           }

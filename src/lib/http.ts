@@ -15,7 +15,7 @@ export function failure(error: unknown) {
 
   if (error instanceof ZodError)
     return Response.json(
-      { error: error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ') },
+      { error: 'Vui lòng kiểm tra các trường đã nhập.', fields: Object.fromEntries(error.issues.map(i => [i.path.join('.'), /[à-ỹÀ-Ỹ]/.test(i.message) ? i.message : 'Giá trị không hợp lệ hoặc chưa nhập đủ.'])) },
       { status: 400 },
     );
 

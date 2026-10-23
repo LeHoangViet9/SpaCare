@@ -13,7 +13,7 @@ test('BUG-UI-001: linked-record filter survives URL reconstruction and reload', 
   }
   const input = 'Khách & gói #1 + tiếng Việt?';
   assert.equal(new URL(workspaceHref('customers', input), 'http://localhost').searchParams.get('search'), input);
-  assert.equal(workspaceHref('overview'), '/');
+  assert.equal(workspaceHref('overview'), '/workspace');
 });
 
 test('BUG-UI-002: STAFF counts only own CONFIRMED visits within the Vietnam day', () => {

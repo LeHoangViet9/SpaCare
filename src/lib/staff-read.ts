@@ -5,7 +5,7 @@ export async function readStaffProfile(user: Actor, id: string) {
   ensure(user.role === 'OWNER', 'Chỉ chủ spa xem hồ sơ nhân viên.', 403);
   ensure(/^[a-f\d]{24}$/i.test(id), 'ID không hợp lệ.');
   const scope = { spaId: user.spaId };
-  const staff = await User.findOne({ ...scope, _id: id }).select('name email role cashier active createdAt').lean();
+  const staff = await User.findOne({ ...scope, _id: id, role: { $in: ['OWNER', 'STAFF'] } }).select('name email role cashier active createdAt').lean();
   ensure(staff, 'Không tìm thấy nhân viên.', 404);
   const [appointments, completed, sessions, customers] = await Promise.all([
     Appointment.countDocuments({ ...scope, staffId: id }), Appointment.countDocuments({ ...scope, staffId: id, status: 'COMPLETED' }),

@@ -1,5 +1,7 @@
+import { formatCurrency } from './currency';
 type Row = Record<string, any>;
 export const auditActions: Record<string, string> = {
+  recordStaffLeave:'Ghi / sửa nghỉ phép',reviewStaffLeave:'Duyệt / từ chối nghỉ',recordWorkday:'Ghi ngày công',setSalaryPolicy:'Cài chính sách lương',refundPackage:'Ghi nhận hoàn tiền gói theo ngoại lệ',
   product: 'Thêm sản phẩm', updateProduct: 'Sửa sản phẩm', productStatus: 'Đổi trạng thái sản phẩm', productGroup: 'Thêm nhóm sản phẩm', updateProductGroup: 'Sửa nhóm sản phẩm', stockMovement: 'Nhập / xuất kho', sellProduct: 'Bán sản phẩm',
   setServiceCommission: 'Cài hoa hồng dịch vụ',
   setStaffSalary: 'Cài lương cơ bản', savePayroll: 'Lập / cập nhật lương nháp', approvePayroll: 'Duyệt bảng lương', payPayroll: 'Chi trả lương', completeInvoiceService: 'Hoàn thành dịch vụ lẻ',
@@ -21,7 +23,7 @@ export function auditValue(key: string, value: any, data: Row): string {
     return (record?.name || record?.description || fields[key]) + ' #' + String(value).slice(-6);
   }
   if (typeof value === 'boolean') return value ? 'Có' : 'Không';
-  if ((money.has(key) || key === 'commission' || key === 'unitPrice') && typeof value === 'number') return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+  if ((money.has(key) || key === 'commission' || key === 'unitPrice') && typeof value === 'number') return formatCurrency(value);
   if (['startAt', 'endAt'].includes(key)) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? 'Ngày giờ không hợp lệ' : date.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });

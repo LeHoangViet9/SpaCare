@@ -312,3 +312,64 @@ PROPOSED kỹ thuật đang triển khai:
 
 ## Cài hoa hồng theo dịch vụ — 22/10/2026
 CONFIRMED: mỗi dịch vụ có một mức hoa hồng cố định dùng chung cho người trực tiếp thực hiện. OWNER tạo/cập nhật mức qua nút Tạo hoa hồng hoặc Sửa hoa hồng. Không thay đổi ledger đã ghi, bảng lương đã duyệt hay snapshot hóa đơn đã tạo. Quyền OWNER và snapshot vẫn theo triển khai hiện hành.
+
+## BR-PRODUCT-001 - Dung tích sản phẩm tính bằng ml
+CONFIRMED. Nguồn: yêu cầu người dùng ngày 22/10/2026. Khi thêm hoặc sửa danh mục sản phẩm, nhập dung tích theo số ml thay cho trường đơn vị dạng chai/lọ. Dung tích là số nguyên dương; tồn kho vẫn đếm số sản phẩm. Dữ liệu cũ chưa có dung tích giữ nguyên và không tự suy đoán.
+
+## BR-PUBLIC-001 - Trang chủ và dịch vụ công khai
+Trạng thái: CONFIRMED. Nguồn: yêu cầu người dùng ngày 22/10/2026.
+- Đường dẫn `/` là trang chủ công khai của SpaCare, luôn hiển thị mà không tự động chuyển hướng đến `/login`.
+- Khách chưa đăng nhập được xem toàn bộ trang chủ, danh sách dịch vụ `/services`, chi tiết dịch vụ `/services/[id]` và thực hiện đặt lịch `/booking`.
+- Tuyệt đối không để lộ dữ liệu nội bộ như hoa hồng nhân viên, giá vốn hoặc cấu hình quản trị ra ngoài trang công khai.
+- Khi người dùng đã đăng nhập truy cập `/`, vẫn hiển thị trang chủ công khai cùng thông tin tài khoản và nút điều hướng tương ứng với vai trò.
+
+## BR-CUSTOMER-001 - Phân quyền và cổng khách hàng
+Trạng thái: CONFIRMED. Nguồn: yêu cầu người dùng ngày 22/10/2026.
+- Tài khoản vai trò CUSTOMER được truy cập dashboard khách hàng `/customer` để theo dõi lịch hẹn, số buổi liệu trình còn lại và hóa đơn thanh toán của chính mình.
+- CUSTOMER bị chặn tuyệt đối (HTTP 403) khi truy cập không gian quản lý `/workspace` hoặc bất kỳ API quản trị nội bộ nào (`/api/workspace`, `/api/operations`, `/api/customers`, `/api/payroll`, `/api/products`, `/api/staff`, v.v.).
+- Không cho phép bất kỳ khách hàng nào xem hoặc truy cập dữ liệu của khách hàng khác.
+- Đăng nhập: OWNER và STAFF được điều hướng đến `/workspace`; CUSTOMER được điều hướng đến `/customer`.
+
+## BR-APT-002 - Giờ hoạt động và giờ hẹn
+Trạng thái: CONFIRMED. Nguồn: yêu cầu người dùng ngày 23/10/2026.
+- Spa nhận lịch trong khung 09:00–22:00 theo giờ Việt Nam (Asia/Ho_Chi_Minh).
+- Toàn bộ thời lượng dịch vụ phải kết thúc muộn nhất lúc 22:00 và nằm trong cùng ngày hoạt động. Lịch đặt mới và lịch dời đều được backend kiểm tra.
+- Giao diện đặt lịch hiển thị các giờ bắt đầu cách nhau 30 phút; chỉ hiển thị giờ đủ thời lượng để kết thúc trước giờ đóng cửa.
+- Mục Lịch theo ngày hiển thị dạng trục thời gian ngang từ 09:00 đến 22:00, chia theo nhân viên. Lịch cũ ngoài khung vẫn được hiển thị và đánh dấu để không làm mất dữ liệu.
+Ví dụ kiểm tra: dịch vụ 60 phút nhận 21:00, từ chối 21:30; mọi dịch vụ từ chối giờ bắt đầu trước 09:00.
+
+## BR-APT-003 - Báo kín lịch khi đặt trên web
+CONFIRMED theo yêu cầu người dùng 23/10/2026: nếu không còn nhân viên rảnh trong toàn bộ thời lượng dịch vụ, trả 409 và báo “Khung giờ này đã có lịch, vui lòng chọn giờ khác”. Giữ quy tắc trùng theo nhân viên; còn nhân viên khác rảnh vẫn được đặt. Lịch CONFIRMED giữ chỗ; POSTPONED/CANCELLED không giữ chỗ. Hai lịch tiếp nối được phép.
+PROPOSED kỹ thuật: dùng Control guard chung với thao tác nội bộ, transaction snapshot/majority và retry của MongoDB; yêu cầu UUID Idempotency-Key để gửi lại không sinh lịch thứ hai; ghi audit cùng transaction. Không tạo hồ sơ khách khi đặt thất bại.
+
+## Đơn giản phiếu kho - 23/10/2026
+CONFIRMED, yêu cầu người dùng 23/10/2026: phiếu nhập/xuất kho thủ công không bắt buộc lý do, form không hiển thị ô lý do. Thay yêu cầu nhập lý do trước đây. Khi thao tác từ sản phẩm cụ thể, giữ sản phẩm đó và không chọn lại. Backend vẫn kiểm tra OWNER, cùng spa, số lượng, tồn kho và giữ transaction/idempotency/audit.
+
+## Ảnh và danh mục sản phẩm công khai - 23/10/2026
+BR-PRODUCT-IMAGE-001 CONFIRMED: OWNER tải ảnh qua thư viện/camera; khách được xem danh mục sản phẩm đang bán. Backend kiểm tra phiên active, quyền và spa khi gắn ảnh. PROPOSED kỹ thuật: nhận JPG/PNG/WebP tối đa 5 MB, kiểm tra chữ ký định dạng, lưu GridFS; ảnh sản phẩm là ảnh công khai. Chưa hỗ trợ HEIC. Danh mục công khai chỉ có thông tin sản phẩm, không có SKU/tồn chính xác/cảnh báo kho/lịch sử. Instance MVP dùng spa đầu tiên theo _id cho danh mục công khai, không suy ra tenant từ đầu vào khách.
+
+
+## Báo cáo và nhân viên — 23/10/2026
+PROPOSED kỹ thuật theo yêu cầu tiếp tục: báo cáo tách giá trị hóa đơn (ngày tạo, thanh toán hiện tại), thu chi (ngày ghi sổ), kết quả nhân viên (ngày phát sinh). Không chốt doanh thu kế toán BR-OPEN-006. OWNER xem nhân viên; OWNER/thu ngân xem báo cáo tài chính. Tổng hợp toàn bộ bộ lọc cùng spa trước phân trang; CSV chỉ xuất tổng hợp.
+GET /api/payroll view=salary thêm salarySummary: [{_id: DRAFT|APPROVED|PAID, count, total}] theo tháng/nhân viên trên toàn bộ dữ liệu. STAFF chỉ xem mình; danh sách nhân sự không gồm CUSTOMER. Không thay schema hoặc action chi lương. Buổi thiếu staffId không suy người thực hiện từ actorId. UI chung thẻ tổng hợp và liên kết Nhân viên/Bảng lương/Hoa hồng, thẻ mobile hai cột. Hai URL EasySalon chưa truy cập được trong phiên này.
+
+
+## BR-LEAVE-001 — Thống kê nghỉ — 23/10/2026
+CONFIRMED: nghỉ có phép/không phép chỉ để thống kê, chủ spa quyết định khi chốt lương; không tự động khấu trừ, thay lương hoặc hủy lịch. PROPOSED kỹ thuật: OWNER ghi/sửa ngày nghỉ; STAFF xem chính mình. Một ngày nguyên/người, chưa suy chính sách nửa ngày hay quy trình xin phép.
+StaffLeave: spaId, staffId, staffName snapshot, day YYYY-MM-DD, type PERMITTED|UNPERMITTED, note, actorId, timestamps. Unique (spaId,staffId,day), index (spaId,day desc). Không xóa lịch sử audit.
+POST /api/operations action recordStaffLeave {staffId,day,type,note?}: OWNER, cùng spa, nhân sự OWNER/STAFF; upsert theo người/ngày trong transaction guard có idempotency và audit before/after. Không ghi tài chính. GET /api/payroll view=salary thêm leaves (10/trang), leavePage, leaveTotal, leaveSummary [{_id:{staffId,type},count}], lọc tháng/nhân viên và phạm vi phiên trước tổng hợp/phân trang. UI trong Lương thống kê toàn tháng, danh sách ngày và nút ghi/sửa dành OWNER.
+
+
+## Cập nhật ưu tiên mới nhất — 23/10/2026: nhập liệu, nghỉ và hoa hồng bán gói
+Nguồn CONFIRMED: PROMPT CẬP NHẬT SPACARE trong phiên hiện tại. Thay thế BR-LEAVE-001 trước đó về chỉ thống kê: nay có duyệt, nửa ngày và cấu hình tính lương. Thay thế phạm vi cũ không có hoa hồng bán hàng bằng hoa hồng bán gói 5% trên thực thu đủ điều kiện; giữ nguyên hoa hồng thực hiện dịch vụ cố định.
+CONFIRMED: OWNER duyệt và sửa bản nghỉ đã duyệt; có phép không đồng nghĩa hưởng lương; không suy ngày công từ lịch hẹn. OWNER cấu hình và chốt lương. Tiền lưu nguyên VNĐ, giao diện vi-VN. Không bắt mã sản phẩm, lý do/nội dung nhập kho; giữ dữ liệu lịch sử.
+PROPOSED kỹ thuật đang áp dụng (không phải quy chế spa đã xác nhận):
+- Bản nghỉ có startDay/endDay (gồm ngày cuối), period FULL/AM/PM cho mỗi ngày trong khoảng, type PERMITTED/UNPERMITTED, status PENDING/APPROVED/REJECTED, paid độc lập; reviewedBy/reviewedAt lưu lúc OWNER duyệt. STAFF gửi/sửa PENDING của mình; OWNER ghi/sửa mọi bản. Legacy thiếu status tiếp tục được xem là ngày đã ghi, paid=false, không bịa người duyệt. Không tính bản từ chối/chờ duyệt vào lương.
+- Kiểm tra overlap theo ngày + sáng/chiều trong transaction Control chung. Nghỉ trùng công đã ghi bị từ chối; công không trùng nghỉ đang giữ chỗ; hai nửa khác buổi có thể cùng ngày. Công thực tế nhập bởi OWNER, không nhận ngày tương lai.
+- Chính sách riêng từng người: standardDays, paidLeaveDays theo THÁNG, mode NONE hoặc DAILY. NONE/không cấu hình giữ lương tháng. DAILY yêu cầu OWNER xác nhận đủ dữ liệu công; earnedBase=round(baseSalary*min(standardDays,workdays+min(paidLeaveDays,nghỉ đã duyệt paid))/standardDays). Không tự coi thiếu lịch là nghỉ. Không tự tính OT, thuế, BHXH, phép tích lũy/năm. Giá trị 26 trong form chỉ gợi ý chưa lưu, không phải chính sách mặc định.
+- Một Payroll hiện có: tổng = earnedBase + serviceCommissionTotal + saleCommissionTotal + bonus - deductions - advance; leaveDeduction chỉ là phần đã giảm trong earnedBase, không trừ lần hai. advance là khoản đã nhận do OWNER nhập, không ghi thêm dòng tiền; chưa có sổ tạm ứng riêng. Thiếu công khi DAILY trả lỗi. Lương âm bị từ chối, cần quy trình bù trừ riêng. Chốt kiểm tra fingerprint ngày nghỉ/công/chính sách và tập hoa hồng trước khi khóa. Sửa nguồn sau khi chốt không sửa bảng đã duyệt.
+- Hóa đơn PACKAGE mới snapshot sellerId/sellerName tách consultant và performer. Không backfill người bán cho hóa đơn cũ. Giá đủ điều kiện là tổng giá bán sau giảm, phần đã thanh toán; cọc thực nhận sau khi phân bổ vào gói được tính một lần, không tính khi mới nhận cọc. Công thức cộng dồn floor((paid-refunded)/20), phát sinh delta nên chia đợt không sai làm tròn. Quà 0 và công nợ chưa thu không tạo hoa hồng bán.
+- SaleCommission là ledger bổ sung để giữ nguyên unique index Commission dịch vụ cũ, không phải bảng lương thứ hai. Unique (spaId,sourceType,sourceId). Cùng payment/allocation/refund/reversal và idempotency/audit trong transaction. Điều chỉnh âm vào kỳ chưa chốt kế tiếp, không sửa khoản/bảng đã chi.
+- refundPackage chỉ ghi hoàn ĐÃ THỰC HIỆN, OWNER xác nhận ngoại lệ và lý do. Không tự cho quyền hoàn khi khách dừng gói (BR-TRT-002 giữ), không dùng reverseCash làm hoàn tiền, không tự chuyển tiền. Cộng refunded riêng; paid giữ tổng đã thanh toán, không tái tạo công nợ từ tiền hoàn. Không tự đổi buổi/quyền lợi khi hoàn; điều kiện được hoàn và cách xử lý quyền lợi còn OPEN. REFUND không cho đảo bằng reverseCash thông thường.
+- SKU cũ giữ nguyên khi sửa nếu không gửi; tạo mới sinh nội bộ SP-ObjectId, không phải trường nhân viên nhập. Phiếu kho vẫn chỉ số lượng như module đang có, chi mua hàng vẫn ghi riêng trong sổ thu chi; không thêm hoặc đổi chính sách giá nhập.
+Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn mức phép theo tháng hay năm/cộng dồn, cách làm tròn, OT/ngày lễ, quản lý sổ tạm ứng và bù trừ hoa hồng âm vượt lương; điều kiện ngoại lệ hoàn tiền/quyền lợi sau hoàn.

@@ -1,8 +1,9 @@
 'use client';
+import { formatCurrency } from '@/lib/currency';
 import { useEffect, useState } from 'react';
 type Row = Record<string, any>;
 type Field = { key: string; label: string; type?: string; min?: number; max?: number; optional?: boolean; options?: [string, string][]; hint?: string };
-const money = (value: number) => new Intl.NumberFormat('vi-VN').format(value || 0) + 'đ';
+const money = formatCurrency;
 
 function stockBadge(r: Row) {
   if (!r.active) return <span className="badge badge-inactive">Ngừng bán</span>;
@@ -26,24 +27,28 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
   const canEdit = canManage ?? data?.canManage;
   const fields: Field[] = [
     { key: 'name', label: 'Tên sản phẩm' },
-    { key: 'sku', label: 'Mã sản phẩm (SKU)' },
     { key: 'groupId', label: 'Nhóm sản phẩm', optional: true, options: [['', 'Chưa phân nhóm'], ...groups.map(g => [g._id, g.name] as [string, string])] },
-    { key: 'unit', label: 'Đơn vị (chai, hộp, tuýp…)' },
+    { key: 'sizeMl', label: 'Dung tích (ml)', type: 'number', min: 1, max: 100000, hint: 'Nhập dung tích của một sản phẩm, ví dụ 250 ml.' },
     { key: 'price', label: 'Giá bán (VNĐ)', type: 'number', min: 1, max: 1_000_000_000_000 },
-    { key: 'minStock', label: 'Mức tồn tối thiểu (cảnh báo)', type: 'number', min: 0, max: 1_000_000_000, hint: 'Khi tồn kho ≤ mức này, sản phẩm hiển thị cảnh báo "Tồn thấp". Để 0 nếu không cần cảnh báo.' },
+    { key: 'minStock', optional:true, label: 'Mức tồn tối thiểu (cảnh báo)', type: 'number', min: 0, max: 1_000_000_000, hint: 'Khi tồn kho ≤ mức này, sản phẩm hiển thị cảnh báo "Tồn thấp". Để 0 nếu không cần cảnh báo.' },
     { key: 'description', label: 'Mô tả sản phẩm', optional: true, hint: 'Thành phần, công dụng, hướng dẫn sử dụng…' },
-    { key: 'imageUrl', label: 'Đường dẫn hình ảnh (URL)', optional: true, hint: 'Dán URL hình ảnh sản phẩm, ví dụ https://example.com/image.jpg' },
+    { key: 'imageUrl', label: 'Ảnh sản phẩm', type: 'product-image', optional: true },
   ];
-  const edit = (r?: Row) => onOpen(r ? 'Sửa sản phẩm' : 'Thêm sản phẩm', r ? 'updateProduct' : 'product', fields, r ? { ...r, id: r._id, groupId: r.groupId || '', description: r.description || '', imageUrl: r.imageUrl || '', minStock: r.minStock ?? 0 } : { unit: 'Chai', groupId: '', minStock: 0 }, 'Số lượng tồn được ghi qua Nhập kho / Xuất kho, không sửa trực tiếp trong danh mục.');
+  const edit = (r?: Row) => onOpen(r ? 'Sửa sản phẩm' : 'Thêm sản phẩm', r ? 'updateProduct' : 'product', fields, r ? { ...r, id: r._id, groupId: r.groupId || '', description: r.description || '', imageUrl: r.imageUrl || '', minStock: r.minStock ?? 0, sizeMl: r.sizeMl ?? '' } : { groupId: '', minStock: 0 }, 'Số lượng tồn được ghi qua Nhập kho / Xuất kho, không sửa trực tiếp trong danh mục.');
   const editGroup = (r?: Row) => onOpen(r ? 'Sửa nhóm sản phẩm' : 'Thêm nhóm sản phẩm', r ? 'updateProductGroup' : 'productGroup', [{ key: 'name', label: 'Tên nhóm sản phẩm' }], r ? { id: r._id, name: r.name } : {});
   function movement(direction: 'IN' | 'OUT', r?: Row) {
-    onOpen(direction === 'IN' ? 'Nhập kho' : 'Xuất kho', 'stockMovement', [{ key: 'productId', label: 'Sản phẩm', options: (data?.products || []).map((p: Row) => [p._id, `${p.name} · ${p.sku} · Tồn ${p.stock} ${p.unit}`]) }, { key: 'quantity', label: 'Số lượng', type: 'number', min: 1, max: 1_000_000_000 }, { key: 'reason', label: 'Lý do / nội dung phiếu kho' }], { productId: r?._id || '', direction, quantity: 1 }, 'Phiếu kho chỉ cập nhật số lượng. Khoản chi mua hàng cần ghi riêng trong Sổ thu chi; bán hàng hãy dùng Thu ngân.');
+    const title = direction === 'IN' ? 'Nhập kho' : 'Xuất kho';
+    const movementFields: Field[] = r ? [] : [{ key: 'productId', label: 'Sản phẩm', options: (data?.products || []).map((p: Row) => [p._id, `${p.name} · ${p.sku} · Tồn ${p.stock} ${p.unit}`]) }];
+    movementFields.push({ key: 'quantity', label: 'Số lượng', type: 'number', min: 1, max: 1_000_000_000 });
+    onOpen(r ? `${title} — ${r.name}` : title, 'stockMovement', movementFields,
+      { productId: r?._id || '', direction, quantity: 1 },
+      `${r ? `Tồn hiện tại: ${r.stock} ${r.unit}. ` : ''}Phiếu kho chỉ cập nhật số lượng. Khoản chi mua hàng cần ghi riêng trong Sổ thu chi; bán hàng hãy dùng Thu ngân.`);
   }
 
   const lowStockCount = section === 'products' && data?.rows ? data.rows.filter((r: Row) => r.active && r.stock === 0).length : 0;
   const warnStockCount = section === 'products' && data?.rows ? data.rows.filter((r: Row) => r.active && r.stock > 0 && r.minStock > 0 && r.stock <= r.minStock).length : 0;
 
-  return <div className="payroll-workspace"><section className="panel">
+  return <div className="payroll-workspace"><section className="panel panel-padded">
     <div className="section-head"><h3>{section === 'products' ? 'Danh sách sản phẩm' : section === 'product_groups' ? 'Nhóm sản phẩm' : 'Kho hàng'}</h3>
       <div className="actions">
         {canEdit && (section === 'products' ? <button className="primary" disabled={loading} onClick={() => edit()}>＋ Thêm sản phẩm</button>
@@ -61,7 +66,7 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
     )}
 
     <div className="filter-controls">
-      <label><strong>Tìm {section === 'product_groups' ? 'nhóm' : 'sản phẩm'}</strong><input type="search" value={search} maxLength={100} placeholder="Tên hoặc mã sản phẩm" onChange={e => { setSearch(e.target.value); setPage(1); }} /></label>
+      <label><strong>Tìm {section === 'product_groups' ? 'nhóm' : 'sản phẩm'}</strong><input type="search" value={search} maxLength={100} placeholder="Tên sản phẩm" onChange={e => { setSearch(e.target.value); setPage(1); }} /></label>
       {section !== 'product_groups' && <>
         <label>Nhóm<select value={group} onChange={e => { setGroup(e.target.value); setPage(1); }}><option value="">Tất cả nhóm</option>{groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}</select></label>
         <label>Trạng thái<select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
@@ -101,7 +106,7 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
                   <div>
                     <strong>{r.name}</strong>
                     <p className="product-meta">{r.sku} · {groups.find(g => g._id === r.groupId)?.name || 'Chưa phân nhóm'}</p>
-                    <p><b>{money(r.price)}</b> / {r.unit} · Tồn: <b>{r.stock}</b>{r.minStock > 0 && <span className="product-min-stock"> · Tối thiểu: {r.minStock}</span>}</p>
+                    <p><b>{money(r.price)}</b> / sản phẩm{r.sizeMl ? ` · ${r.sizeMl} ml` : ''} · Tồn: <b>{r.stock}</b>{r.minStock > 0 && <span className="product-min-stock"> · Tối thiểu: {r.minStock}</span>}</p>
                   </div>
                   <div className="product-card-badges">
                     {stockBadge(r)}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { money, invoiceState, amountDue, allocationResult, overlaps, spaDay, dayBounds, confirmation } from '../src/lib/rules.ts';
+import { money, invoiceState, amountDue, allocationResult, overlaps, spaDay, dayBounds, confirmation, withinSpaHours } from '../src/lib/rules.ts';
 test('cọc 500k áp 350k còn 150k và hóa đơn hết nợ', () => {
   const result = allocationResult(500000, 350000, 350000);
   assert.deepEqual(result, { balance: 150000, due: 0 });
@@ -21,6 +21,15 @@ test('lịch nối tiếp được phép, giao nhau bị phát hiện', () => {
   const date = t => new Date(`2026-10-19T${t}:00+07:00`);
   assert.equal(overlaps(date('09:00'), date('10:00'), date('10:00'), date('11:00')), false);
   assert.equal(overlaps(date('09:00'), date('10:00'), date('09:30'), date('10:30')), true);
+});
+test('lịch phải bắt đầu từ 09:00 và kết thúc không muộn hơn 22:00 giờ Việt Nam', () => {
+  const at = time => new Date(`2026-10-23T${time}:00+07:00`);
+  assert.equal(withinSpaHours(at('09:00'), at('10:00')), true);
+  assert.equal(withinSpaHours(at('21:00'), at('22:00')), true);
+  assert.equal(withinSpaHours(at('08:59'), at('09:30')), false);
+  assert.equal(withinSpaHours(at('21:30'), at('22:01')), false);
+  assert.equal(withinSpaHours(at('21:30'), new Date('2026-10-23T17:00:00Z')), false);
+  assert.equal(withinSpaHours(at('21:30'), at('21:00')), false);
 });
 test('ngày spa chuyển đúng tại 00h Việt Nam', () => {
   assert.equal(spaDay(new Date('2026-10-19T16:59:59Z')), '2026-10-19');

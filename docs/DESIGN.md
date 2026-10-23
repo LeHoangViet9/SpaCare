@@ -212,3 +212,44 @@ Các phiếu chi PAYROLL hiển thị Chi lương và không có Đảo sai sót
 
 ## Cài hoa hồng theo dịch vụ — 22/10/2026
 Trang Hoa hồng của OWNER có vùng Hoa hồng theo dịch vụ, nút ＋ Tạo hoa hồng mở chọn dịch vụ + tiền cố định mỗi lần. Danh sách tìm theo tên, phân trang10, Sửa hoa hồng từng dịch vụ; dịch vụ ngừng có nhãn. Chưa có dịch vụ dẫn sang Thêm dịch vụ. STAFF chỉ xem khoản hưởng, không có cấu hình.
+
+## Lịch hẹn ngang và giờ hoạt động - 23/10/2026
+CONFIRMED theo yêu cầu người dùng: giờ vận hành 09:00–22:00 Asia/Ho_Chi_Minh. Public booking tạo mốc bắt đầu mỗi 30 phút, lọc theo duration để endAt không vượt 22:00. Backend áp dụng cùng kiểm tra cho appointment, rescheduleAppointment và POST /api/booking. Lịch theo ngày trình bày trục ngang chia theo nhân viên; lịch cũ ngoài giờ vẫn hiện với viền cảnh báo. Đây là giờ hoạt động nghiệp vụ, không thay đổi schema.
+
+## Đặt lịch web và cạnh tranh khung giờ - 23/10/2026
+Frontend giữ UUID cho cùng nội dung khi retry, tạo UUID mới nếu nội dung đổi, gửi thời gian theo +07:00 và bỏ số điện thoại giả. Khi backend trả 409, hiển thị thông báo trong role=alert, giữ form để khách chọn giờ khác. Backend kiểm tra overlap bằng startAt < end mới và endAt > start mới, chỉ CONFIRMED, chung Control guard với operations để tránh race. Không trả chi tiết lịch của người khác.
+
+## Đơn giản phiếu kho - 23/10/2026
+Nhập/xuất từ thẻ sản phẩm: tiêu đề ghi tên sản phẩm, mô tả có SKU/tồn hiện tại; productId giữ trong defaults, form chỉ nhập số lượng và không hiển thị lý do. Nút nhập/xuất chung vẫn có bộ chọn sản phẩm.
+
+## Ảnh và danh mục sản phẩm công khai - 23/10/2026
+Form sản phẩm dùng bộ chọn ảnh với nút Chọn ảnh/Chụp ảnh, preview và Bỏ ảnh. Khóa nút lưu trong lúc tải; lỗi tải giữ ảnh cũ và hiển thị thông báo. Ảnh tối đa 5 MB; HEIC hiển thị hướng dẫn đổi JPG. Menu desktop/mobile/footer có Sản phẩm; danh mục công khai dạng thẻ 3 cột desktop, 2 cột tablet, 1 cột điện thoại, ảnh lazy load, tìm kiếm và phân trang. Không hiển thị dữ liệu kho chính xác cho khách.
+
+## Giao diện dùng chung - 23/10/2026
+Theo yêu cầu người dùng: ngoài và trong dùng cùng bộ màu, font, nút, ô nhập và thẻ nội dung trong ui.css. Brand dùng chung cho trang công khai, quản lý và đăng nhập/đăng ký; menu công khai dùng một cấu hình cho desktop/mobile; ServiceCard dùng chung trang chủ và danh mục. Trang chủ rút gọn thành giới thiệu, dịch vụ, sản phẩm qua liên kết và thông tin spa; footer liên hệ gọn, giờ 09:00–22:00. Không đổi route công khai, quyền, dữ liệu hoặc luồng nghiệp vụ; /workspace vẫn là tổng quan quản lý và / là trang chủ công khai.
+
+
+## Báo cáo và nhân viên — 23/10/2026
+PROPOSED kỹ thuật theo yêu cầu tiếp tục: báo cáo tách giá trị hóa đơn (ngày tạo, thanh toán hiện tại), thu chi (ngày ghi sổ), kết quả nhân viên (ngày phát sinh). Không chốt doanh thu kế toán BR-OPEN-006. OWNER xem nhân viên; OWNER/thu ngân xem báo cáo tài chính. Tổng hợp toàn bộ bộ lọc cùng spa trước phân trang; CSV chỉ xuất tổng hợp.
+GET /api/payroll view=salary thêm salarySummary: [{_id: DRAFT|APPROVED|PAID, count, total}] theo tháng/nhân viên trên toàn bộ dữ liệu. STAFF chỉ xem mình; danh sách nhân sự không gồm CUSTOMER. Không thay schema hoặc action chi lương. Buổi thiếu staffId không suy người thực hiện từ actorId. UI chung thẻ tổng hợp và liên kết Nhân viên/Bảng lương/Hoa hồng, thẻ mobile hai cột. Hai URL EasySalon chưa truy cập được trong phiên này.
+
+
+## BR-LEAVE-001 — Thống kê nghỉ — 23/10/2026
+CONFIRMED: nghỉ có phép/không phép chỉ để thống kê, chủ spa quyết định khi chốt lương; không tự động khấu trừ, thay lương hoặc hủy lịch. PROPOSED kỹ thuật: OWNER ghi/sửa ngày nghỉ; STAFF xem chính mình. Một ngày nguyên/người, chưa suy chính sách nửa ngày hay quy trình xin phép.
+StaffLeave: spaId, staffId, staffName snapshot, day YYYY-MM-DD, type PERMITTED|UNPERMITTED, note, actorId, timestamps. Unique (spaId,staffId,day), index (spaId,day desc). Không xóa lịch sử audit.
+POST /api/operations action recordStaffLeave {staffId,day,type,note?}: OWNER, cùng spa, nhân sự OWNER/STAFF; upsert theo người/ngày trong transaction guard có idempotency và audit before/after. Không ghi tài chính. GET /api/payroll view=salary thêm leaves (10/trang), leavePage, leaveTotal, leaveSummary [{_id:{staffId,type},count}], lọc tháng/nhân viên và phạm vi phiên trước tổng hợp/phân trang. UI trong Lương thống kê toàn tháng, danh sách ngày và nút ghi/sửa dành OWNER.
+
+
+## Cập nhật ưu tiên mới nhất — 23/10/2026: nhập liệu, nghỉ và hoa hồng bán gói
+Nguồn CONFIRMED: PROMPT CẬP NHẬT SPACARE trong phiên hiện tại. Thay thế BR-LEAVE-001 trước đó về chỉ thống kê: nay có duyệt, nửa ngày và cấu hình tính lương. Thay thế phạm vi cũ không có hoa hồng bán hàng bằng hoa hồng bán gói 5% trên thực thu đủ điều kiện; giữ nguyên hoa hồng thực hiện dịch vụ cố định.
+CONFIRMED: OWNER duyệt và sửa bản nghỉ đã duyệt; có phép không đồng nghĩa hưởng lương; không suy ngày công từ lịch hẹn. OWNER cấu hình và chốt lương. Tiền lưu nguyên VNĐ, giao diện vi-VN. Không bắt mã sản phẩm, lý do/nội dung nhập kho; giữ dữ liệu lịch sử.
+PROPOSED kỹ thuật đang áp dụng (không phải quy chế spa đã xác nhận):
+- Bản nghỉ có startDay/endDay (gồm ngày cuối), period FULL/AM/PM cho mỗi ngày trong khoảng, type PERMITTED/UNPERMITTED, status PENDING/APPROVED/REJECTED, paid độc lập; reviewedBy/reviewedAt lưu lúc OWNER duyệt. STAFF gửi/sửa PENDING của mình; OWNER ghi/sửa mọi bản. Legacy thiếu status tiếp tục được xem là ngày đã ghi, paid=false, không bịa người duyệt. Không tính bản từ chối/chờ duyệt vào lương.
+- Kiểm tra overlap theo ngày + sáng/chiều trong transaction Control chung. Nghỉ trùng công đã ghi bị từ chối; công không trùng nghỉ đang giữ chỗ; hai nửa khác buổi có thể cùng ngày. Công thực tế nhập bởi OWNER, không nhận ngày tương lai.
+- Chính sách riêng từng người: standardDays, paidLeaveDays theo THÁNG, mode NONE hoặc DAILY. NONE/không cấu hình giữ lương tháng. DAILY yêu cầu OWNER xác nhận đủ dữ liệu công; earnedBase=round(baseSalary*min(standardDays,workdays+min(paidLeaveDays,nghỉ đã duyệt paid))/standardDays). Không tự coi thiếu lịch là nghỉ. Không tự tính OT, thuế, BHXH, phép tích lũy/năm. Giá trị 26 trong form chỉ gợi ý chưa lưu, không phải chính sách mặc định.
+- Một Payroll hiện có: tổng = earnedBase + serviceCommissionTotal + saleCommissionTotal + bonus - deductions - advance; leaveDeduction chỉ là phần đã giảm trong earnedBase, không trừ lần hai. advance là khoản đã nhận do OWNER nhập, không ghi thêm dòng tiền; chưa có sổ tạm ứng riêng. Thiếu công khi DAILY trả lỗi. Lương âm bị từ chối, cần quy trình bù trừ riêng. Chốt kiểm tra fingerprint ngày nghỉ/công/chính sách và tập hoa hồng trước khi khóa. Sửa nguồn sau khi chốt không sửa bảng đã duyệt.
+- Hóa đơn PACKAGE mới snapshot sellerId/sellerName tách consultant và performer. Không backfill người bán cho hóa đơn cũ. Giá đủ điều kiện là tổng giá bán sau giảm, phần đã thanh toán; cọc thực nhận sau khi phân bổ vào gói được tính một lần, không tính khi mới nhận cọc. Công thức cộng dồn floor((paid-refunded)/20), phát sinh delta nên chia đợt không sai làm tròn. Quà 0 và công nợ chưa thu không tạo hoa hồng bán.
+- SaleCommission là ledger bổ sung để giữ nguyên unique index Commission dịch vụ cũ, không phải bảng lương thứ hai. Unique (spaId,sourceType,sourceId). Cùng payment/allocation/refund/reversal và idempotency/audit trong transaction. Điều chỉnh âm vào kỳ chưa chốt kế tiếp, không sửa khoản/bảng đã chi.
+- refundPackage chỉ ghi hoàn ĐÃ THỰC HIỆN, OWNER xác nhận ngoại lệ và lý do. Không tự cho quyền hoàn khi khách dừng gói (BR-TRT-002 giữ), không dùng reverseCash làm hoàn tiền, không tự chuyển tiền. Cộng refunded riêng; paid giữ tổng đã thanh toán, không tái tạo công nợ từ tiền hoàn. Không tự đổi buổi/quyền lợi khi hoàn; điều kiện được hoàn và cách xử lý quyền lợi còn OPEN. REFUND không cho đảo bằng reverseCash thông thường.
+- SKU cũ giữ nguyên khi sửa nếu không gửi; tạo mới sinh nội bộ SP-ObjectId, không phải trường nhân viên nhập. Phiếu kho vẫn chỉ số lượng như module đang có, chi mua hàng vẫn ghi riêng trong sổ thu chi; không thêm hoặc đổi chính sách giá nhập.
+Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn mức phép theo tháng hay năm/cộng dồn, cách làm tròn, OT/ngày lễ, quản lý sổ tạm ứng và bù trừ hoa hồng âm vượt lương; điều kiện ngoại lệ hoàn tiền/quyền lợi sau hoàn.

@@ -1,105 +1,3 @@
-:root {
-  --ink:#253d37;
-  --green:#356454;
-  --muted:#7a8881;
-  --line:#e5e9e3;
-  --paper:#f6f7f2;
-  --white:#fff;
-  --sage:#e8eee5;
-  --orange:#bd7751
-}
-
-* {
-  box-sizing:border-box
-}
-
-body {
-  margin:0;
-  color:var(--ink);
-  background:var(--paper);
-  font-family:Arial,Helvetica,sans-serif;
-  font-size:14px
-}
-
-button,input,select,textarea {
-  font:inherit
-}
-
-button {
-  cursor:pointer;
-  border:1px solid #d6dfd5;
-  border-radius:8px;
-  background:white;
-  color:var(--ink);
-  padding:9px 13px;
-  transition:background .15s
-}
-
-button:hover {
-  background:#eef3ea
-}
-
-button:disabled {
-  cursor:wait;
-  opacity:.55
-}
-
-button.primary {
-  background:var(--green);
-  border-color:var(--green);
-  color:white;
-  padding:12px 17px;
-  font-weight:600
-}
-
-button.primary:hover {
-  background:#244b3e
-}
-
-button:focus-visible,input:focus-visible,select:focus-visible {
-  outline:3px solid #9cbb9e;
-  outline-offset:3px
-}
-
-input,select,textarea {
-  display:block;
-  width:100%;
-  padding:12px;
-  border:1px solid #dce3da;
-  border-radius:8px;
-  background:#fff;
-  color:var(--ink);
-  min-width:0
-}
-
-input[type=checkbox] {
-  width:20px;
-  height:20px
-}
-
-label {
-  display:block;
-  font-size:13px;
-  font-weight:600
-}
-
-label input,label select {
-  margin-top:8px
-}
-
-label small {
-  display:block;
-  color:var(--muted);
-  font-weight:400;
-  line-height:1.5;
-  margin-top:6px
-}
-
-form {
-  display:grid;
-  gap:20px
-}
-
 h1,h2,h3,p {
   margin-top:0
 }
@@ -172,7 +70,7 @@ p {
   margin-bottom:12px
 }
 
-nav {
+.sidebar > nav, .mobile-menu-panel > nav {
   display:flex;
   flex-direction:column;
   gap:4px;
@@ -639,13 +537,7 @@ nav {
   line-height:1.5
 }
 
-.panel {
-  background:white;
-  border:1px solid var(--line);
-  border-radius:12px;
-  margin-bottom:24px;
-  overflow:hidden
-}
+.panel { margin-bottom: 24px; overflow: hidden; }
 
 .section-head {
   padding:22px 24px;
@@ -1087,7 +979,7 @@ pre {
     display:none
   }
 
-nav {
+.sidebar > nav, .mobile-menu-panel > nav {
     display:flex;
     overflow:auto;
     gap:6px
@@ -1254,7 +1146,7 @@ td:first-child { white-space: normal; min-width: 0; overflow-wrap: anywhere; }
 .mobile-toolbar, .mobile-bottom-nav, .mobile-menu-panel, .mobile-menu-backdrop { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .cell-value { min-width: 0; }
-.main, .page, .panel { min-width: 0; }
+.main, .page, .panel { margin-bottom: 24px; overflow: hidden; }
 body:has(.modal-backdrop) { overflow: hidden; }
 
 @media (max-width: 700px) {
@@ -1492,7 +1384,7 @@ body:has(.modal-backdrop) { overflow: hidden; }
 
 /* Cashier: catalog and receipt stay visible together on desktop. */
 .cashier { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .75fr); gap: 20px; align-items: start; }
-.cashier .panel { margin: 0; padding: 20px; }
+.cashier .panel { margin-bottom: 24px; overflow: hidden; }
 .cashier-customer { grid-column: 1 / -1; }
 .cashier-customer .customer-picker-results { max-height: 160px; }
 .cashier-customer .customer-picker { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
@@ -1522,7 +1414,7 @@ body:has(.modal-backdrop) { overflow: hidden; }
   .cashier-receipt { position: static; }
 }
 @media (max-width: 700px) {
-  .cashier .panel { padding: 16px; }
+  .cashier .panel { margin-bottom: 24px; overflow: hidden; }
   .cashier-customer .customer-picker { grid-template-columns: minmax(0, 1fr); }
   .cashier-card { padding: 12px; min-height: 116px; }
   .cashier-modes { gap: 6px; }
@@ -1546,9 +1438,22 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .profile-summary strong { font-size: 20px; overflow-wrap: anywhere; }
 .invoice-history article { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
 .appointment-agenda > section { margin: 20px 0; }
-.agenda-visit { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
-.agenda-time { color: var(--green); font-size: 20px; }
-.agenda-visit .text-button { align-self: flex-start; padding: 0; }
+.appointment-timeline-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.appointment-timeline { display: grid; grid-template-columns: 150px repeat(26, 40px); min-width: 1190px; }
+.timeline-corner, .timeline-hour { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; min-height: 42px; padding: 8px; background: var(--paper); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.timeline-corner { left: 0; z-index: 3; border-right: 1px solid var(--line); }
+.timeline-hour { grid-column: span 2; justify-content: flex-start; border-right: 1px solid var(--line); }
+.timeline-staff-row { display: grid; grid-column: 1 / -1; grid-template-columns: 150px repeat(26, 40px); min-height: 84px; }
+.timeline-staff-name { position: sticky; left: 0; z-index: 1; display: flex; align-items: center; padding: 10px; overflow: hidden; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-track { display: grid; grid-column: 2 / -1; grid-row: 1; grid-template-columns: repeat(26, 40px); grid-template-rows: 1fr; position: relative; min-height: 84px; border-bottom: 1px solid var(--line); background: #fff; }
+.timeline-slot { grid-row: 1; border-right: 1px solid var(--line); background: linear-gradient(to bottom, transparent 48%, #f0f2ef 49%, #f0f2ef 51%, transparent 52%); }
+.timeline-appointment { grid-row: 1; z-index: 1; align-self: stretch; min-width: 0; margin: 8px 2px; overflow: hidden; border: 1px solid #8fb4a1; border-radius: 8px; background: #e7f2eb; color: var(--ink); }
+.timeline-appointment.outside-hours { border-color: #cf8744; background: #fff2e5; }
+.timeline-appointment-content { display: flex; height: 100%; flex-direction: column; gap: 3px; padding: 6px; overflow: hidden; font-size: 11px; }
+.timeline-appointment-content strong, .timeline-appointment-content span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-appointment-content .text-button { min-width: 0; padding: 0; overflow: hidden; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-appointment-content .timeline-complete { align-self: flex-start; min-height: 24px; margin-top: auto; padding: 2px 6px; font-size: 10px; }
+.timeline-note { margin-top: 8px; color: #8b541d; font-size: 12px; }
 @media (max-width: 700px) {
   .list-filters { padding: 12px; margin-bottom: 16px; }
   .filter-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -1559,9 +1464,10 @@ body:has(.modal-backdrop) { overflow: hidden; }
   .profile-summary strong { font-size: 18px; }
   .profile-tabs { gap: 6px; }
   .profile-tabs button { flex: 1; font-size: 12px; padding: 10px 7px; }
-  .agenda-visit { grid-template-columns: 54px minmax(0, 1fr); gap: 12px; }
-  .agenda-visit > div:last-child { grid-column: 2; flex-direction: row; align-items: center; }
-  .agenda-time { font-size: 18px; }
+  .appointment-timeline-scroll { margin-inline: -4px; }
+  .appointment-timeline { grid-template-columns: 112px repeat(26, 40px); }
+  .timeline-staff-row { grid-template-columns: 112px repeat(26, 40px); }
+  .timeline-staff-name { padding: 8px; font-size: 12px; }
 }
 
 .payroll-config { padding: 20px; }
@@ -1573,12 +1479,12 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .payroll-record dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; margin: 18px 0; }
 .payroll-record dd { margin: 0; text-align: right; }
 .payroll-record .actions { margin-top: 16px; flex-wrap: wrap; }
-.payroll-workspace > .panel { padding: 20px; }
+.payroll-workspace > .panel { margin-bottom: 24px; overflow: hidden; }
 .badge.draft { background: #fff1d7; color: #805e20; }
 .badge.approved { background: #e7effa; color: #315d91; }
 @media (max-width: 700px) {
   .payroll-people > article { flex-direction: column; align-items: stretch; }
-  .payroll-workspace > .panel { padding: 16px; }
+  .payroll-workspace > .panel { margin-bottom: 24px; overflow: hidden; }
   .payroll-record { padding: 14px; }
   .payroll-record .section-head { flex-wrap: wrap; gap: 10px; }
 }
@@ -1675,3 +1581,119 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .inventory-tabs { margin-top: 16px; }
 
 
+
+/* Larger text and touch targets inside the management workspace on phones. */
+@media (max-width: 700px) {
+  .app { font-size: 16px; line-height: 1.6; }
+  .app button, .app input, .app select, .app textarea { font-size: 16px; }
+  .app button, .app input:not([type="checkbox"]), .app select { min-height: 48px; }
+  .app .page { padding-inline: 16px; }
+  .app .page-heading h1 { font-size: 28px; }
+  .app .responsive-table tbody tr td { font-size: 16px; padding: 12px; gap: 12px; grid-template-columns: minmax(90px, 34%) minmax(0, 1fr); }
+  .app .responsive-table td::before { font-size: 14px; line-height: 1.55; }
+  .app .cell-stack small, .app .metric small, .app .metric > span,
+  .app .inline-note, .app .filter-note, .app .badge,
+  .app .product-meta, .app .product-min-stock, .app .product-description { font-size: 14px; line-height: 1.55; }
+  .app .metric strong { font-size: clamp(21px, 5.4vw, 27px); }
+  .app .filter-controls input, .app .filter-controls select { font-size: 16px; min-height: 48px; }
+  .app .actions { gap: 10px; }
+  .app .mobile-bottom-nav small { font-size: 12px; line-height: 1.45; }
+  .app .mobile-account { font-size: 14px; }
+  .app .mobile-menu-panel .nav-item, .app .mobile-menu-panel .nav-group-header { font-size: 16px; min-height: 48px; }
+  .app .timeline-appointment-content, .app .timeline-appointment-content .text-button { font-size: 14px; }
+  .app .timeline-appointment-content .timeline-complete { font-size: 13px; }
+}
+@media (max-width: 700px) {
+  .modal label, .detail-modal label { font-size: 16px; line-height: 1.5; }
+  .modal input:not([type="checkbox"]), .modal select, .modal textarea,
+  .detail-modal input:not([type="checkbox"]), .detail-modal select, .detail-modal textarea { font-size: 16px; min-height: 48px; }
+  .modal small, .detail-modal small { font-size: 14px; line-height: 1.6; }
+  .modal-actions button { min-height: 48px; font-size: 16px; }
+}
+
+.route-loading { min-height: 65vh; display: grid; place-items: center; padding: 24px; }
+.route-loading-card { width: min(100%, 540px); padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+.route-loading-card strong { font-size: 22px; }
+.route-loading-card p { color: var(--muted); font-size: 16px; }
+.route-loading-placeholder { height: 18px; margin-top: 16px; border-radius: 6px; background: var(--sage); }
+.route-loading-placeholder.short { width: 65%; }
+
+.product-image-picker { display: grid; gap: 12px; margin: 16px 0; }
+.product-image-preview, .product-image-empty { width: 100%; max-width: 340px; height: 220px; object-fit: contain; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.product-image-empty { display: grid; place-items: center; color: var(--muted); }
+.product-image-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.product-image-actions button { min-height: 48px; }
+
+/* Shared reporting and payroll layout. */
+.reports-workspace, .payroll-workspace { display: grid; gap: 20px; min-width: 0; }
+.report-controls { display: grid; gap: 16px; }
+.report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+.report-stat { display: grid; gap: 8px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #fff; min-width: 0; }
+.report-stat small, .report-stat span { color: var(--muted); font-size: 14px; }
+.report-stat strong { font-size: clamp(22px, 2.3vw, 30px); overflow-wrap: anywhere; }
+.report-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 14px; padding-top: 16px; }
+@media (max-width: 700px) {
+  .report-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .report-stat { padding: 14px; }
+  .report-stat strong { font-size: 22px; }
+  .reports-workspace .section-head { flex-wrap: wrap; gap: 12px; }
+  .reports-workspace .section-head input { width: 100%; min-width: 0; }
+}
+
+.required-mark { color: #b42318; font-weight: 700; }
+.field-error { display: block; color: #b42318; font-size: 14px; margin-top: 5px; }
+.date-filter-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.date-filter-pair label, .date-filter-pair input { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 700px) { .filter-controls .date-filter-pair { width: 100%; flex-basis: 100%; gap: 8px; } .app .date-filter-pair input { padding-inline: 8px; font-size: 15px; min-height: 48px; } }
+
+/* Consistent content gutters for standalone employee/payroll panels. */
+.panel-padded, .payroll-config { padding: 24px; }
+.panel-padded > .section-head, .payroll-config > .section-head {
+  padding: 0 0 18px; gap: 16px; flex-wrap: wrap;
+}
+.panel-padded > h3, .payroll-config > h3 { margin: 0 0 18px; line-height: 1.5; }
+.panel-padded > .inline-note { margin: 0 0 20px; line-height: 1.7; }
+.payroll-people > article { gap: 20px; padding-block: 18px; line-height: 1.65; }
+.payroll-people > article > div { min-width: 0; }
+.payroll-people strong, .payroll-record strong { line-height: 1.5; overflow-wrap: anywhere; }
+.payroll-people p { margin: 8px 0 0; line-height: 1.7; }
+.payroll-people small { display: block; margin-top: 8px; line-height: 1.65; }
+.payroll-record dl { column-gap: 24px; row-gap: 14px; line-height: 1.65; }
+.payroll-record dt, .payroll-record dd { min-width: 0; overflow-wrap: anywhere; }
+.profile-summary > div { min-width: 0; display: grid; align-content: start; gap: 8px; }
+.profile-summary small { line-height: 1.6; }
+.profile-summary strong { line-height: 1.4; overflow-wrap: anywhere; }
+.form-label-text { line-height: 1.6; }
+label textarea { margin-top: 8px; }
+@media (max-width: 700px) {
+  .panel-padded, .payroll-config { padding: 18px 16px; }
+  .panel-padded > .section-head, .payroll-config > .section-head { padding: 0 0 16px; gap: 12px; }
+  .payroll-people > article { padding-block: 16px; gap: 14px; }
+  .payroll-record dl { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: 16px; }
+}
+
+/* Shared gutters also cover inventory, cashier and report controls. */
+.panel-padded > .filter-controls { margin-bottom: 18px; }
+.panel-padded > .profile-tabs { margin-bottom: 18px; }
+.panel-padded > p { line-height: 1.7; }
+.cashier .panel-padded > .section-head { padding: 0 0 18px; }
+.cashier .panel-padded > h3 { margin-bottom: 18px; }
+.reports-workspace .panel > .report-pagination { padding: 16px 24px 24px; }
+@media (max-width: 700px) {
+  .cashier .panel-padded > .section-head { padding: 0 0 16px; }
+  .reports-workspace .panel > .report-pagination { padding: 16px; }
+}
+
+.staff-workspace { display: grid; gap: 22px; min-width: 0; }
+.staff-workspace > .panel { margin-bottom: 0; }
+.staff-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.staff-identity { gap: 8px; min-width: 0; }
+.staff-identity .text-button { text-align: left; font-size: 16px; font-weight: 700; line-height: 1.5; white-space: normal; }
+.staff-identity small { overflow-wrap: anywhere; line-height: 1.6; }
+.staff-workspace .responsive-table th, .staff-workspace .responsive-table td { white-space: normal; }
+.staff-workspace .responsive-table td { padding-block: 20px; vertical-align: middle; }
+@media (max-width: 700px) {
+  .staff-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .staff-stats .report-stat:last-child { grid-column: 1 / -1; }
+  .staff-workspace .responsive-table td { padding-block: 14px; }
+}

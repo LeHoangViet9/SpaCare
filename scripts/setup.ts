@@ -1,11 +1,16 @@
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
-import { allModels, Spa, User, Control, Migration } from '../src/lib/models';
+import { allModels, Spa, User, Control, Migration, StaffLeave } from '../src/lib/models';
 import { hashPassword } from '../src/lib/password';
 async function setup() {
   await connect();
   // Additive migration: create collections/indexes; never drop or rewrite legacy data.
   for (const model of allModels) { await model.createCollection(); await model.createIndexes(); }
+  // Upgrade only the old leave uniqueness constraint, after the new index exists.
+  // No documents are changed; period permits distinct AM/PM requests on one day.
+  const indexes = await StaffLeave.collection.indexes();
+  const legacy = indexes.find(i => i.unique && JSON.stringify(i.key) === JSON.stringify({spaId:1,staffId:1,day:1}));
+  if (legacy?.name) await StaffLeave.collection.dropIndex(legacy.name);
   const password = process.env.SEED_OWNER_PASSWORD || '';
   const email = (process.env.SEED_OWNER_EMAIL || '').trim().toLowerCase();
   if (!email || password.length < 12) throw new Error('Cần SEED_OWNER_EMAIL và SEED_OWNER_PASSWORD >= 12 ký tự.');

@@ -24,6 +24,6 @@ export async function POST(request: Request) {
     const expiresAt = new Date(Date.now() + 8 * 3600_000);
     await Session.create({ spaId: user.spaId, userId: user._id, tokenHash: hash(token), expiresAt });
     (await cookies()).set('spacare_session', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', expires: expiresAt, path: '/' });
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, role: user.role, name: user.name });
   } catch (e) { return failure(e); }
 }

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
-import { allModels, Spa, User, Control, Deposit, Invoice, CashEntry, Treatment, Appointment, Audit, TreatmentUse, Allocation, Payment, Idempotency, Day, Customer, PackageTemplate, Commission, Payroll, Service, Product, ProductGroup, StockMovement } from '../src/lib/models';
+import { allModels, Spa, User, Control, Deposit, Invoice, CashEntry, Treatment, Appointment, Audit, TreatmentUse, Allocation, Payment, Idempotency, Day, Customer, PackageTemplate, Commission, Payroll, Service, Product, ProductGroup, StockMovement, SaleCommission, StaffLeave, Workday } from '../src/lib/models';
 import { productQuery } from '../src/lib/product-rules';
 import { readProducts } from '../src/lib/product-read';
 import { hashPassword } from '../src/lib/password';
@@ -17,6 +17,8 @@ import { readInvoice } from '../src/lib/invoice-read';
 import { readCustomerHistory } from '../src/lib/customer-history';
 import { readPayroll, payrollQuery } from '../src/lib/payroll-read';
 import { workspaceQuery } from '../src/lib/workspace-query';
+import { reservePublicBooking } from '../src/lib/public-booking';
+import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
 
 test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và chốt ngày', async t => {
   const uri = process.env.MONGODB_URI || '';
@@ -36,6 +38,47 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await call('openDay', { day: spaDay(), opening: 0 });
     const customer = await call('customer', { name: 'Khách test', phone: '0900000000' });
     const service = await call('service', { name: 'Dịch vụ test', price: 350000, duration: 60 });
+    await t.test('public bookings serialize conflicts, retries and internal bookings without partial writes', async () => {
+      const publicSpa = await Spa.create({ name: 'Public booking fixture' });
+      extraSpaIds.push(publicSpa._id);
+      const scope = { spaId: publicSpa._id };
+      const person = await User.create({ ...scope, name: 'Only staff', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'OWNER' });
+      await Control.create({ ...scope, revision: 0 });
+      const svc = await Service.create({ ...scope, name: 'Service', price: 100000, duration: 60, active: true });
+      const day = spaDay(new Date(Date.now() + 86400000));
+      const atHour = (hour: number) => `${day}T${hour}:00:00+07:00`;
+      const requests = ['0912345678', '0912345679'].map(phone => ({ key: randomUUID(), data: { serviceId: String(svc._id), name: 'Guest', phone, startAt: atHour(10) } }));
+      const results = await Promise.allSettled(requests.map(r => reservePublicBooking(r.data, null, r.key)));
+      assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+      const failed = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      assert.equal(failed.reason.status, 409);
+      assert.match(failed.reason.message, /Khung giờ này đã có lịch/);
+      assert.equal(await Appointment.countDocuments(scope), 1);
+      assert.equal(await Customer.countDocuments(scope), 1);
+      assert.equal(await Audit.countDocuments(scope), 1);
+      assert.equal(await Idempotency.countDocuments(scope), 1);
+      const index = results.findIndex(r => r.status === 'fulfilled');
+      const winner = (results[index] as PromiseFulfilledResult<any>).value;
+      assert.deepEqual(await reservePublicBooking(requests[index].data, null, requests[index].key), winner);
+      await assert.rejects(reservePublicBooking({ ...requests[index].data, startAt: atHour(11) }, null, requests[index].key), (e: any) => e.status === 409);
+      await assert.rejects(reservePublicBooking({ ...requests[index].data, startAt: `${day}T10:30:00+07:00` }, null, randomUUID()), (e: any) => e.status === 409);
+      await reservePublicBooking({ ...requests[index].data, startAt: atHour(11) }, null, randomUUID());
+      await Appointment.updateOne({ ...scope, _id: winner.appointmentId }, { status: 'POSTPONED' });
+      const replacement = await reservePublicBooking(requests[index].data, null, randomUUID());
+      await Appointment.updateOne({ ...scope, _id: replacement!.appointmentId }, { status: 'CANCELLED' });
+      await reservePublicBooking(requests[index].data, null, randomUUID());
+      const cust = await Customer.findOne(scope);
+      const publicActor: Actor = { id: String(person._id), spaId: String(publicSpa._id), name: person.name, role: 'OWNER', cashier: false };
+      const race = await Promise.allSettled([
+        reservePublicBooking({ ...requests[index].data, startAt: atHour(12) }, null, randomUUID()),
+        operate(publicActor, 'appointment', { serviceId: String(svc._id), customerId: String(cust!._id), staffId: String(person._id), startAt: atHour(12) }, randomUUID()),
+      ]);
+      assert.equal(race.filter(r => r.status === 'fulfilled').length, 1);
+      assert.equal(await Appointment.countDocuments({ ...scope, status: 'CONFIRMED', startAt: new Date(atHour(12)) }), 1);
+      const secondStaff = await User.create({ ...scope, name: 'Available staff', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'STAFF' });
+      const parallelVisit = await reservePublicBooking(requests[index].data, null, randomUUID());
+      assert.equal(String((await Appointment.findById(parallelVisit!.appointmentId))!.staffId), String(secondStaff._id));
+    });
     await assert.rejects(call('customer', { name: 'Duplicate', phone: '+84 900 000 000' }), /Số điện thoại đã tồn tại/);
     await call('updateCustomer', { id: customer.id, name: 'Updated', phone: '0900000000' });
     await call('updateService', { id: service.id, name: 'Updated service', price: 350000, duration: 60 });
@@ -50,7 +93,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await assert.rejects(call('invoice', { customerId: customer.id, serviceId: service.id }));
     await call('serviceStatus', { id: service.id, active: true });
     // Postponing frees the old slot; rescheduling checks collisions and records history.
-    const at = (hours: number) => new Date(Date.now() + hours * 3600000).toISOString();
+    const at = (hours: number) => {
+      if (hours < 0) return new Date(Date.now() + hours * 3600000).toISOString();
+      const day = spaDay(new Date(Date.now() + Math.floor(hours / 24) * 86400000));
+      return new Date(`${day}T${String(9 + hours % 12).padStart(2, '0')}:00:00+07:00`).toISOString();
+    };
     const firstTime = at(24), laterTime = at(27);
     const bookingData = { customerId: customer.id, serviceId: service.id, staffId: String(staff._id) };
     const a = await call('appointment', { ...bookingData, startAt: firstTime });
@@ -641,6 +688,30 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await assert.rejects(readWorkspace(regularStaff, workspaceQuery(new URLSearchParams({ section: 'audit' }))), status(403));
       await assert.rejects(readWorkspace(regularStaff, workspaceQuery(new URLSearchParams({ section: 'reports' }))), status(403));
     });
+    await t.test('product photos persist, serve only images and reject cross-spa attachment', async () => {
+      const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db!, { bucketName: 'product_images' });
+      const bytes = Buffer.concat([Buffer.from([255, 216, 255]), Buffer.alloc(20)]);
+      const upload = async (imageSpaId: string) => {
+        const stream = bucket.openUploadStream('integration-photo', { metadata: { kind: 'PRODUCT_IMAGE', spaId: imageSpaId, uploadedBy: actor.id, contentType: 'image/jpeg' } });
+        await new Promise<void>((resolve, reject) => { stream.once('finish', () => resolve()); stream.once('error', reject); stream.end(bytes); });
+        return String(stream.id);
+      };
+      const otherSpa = await Spa.create({ name: 'Photo isolation test' }); extraSpaIds.push(otherSpa._id);
+      const imageId = await upload(String(spaId));
+      const foreignImageId = await upload(String(otherSpa._id));
+      const input = { name: 'Photo product', sku: randomUUID(), sizeMl: 100, price: 100000, imageUrl: `/api/product-images/${imageId}` };
+      const product = await call('product', input);
+      assert.equal((await Product.findById(product.id))!.imageUrl, input.imageUrl);
+      await assert.rejects(call('updateProduct', { ...input, id: product.id, imageUrl: `/api/product-images/${foreignImageId}` }), status(400));
+      await assert.rejects(operate(employee, 'updateProduct', { ...input, id: product.id }, randomUUID()), status(403));
+      const response = await productImageGET(new Request('http://localhost/image'), { params: Promise.resolve({ id: imageId }) });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'image/jpeg');
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+      assert.equal((await productImageGET(new Request('http://localhost/image'), { params: Promise.resolve({ id: 'invalid' }) })).status, 404);
+      await call('updateProduct', { ...input, id: product.id, imageUrl: '' });
+      assert.equal((await Product.findById(product.id))!.imageUrl, undefined);
+    });
     await t.test('sản phẩm: nhập xuất, bán chống âm kho/trùng, snapshot, quyền và rollback', async () => {
       const group = await call('productGroup', { name: 'Chăm sóc da' });
       await assert.rejects(call('productGroup', { name: ' chăm  sóc da ' }), status(409));
@@ -769,9 +840,63 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await Idempotency.countDocuments({ spaId, key }), 0);
       assert.equal((await Day.findOne({ spaId, day: spaDay() }))!.status, 'CLOSED');
     });
+    await t.test('package sales, refunds, leave approval and attendance share transactional payroll', async () => {
+      const spa = await Spa.create({name:'Update regression '+randomUUID()});extraSpaIds.push(spa._id);
+      const scope={spaId:spa._id};await Control.create(scope);
+      const owner=await User.create({...scope,name:'Owner',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'OWNER'});
+      const staff=await User.create({...scope,name:'Seller',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'STAFF'});
+      const who:Actor={id:String(owner._id),spaId:String(spa._id),name:owner.name,role:'OWNER',cashier:false};
+      const employee:Actor={...who,id:String(staff._id),role:'STAFF'};
+      const call=(action:string,data:unknown,key=randomUUID())=>operate(who,action,data,key);
+      await call('openDay',{day:spaDay(),opening:0});
+      const customer=await call('customer',{name:'Guest',phone:'0912345678'});
+      const service=await call('service',{name:'Service',duration:60,price:2000000,commission:20000});
+      const template=await call('packageTemplate',{name:'Package',serviceId:service.id,totalSessions:10,price:2000000});
+      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,sellerId:String(staff._id),dueDate:spaDay(),promotion:'Gift',gifts:[{templateId:template.id}]});
+      const invoice=(await Invoice.findById(sale.invoiceId))!;assert.equal(String(invoice.sellerId),String(staff._id));
+      assert.equal(await SaleCommission.countDocuments(scope),0);
+      const payment={invoiceId:sale.invoiceId,amount:500000,method:'CASH',receivedConfirmation:true};const key=randomUUID();
+      const first=await call('payment',payment,key);assert.deepEqual(await call('payment',payment,key),first);
+      await call('payment',{...payment,amount:1500000});
+      assert.equal((await SaleCommission.find(scope)).reduce((n,r)=>n+r.amount,0),100000);
+      assert.equal(await SaleCommission.countDocuments(scope),2);
+      await assert.rejects(call('payment',{...payment,amount:1}));
+      const refund={exceptionApproved:true,invoiceId:sale.invoiceId,amount:500000,method:'CASH',receivedConfirmation:true,reason:'Owner approved refund'};const rk=randomUUID();
+      await call('refundPackage',refund,rk);await call('refundPackage',refund,rk);
+      assert.equal((await SaleCommission.find(scope)).reduce((n,r)=>n+r.amount,0),75000);
+      assert.equal(await CashEntry.countDocuments({...scope,kind:'REFUND'}),1);
+      await assert.rejects(operate(employee,'refundPackage',refund,randomUUID()),(e:any)=>e.status===403);
+      const product=await call('product',{name:'No SKU',sizeMl:100,price:100000});
+      assert.match((await Product.findById(product.id))!.sku,/^SP-/);
+      await call('stockMovement',{productId:product.id,direction:'IN',quantity:2});
+      assert.equal((await Product.findById(product.id))!.stock,2);
+      const month=spaDay().slice(0,7),day=month+'-01';
+      const request=await operate(employee,'recordStaffLeave',{staffId:String(staff._id),startDay:day,endDay:day,period:'AM',type:'PERMITTED'},randomUUID());
+      assert.equal((await StaffLeave.findById(request.id))!.status,'PENDING');
+      await assert.rejects(operate(employee,'reviewStaffLeave',{id:request.id,status:'APPROVED'},randomUUID()),(e:any)=>e.status===403);
+      await call('reviewStaffLeave',{id:request.id,status:'APPROVED',paid:true});
+      await assert.rejects(operate(employee,'recordStaffLeave',{id:request.id,staffId:String(staff._id),day,type:'UNPERMITTED'},randomUUID()),(e:any)=>e.status===403);
+      await assert.rejects(call('recordWorkday',{staffId:String(staff._id),day,period:'AM'}),/trùng/);
+      await call('recordWorkday',{staffId:String(staff._id),day,period:'PM'});
+      await call('setStaffSalary',{staffId:String(staff._id),baseSalary:5200000});
+      await call('setSalaryPolicy',{staffId:String(staff._id),standardDays:26,paidLeaveDays:1,mode:'DAILY'});
+      await assert.rejects(call('savePayroll',{staffId:String(staff._id),month}),/ngày công/);
+      const draft=await call('savePayroll',{staffId:String(staff._id),month,attendanceConfirmed:true});
+      const payroll=(await Payroll.findById(draft.id))!;assert.equal(payroll.earnedBase,200000);assert.equal(payroll.saleCommissionTotal,75000);assert.equal(payroll.total,275000);
+      await call('setSalaryPolicy',{staffId:String(staff._id),standardDays:25,paidLeaveDays:1,mode:'DAILY'});
+      await assert.rejects(call('approvePayroll',{id:draft.id,expectedTotal:payroll.total}),/đã đổi/);
+      await call('savePayroll',{id:draft.id,staffId:String(staff._id),month,attendanceConfirmed:true});
+      const updated=(await Payroll.findById(draft.id))!;await call('approvePayroll',{id:draft.id,expectedTotal:updated.total});
+      assert.equal(await SaleCommission.countDocuments({...scope,payrollId:updated._id}),3);
+      const own=await readPayroll(employee,payrollQuery(new URLSearchParams({month,view:'commission'})));
+      assert.equal(own.summary.saleCommission,75000);assert.equal(own.total,3);
+    });
   } finally {
     if (spaId) {
       const fixtureSpaIds = [spaId, ...extraSpaIds];
+      const imageBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db!, { bucketName: 'product_images' });
+      const fixtureImages = await imageBucket.find({ 'metadata.spaId': { $in: fixtureSpaIds.map(String) } }).toArray();
+      for (const image of fixtureImages) await imageBucket.delete(image._id);
       for (const model of allModels) if (model.schema.path('spaId')) await model.deleteMany({ spaId: { $in: fixtureSpaIds } });
       await Spa.deleteMany({ _id: { $in: fixtureSpaIds } });
     }

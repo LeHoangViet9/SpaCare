@@ -16,7 +16,8 @@
     "db:setup": "tsx --env-file=.env.local scripts/setup.ts",
     "db:demo": "tsx --env-file-if-exists=.env.demo.local scripts/seed-demo.ts",
     "dev:demo": "tsx --env-file-if-exists=.env.demo.local scripts/dev-demo.ts",
-    "db:demo:check": "tsx --env-file-if-exists=.env.demo.local scripts/seed-demo.ts --check"
+    "db:demo:check": "tsx --env-file-if-exists=.env.demo.local scripts/seed-demo.ts --check",
+    "test:ui": "playwright test --config=playwright.config.mjs"
   },
   "dependencies": {
     "next": "^16.0.0",

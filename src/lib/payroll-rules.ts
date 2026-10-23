@@ -1,11 +1,13 @@
+import { leaveInputs } from './leave-rules';
 import { z } from 'zod';
 const id = z.string().regex(/^[a-f\d]{24}$/i, 'ID không hợp lệ.');
 const money = z.number().int().min(0).max(1_000_000_000_000);
 export const payrollMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).refine(value => Number(value.slice(0, 4)) >= 2000 && Number(value.slice(0, 4)) <= 9998, 'Tháng không hợp lệ.');
 export const payrollInputs = {
+  ...leaveInputs,
   setServiceCommission: z.object({ serviceId: id, commission: money }),
   setStaffSalary: z.object({ staffId: id, baseSalary: money }),
-  savePayroll: z.object({ id: id.optional(), staffId: id, month: payrollMonth, baseSalary: money.optional(), bonus: money.default(0), deductions: money.default(0), note: z.string().trim().max(2000).default('') }),
+  savePayroll: z.object({ id: id.optional(), staffId: id, month: payrollMonth, baseSalary: money.optional(), attendanceConfirmed: z.boolean().default(false), advance: money.default(0), bonus: money.default(0), deductions: money.default(0), note: z.string().trim().max(2000).default('') }),
   approvePayroll: z.object({ id, expectedTotal: money }),
   payPayroll: z.object({ id, method: z.enum(['CASH', 'BANK_TRANSFER']), receivedConfirmation: z.literal(true), note: z.string().trim().max(2000).default(''), transferReference: z.string().trim().max(500).optional() }),
   completeInvoiceService: z.object({ id, staffId: id }),

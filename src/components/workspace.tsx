@@ -1,5 +1,10 @@
 'use client';
+import ValidatedForm from '@/components/validated-form';
 import Link from 'next/link';
+import MoneyInput from './money-input';
+import { formatCurrency, parseMoney, moneyField } from '@/lib/currency';
+import Brand from '@/components/brand';
+import Reports from '@/components/reports';
 import CommercialFields from '@/components/commercial-fields';
 import Cashier from '@/components/cashier';
 import ListFiltersBar from '@/components/list-filters';
@@ -7,6 +12,7 @@ import AppointmentAgenda from '@/components/appointment-agenda';
 import StaffDetail from '@/components/staff-detail';
 import PayrollPanel from '@/components/payroll';
 import Products from '@/components/products';
+import ProductImagePicker from '@/components/product-image-picker';
 import type { ListFilters } from '@/lib/workspace-filters';
 import InvoiceDetail from '@/components/invoice-detail';
 import CustomerPicker from '@/components/customer-picker';
@@ -20,11 +26,11 @@ import { sectionCollection } from '@/lib/workspace-query';
 import { staffBookingsToday } from '@/lib/rules';
 import { isValidElement, useCallback, useEffect, useRef, useState } from 'react';
 type Row = Record<string, any>;
-type Field = { remoteCustomers?: boolean; key: string; label: string; type?: string; options?: [string, string][]; min?: number; max?: number; optional?: boolean; hint?: string; optionScopes?: Record<string, { customerId: string; serviceId: string }> };
+type Field = { remoteCustomers?: boolean; key: string; label: string; type?: string; options?: [string, string][]; min?: number; step?: number; max?: number; optional?: boolean; hint?: string; optionScopes?: Record<string, { customerId: string; serviceId: string }> };
 type FormSpec = { title: string; action: string; fields: Field[]; defaults?: Row; description?: string; transfer?: Row; signatureContext?: Row; signaturePreview?: Signature; readOnly?: boolean };
-const vnd = (n: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n || 0);
+const vnd = formatCurrency;
 const time = (s: string) => s ? new Date(s).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '—';
-const statusText: Record<string, string> = { PAUSED: 'Đang bảo lưu', DRAWN_SIGNATURE: 'Khách ký trên màn hình', PARTIALLY_PAID: 'Thanh toán một phần', UNPAID: 'Chưa thanh toán', POSTPONED: 'Đang hoãn', INACTIVE: 'Ngừng hoạt động', CONFIRMED: 'Đã đặt', COMPLETED: 'Hoàn thành', CANCELLED: 'Đã hủy', OPEN: 'Đang mở', CLOSED: 'Đã chốt', PAID: 'Đã thanh toán', ACTIVE: 'Đang dùng', IN: 'Thu', OUT: 'Chi', CASH: 'Tiền mặt', BANK_TRANSFER: 'Chuyển khoản', DEPOSIT: 'Nhận cọc', PAYMENT: 'Thu hóa đơn', INCOME: 'Thu khác', EXPENSE: 'Chi phí', PAYROLL: 'Chi lương', REVERSAL: 'Đảo giao dịch', OWNER: 'Chủ spa', STAFF: 'Nhân viên', SIGNATURE_REFERENCE: 'Tham chiếu phiếu ký', ALTERNATIVE: 'Xác nhận thay thế' };
+const statusText: Record<string, string> = { PAUSED: 'Đang bảo lưu', DRAWN_SIGNATURE: 'Khách ký trên màn hình', PARTIALLY_PAID: 'Thanh toán một phần', UNPAID: 'Chưa thanh toán', POSTPONED: 'Đang hoãn', INACTIVE: 'Ngừng hoạt động', CONFIRMED: 'Đã đặt', COMPLETED: 'Hoàn thành', CANCELLED: 'Đã hủy', OPEN: 'Đang mở', CLOSED: 'Đã chốt', PAID: 'Đã thanh toán', ACTIVE: 'Đang dùng', IN: 'Thu', OUT: 'Chi', CASH: 'Tiền mặt', BANK_TRANSFER: 'Chuyển khoản', DEPOSIT: 'Nhận cọc', PAYMENT: 'Thu hóa đơn', INCOME: 'Thu khác', EXPENSE: 'Chi phí', PAYROLL: 'Chi lương', REFUND:'Hoàn tiền gói', REVERSAL: 'Đảo giao dịch', OWNER: 'Chủ spa', STAFF: 'Nhân viên', SIGNATURE_REFERENCE: 'Tham chiếu phiếu ký', ALTERNATIVE: 'Xác nhận thay thế' };
 const label = (s: string) => statusText[s] || s;
 const methodOptions: [string, string][] = [['CASH', 'Tiền mặt'], ['BANK_TRANSFER', 'Chuyển khoản · xác nhận thủ công']];
 export default function Workspace() {
@@ -33,18 +39,41 @@ export default function Workspace() {
   const tab = pathname.split('/')[2] || 'overview';
   const [data, setData] = useState<Row | null>(null);
   const [error, setError] = useState('');
+  const [fieldErrors,setFieldErrors] = useState<Record<string,string>>({});
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<FormSpec | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ kind: 'invoice' | 'customer'; id: string } | null>(null);
   const searchParams = useSearchParams();
-  const search = searchParams.get('search') || '';
-  function setSearch(value: string) {
-    const query = new URLSearchParams(searchParams.toString());
-    if (value) query.set('search', value); else query.delete('search');
-    window.history.replaceState(null, '', pathname + (query.size ? '?' + query.toString() : ''));
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearchValue] = useState(urlSearch);
+  const publishedSearch = useRef(urlSearch);
+  const searchPath = useRef(pathname);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const composingSearch = useRef(false);
+  const liveSearch = useRef(search);
+  liveSearch.current = search;
+  useEffect(() => {
+    if (pathname !== searchPath.current) {
+      clearTimeout(searchTimer.current); searchPath.current = pathname;
+      setSearchValue(urlSearch); publishedSearch.current = urlSearch;
+    }
+    const restore = () => { clearTimeout(searchTimer.current); setSearchValue(new URLSearchParams(window.location.search).get('search') || ''); };
+    window.addEventListener('popstate', restore);
+    return () => { clearTimeout(searchTimer.current); window.removeEventListener('popstate', restore); };
+  }, [pathname]);
+  function publishSearch(value: string) {
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      if (composingSearch.current || liveSearch.current !== value) return;
+      const query = new URLSearchParams(window.location.search);
+      if (value) query.set('search', value); else query.delete('search');
+      publishedSearch.current = value;
+      window.history.replaceState(null, '', pathname + (query.size ? '?' + query.toString() : ''));
+    }, 300);
   }
+  function setSearch(value: string) { setSearchValue(value); if (!composingSearch.current) publishSearch(value); }
   const [busy, setBusy] = useState(false);
   const [cashierRevision, setCashierRevision] = useState(0);
   const [cashierNewCustomer, setCashierNewCustomer] = useState<Row | null>(null);
@@ -121,9 +150,10 @@ export default function Workspace() {
     const timer = window.setTimeout(() => setError(''), 6000);
     return () => window.clearTimeout(timer);
   }, [error, modal, data]);
-  const load = useCallback(async () => {
+  const lastLoadedSection = useRef('');
+  const load = useCallback(async (signal?: AbortSignal) => {
     const sequence = ++loadSequence.current;
-    const response = await fetch('/api/workspace?' + requestQuery, { cache: 'no-store' });
+    const response = await fetch('/api/workspace?' + requestQuery, { cache: 'no-store', signal });
     const payload = await response.json();
     if (sequence !== loadSequence.current || currentRequest.current !== requestQuery) return;
     if (response.status === 401) { setData(null); return; }
@@ -132,9 +162,12 @@ export default function Workspace() {
   }, [requestQuery]);
   useEffect(() => {
     let current = true;
-    const timer = window.setTimeout(() => { load().catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); }); }, 250);
-    return () => { current = false; window.clearTimeout(timer); loadSequence.current += 1; };
-  }, [load]);
+    const controller = new AbortController();
+    const delay = lastLoadedSection.current === tab ? 250 : 0;
+    lastLoadedSection.current = tab;
+    const timer = window.setTimeout(() => { load(controller.signal).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); }); }, delay);
+    return () => { current = false; controller.abort(); window.clearTimeout(timer); loadSequence.current += 1; };
+  }, [load, tab]);
   async function login(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError(''); setBusy(true);
     const fields = new FormData(e.currentTarget);
@@ -147,7 +180,7 @@ export default function Workspace() {
   async function run(action: string, values: Row) {
     if (lock.current) return;
     const revision = viewRevision.current;
-    lock.current = true; setBusy(true); setError(''); setNotice('');
+    lock.current = true; setFieldErrors({}); setBusy(true); setError(''); setNotice('');
     const signature = JSON.stringify({ action, data: values });
     let key = retryKeys.current.get(signature);
     if (!key) { key = crypto.randomUUID(); retryKeys.current.set(signature, key); }
@@ -155,6 +188,7 @@ export default function Workspace() {
       const r = await fetch('/api/operations', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: signature });
       const body = await r.json();
       if (!r.ok) {
+        setFieldErrors(body.fields || {});
         if (r.status === 409 && ['use', 'completeTreatmentAppointment'].includes(action) && revision === viewRevision.current) {
           await load();
           if (revision === viewRevision.current) {
@@ -183,10 +217,11 @@ export default function Workspace() {
       const r = await fetch('/api/auth/logout', { method: 'POST' });
       if (!r.ok) throw new Error((await r.json()).error);
       setData(null); changeTab('overview'); setError(''); setNotice('');
+      window.location.href = '/';
     } catch (e) { setError((e as Error).message); }
   }
   if (loading) return <div className="loading">✧ SpaCare <small>Đang kết nối không gian làm việc…</small></div>;
-  if (!data) return <main className="login-page"><section className="login-intro"><div className="brand">✧ SpaCare</div><span className="eyebrow">CHĂM SÓC KHÁCH HÀNG, GỌN GÀNG HƠN</span><h1>Một ngày tại spa.<br />Mọi thứ trong tầm tay.</h1><p>Lịch hẹn, liệu trình và từng khoản thu chi —<br />trong cùng một không gian làm việc.</p><div className="petal">✧</div><small>Phiên bản MVP · Dành cho vận hành nội bộ</small></section><section className="login-card"><span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập SpaCare</h2><p>Dùng tài khoản được chủ spa cấp.</p><form onSubmit={login}><label>Email<input name="email" type="email" autoComplete="username" required placeholder="owner@spacare.local" /></label><label>Mật khẩu<input name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>{error && <div className="alert error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Vào không gian làm việc →'}</button></form></section></main>;
+  if (!data) return <main className="login-page"><section className="login-intro"><Brand href="/workspace" /><span className="eyebrow">CHĂM SÓC KHÁCH HÀNG, GỌN GÀNG HƠN</span><h1>Một ngày tại spa.<br />Mọi thứ trong tầm tay.</h1><p>Lịch hẹn, liệu trình và từng khoản thu chi —<br />trong cùng một không gian làm việc.</p><div className="petal">✧</div><small>Phiên bản MVP · Dành cho vận hành nội bộ</small></section><section className="login-card"><span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập SpaCare</h2><p>Dùng tài khoản được chủ spa cấp.</p><ValidatedForm onSubmit={login}><label>Email<input name="email" type="email" autoComplete="username" required placeholder="owner@spacare.local" /></label><label>Mật khẩu<input name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>{error && <div className="alert error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Vào không gian làm việc →'}</button></ValidatedForm></section></main>;
 
   const owner = data.user.role === 'OWNER';
   const finance = owner || data.user.cashier;
@@ -204,7 +239,7 @@ export default function Workspace() {
   const viewInvoice = (id: string) => { changeTab('invoices', id); };
   const completeWithInvoice = (r: Row) => {
     const candidates = data.invoices.filter((i: Row) => !i.appointmentId && !i.performedAt && i.customerId === r.customerId && i.serviceId === r.serviceId && !data.treatments.some((t: Row) => t.invoiceId === i._id));
-    const fields: Field[] = [{ key: 'description', label: 'Nội dung hóa đơn mới' }, { key: 'total', label: 'Giá hóa đơn mới (VNĐ)', type: 'number', min: 1, max: 1_000_000_000_000 }, { key: 'consultantId', label: 'Nhân viên tư vấn', optional: true, options: choices('staff', r => r.name) }, { key: 'existingInvoiceId', label: 'Liên kết hóa đơn đã có (nếu có)', optional: true, options: candidates.map((i: Row) => [i._id, '#' + i._id.slice(-6) + ' · ' + vnd(i.total) + ' · ' + label(i.status)]), hint: 'Để trống để tạo hóa đơn mới. Chọn hóa đơn đã lập cho cuộc hẹn này để tránh tính tiền hai lần.' }, { key: 'dueDate', label: 'Hạn trả khi tạo hóa đơn mới', type: 'date', optional: true }];
+    const fields: Field[] = [{ key: 'description', label: 'Nội dung hóa đơn mới', optional:true }, { key: 'total', label: 'Giá hóa đơn mới (VNĐ)', type: 'number', min: 1, max: 1_000_000_000_000 }, { key: 'consultantId', label: 'Nhân viên tư vấn', optional: true, options: choices('staff', r => r.name) }, { key: 'existingInvoiceId', label: 'Liên kết hóa đơn đã có (nếu có)', optional: true, options: candidates.map((i: Row) => [i._id, '#' + i._id.slice(-6) + ' · ' + vnd(i.total) + ' · ' + label(i.status)]), hint: 'Để trống để tạo hóa đơn mới. Chọn hóa đơn đã lập cho cuộc hẹn này để tránh tính tiền hai lần.' }, { key: 'dueDate', label: 'Hạn trả khi tạo hóa đơn mới', type: 'date', optional: true }];
     open('Hoàn thành & lập hóa đơn dịch vụ lẻ', 'completeAppointment', finance ? fields : [], { id: r._id, ...(finance ? { description: data.services.find((s: Row) => s._id === r.serviceId)?.name, total: data.services.find((s: Row) => s._id === r.serviceId)?.price } : {}) }, 'Khách: ' + lookup('customers', r.customerId) + ' · Dịch vụ: ' + lookup('services', r.serviceId) + ' · Giá tạo mới hiện tại: ' + vnd(data.services.find((s: Row) => s._id === r.serviceId)?.price) + '. Xác nhận sẽ hoàn thành lịch và tạo hoặc liên kết hóa đơn. Chưa thu tiền, chưa áp cọc. Hủy form sẽ không thay đổi lịch.');
   };
   const signSession = (treatment: Row, appointment?: Row) => {
@@ -247,12 +282,11 @@ export default function Workspace() {
   const appointmentButton = <button className="primary" onClick={() => bookCustomer()}>＋ Đặt lịch</button>;
   const customerFields: Field[] = [{ key: 'name', label: 'Họ và tên' }, { key: 'phone', label: 'Số điện thoại', type: 'tel' }, { key: 'notes', label: 'Ghi chú', optional: true }, consultantField];
   const categoryField: Field = { key: 'category', label: 'Nhóm dịch vụ', optional: true, hint: 'Ví dụ: Chăm sóc da, Massage, Triệt lông' };
-  const commissionField: Field = { key: 'commission', label: 'Hoa hồng cố định / lần thực hiện (VNĐ)', type: 'number', min: 0, max: 1_000_000_000_000 };
+  const commissionField: Field = { key: 'commission', optional:true, label: 'Hoa hồng cố định / lần thực hiện (VNĐ)', type: 'number', min: 0, max: 1_000_000_000_000 };
   const serviceFields: Field[] = [categoryField, commissionField, { key: 'name', label: 'Tên dịch vụ' }, { key: 'price', label: 'Giá (VNĐ)', type: 'number', min: 1 }, { key: 'duration', label: 'Thời lượng (phút)', type: 'number', min: 5, max: 480 }];
   const staffFields: Field[] = [{ key: 'name', label: 'Họ và tên' }, { key: 'email', label: 'Email', type: 'email' }, { key: 'cashier', label: 'Cấp quyền thu ngân', type: 'checkbox', optional: true }];
   const edit = (r: Row) => ({ commission: 0, ...r, id: r._id });
   const statusAction = (r: Row, action: string) => open(r.active ? 'Xác nhận ngừng hoạt động' : 'Xác nhận hoạt động lại', action, [], { id: r._id, active: !r.active });
-  const totalSessions = data.totals.remaining;
   const viewPending = data._requestKey !== requestQuery;
   const listRows = (key: string): Row[] => viewPending ? [] : data.pages?.[key]?.rows || data[key] || [];
   const pageFor = (key: string): ServerPagination | undefined => key ? { page: data.pages?.[key]?.page || 1, pageSize: listPaging.pageSize, total: data.pages?.[key]?.total || 0, loading: viewPending, onChange: (page, pageSize) => setListPaging(previous => ({ ...(previous.key === filterKey && previous.pageSize === pageSize ? previous : { page: 1, allocationPage: 1 }), key: filterKey, pageSize, ...(key === 'allocations' ? { allocationPage: page } : { page }) })) } : undefined;
@@ -273,7 +307,7 @@ export default function Workspace() {
     deposits: 'Tiền cọc',
     cash: 'Sổ thu chi',
     days: 'Chốt sổ ngày',
-    reports: 'Thống kê dòng tiền',
+    reports: 'Báo cáo',
     staff: 'Danh sách nhân viên',
     salary: 'Lương nhân viên',
     commission: 'Hoa hồng',
@@ -337,7 +371,7 @@ export default function Workspace() {
     case 'invoices': content = <Panel title="Hóa đơn & công nợ" action={finance && <button className="primary" onClick={() => changeTab('cashier')}>＋ Tạo hóa đơn</button>}><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Khách / hóa đơn', 'Dịch vụ', 'Thanh toán', 'Trạng thái', 'Liên kết / hạn trả', 'Thao tác']} rows={listRows('invoices').map(r => [<div key="customer" className="cell-stack"><strong>{lookup('customers', r.customerId)}</strong><small>HĐ #{r._id.slice(-6)}</small><button onClick={() => setDetail({ kind: 'invoice', id: r._id })}>Chi tiết / chữ ký</button><small>Người tạo: {r.creatorName || 'Chưa ghi nhận'}</small></div>, r.description, <div key="amounts" className="cell-stack"><span>Tổng: {vnd(r.total)}</span><small>Đã trả: {vnd(r.paid)}</small><strong>Còn nợ: {vnd(r.total - r.paid)}</strong></div>, <Badge key="status" value={r.paid >= r.total ? 'PAID' : r.paid > 0 ? 'PARTIALLY_PAID' : 'UNPAID'} />, <div key="reference" className="cell-stack"><small>Hạn: {r.dueDate || 'Chưa đặt'}</small>{r.appointmentId && <button onClick={() => { changeTab('appointments', r.appointmentId); }}>Lịch #{r.appointmentId.slice(-6)}</button>}</div>, r.total > r.paid ? <div key="pay" className="actions"><button disabled={busy} onClick={() => openPayment(r, 'CASH')}>Tiền mặt</button><button disabled={busy} onClick={() => openPayment(r, 'BANK_TRANSFER')}>Chuyển khoản / QR</button></div> : <span key="done">{r.total === 0 ? 'Không thu tiền' : 'Đã thu đủ'}</span>])} /></Panel>; break;
     case 'deposits': content = <><Panel title="Tiền cọc của khách" action={<div className="actions">{finance && <button className="primary" onClick={() => open('Nhận tiền cọc', 'deposit', [customerField, amountField, methodField, noteField])}>＋ Nhận cọc</button>}{data.invoices.some((i: Row) => i.canAllocate && i.total > i.paid) && <button onClick={() => open('Phân bổ cọc', 'allocate', [{ key: 'depositId', label: 'Khoản cọc', options: choices('deposits', r => `${lookup('customers', r.customerId)} · Dư ${vnd(r.balance)} · #${r._id.slice(-6)}`) }, { ...invoiceField, options: invoiceField.options?.filter(([id]) => data.invoices.some((i: Row) => i._id === id && i.canAllocate && i.total > i.paid)) }, amountField, reasonField])}>Áp dụng cọc</button>}</div>}><div className="inline-note">Phân bổ cọc không phát sinh khoản thu mới. Tiền dư tiếp tục nằm trong số dư cọc.</div><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Mã', 'Khách hàng', 'Cọc gốc', 'Số dư', 'Ghi chú']} rows={listRows('deposits').map(r => [`#${r._id.slice(-6)}`, lookup('customers', r.customerId), vnd(r.amount), <strong key="balance">{vnd(r.balance)}</strong>, r.note || '—'])} /></Panel><Panel title="Lịch sử phân bổ"><Table resetKey={tableResetKey} headers={['Cọc', 'Hóa đơn', 'Số tiền', 'Lý do', 'Trạng thái', 'Thao tác']} pagination={pageFor('allocations')} rows={listRows('allocations').map((r: Row) => [`#${r.depositId.slice(-6)}`, `#${r.invoiceId.slice(-6)}`, vnd(r.amount), r.reason, r.reversed ? 'Đã đảo' : 'Có hiệu lực', owner && !r.reversed ? <button key="reverse" onClick={() => open('Đảo phân bổ cọc', 'reverseAllocation', [reasonField], { id: r._id })}>Đảo phân bổ</button> : '—'])} /></Panel></>; break;
     case 'packages':
-    case 'treatments': content = <><div className="metrics"><Metric title="Tổng số gói" value={String(data.totals.treatments)} sub="Toàn bộ gói trong spa" /><Metric title="Số buổi còn lại" value={String(totalSessions)} sub="Toàn bộ gói trong spa" /></div><Panel title="Gói liệu trình" action={<div className="actions">{finance && <button className="primary" onClick={() => router.push('/workspace/cashier?mode=package')}>＋ Bán gói</button>}</div>}><div className="inline-note">Dừng liệu trình không tự sinh hoàn tiền. Đã đặt lịch: hoàn thành ca tại Lịch hẹn. Không đặt lịch: ghi nhận buổi tại đây. Cả hai đều cần khách ký trước khi trừ 1 buổi.</div><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Khách hàng', 'Số điện thoại', 'Gói', 'Tiến độ', 'Còn lại', 'Trạng thái', 'Thao tác']} rows={listRows('treatments').map(r => [lookup('customers', r.customerId), lookup('customers', r.customerId, 'phone'), <div key="package" className="cell-stack"><strong>{r.name}</strong>{r.giftOfInvoiceId && <small>Quà tặng 0đ · {r.promotion}</small>}{r.status === 'PAUSED' && <small>Bảo lưu đến: {r.holdUntil} · {r.holdReason}. Chờ chủ spa mở lại.</small>}{r.expiresOn && <small>Hạn sử dụng được duyệt: {r.expiresOn}</small>}<small>Hạn thanh toán: {r.paymentDueDate || 'Chưa chọn (gói cũ)'}</small>{r.paymentOverdue && <small className="negative">Quá hạn thanh toán · cần đối soát</small>}</div>, <div key="progress" className="progress"><span style={{ width: `${100 * (r.totalSessions - r.remaining) / r.totalSessions}%` }} /></div>, `${r.remaining}/${r.totalSessions} buổi`, <Badge key="s" value={r.status} />, <div key="actions" className="actions">{r.status === 'ACTIVE' && r.remaining > 0 && <button disabled={busy} onClick={() => signSession(r)}>Khách không đặt lịch · ghi nhận buổi</button>}{owner && r.remaining > 0 && (r.status === 'PAUSED' ? <><button disabled={busy} onClick={() => open('Mở lại gói bảo lưu', 'resumeTreatment', [reasonField, { key: 'expiresOn', label: 'Hạn sử dụng mới nếu chủ spa duyệt gia hạn', type: 'date', optional: true, hint: 'Để trống giữ nguyên hạn cũ. Không tự cộng thời gian bảo lưu.' }], { id: r._id }, 'Giữ nguyên ' + r.remaining + ' buổi. Gói chỉ được dùng sau khi mở lại thành công.')}>Mở lại gói</button><button disabled={busy} onClick={() => open('Gia hạn thời gian bảo lưu', 'extendTreatmentHold', [{ key: 'holdUntil', label: 'Bảo lưu đến ngày', type: 'date' }, reasonField], { id: r._id, holdUntil: r.holdUntil })}>Gia hạn bảo lưu</button></> : r.status === 'ACTIVE' && <button disabled={busy} onClick={() => open('Chủ spa duyệt bảo lưu gói', 'pauseTreatment', [{ key: 'holdUntil', label: 'Bảo lưu đến ngày', type: 'date' }, reasonField], { id: r._id }, 'Xét lý do từng trường hợp. Giữ nguyên số buổi; phải được chủ spa mở lại mới dùng tiếp.')}>Bảo lưu gói</button>)}</div>])} /></Panel></>; break;
+    case 'treatments': content = <><Panel title="Gói liệu trình" action={<div className="actions">{finance && <button className="primary" onClick={() => router.push('/workspace/cashier?mode=package')}>＋ Bán gói</button>}</div>}><div className="inline-note">Dừng liệu trình không tự sinh hoàn tiền. Đã đặt lịch: hoàn thành ca tại Lịch hẹn. Không đặt lịch: ghi nhận buổi tại đây. Cả hai đều cần khách ký trước khi trừ 1 buổi.</div><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Khách hàng', 'Số điện thoại', 'Gói', 'Tiến độ', 'Còn lại', 'Trạng thái', 'Thao tác']} rows={listRows('treatments').map(r => [lookup('customers', r.customerId), lookup('customers', r.customerId, 'phone'), <div key="package" className="cell-stack"><strong>{r.name}</strong>{r.giftOfInvoiceId && <small>Quà tặng 0đ · {r.promotion}</small>}{r.status === 'PAUSED' && <small>Bảo lưu đến: {r.holdUntil} · {r.holdReason}. Chờ chủ spa mở lại.</small>}{r.expiresOn && <small>Hạn sử dụng được duyệt: {r.expiresOn}</small>}<small>Hạn thanh toán: {r.paymentDueDate || 'Chưa chọn (gói cũ)'}</small>{r.paymentOverdue && <small className="negative">Quá hạn thanh toán · cần đối soát</small>}</div>, <div key="progress" className="progress"><span style={{ width: `${100 * (r.totalSessions - r.remaining) / r.totalSessions}%` }} /></div>, `${r.remaining}/${r.totalSessions} buổi`, <Badge key="s" value={r.status} />, <div key="actions" className="actions">{r.status === 'ACTIVE' && r.remaining > 0 && <button disabled={busy} onClick={() => signSession(r)}>Khách không đặt lịch · ghi nhận buổi</button>}{owner && r.remaining > 0 && (r.status === 'PAUSED' ? <><button disabled={busy} onClick={() => open('Mở lại gói bảo lưu', 'resumeTreatment', [reasonField, { key: 'expiresOn', label: 'Hạn sử dụng mới nếu chủ spa duyệt gia hạn', type: 'date', optional: true, hint: 'Để trống giữ nguyên hạn cũ. Không tự cộng thời gian bảo lưu.' }], { id: r._id }, 'Giữ nguyên ' + r.remaining + ' buổi. Gói chỉ được dùng sau khi mở lại thành công.')}>Mở lại gói</button><button disabled={busy} onClick={() => open('Gia hạn thời gian bảo lưu', 'extendTreatmentHold', [{ key: 'holdUntil', label: 'Bảo lưu đến ngày', type: 'date' }, reasonField], { id: r._id, holdUntil: r.holdUntil })}>Gia hạn bảo lưu</button></> : r.status === 'ACTIVE' && <button disabled={busy} onClick={() => open('Chủ spa duyệt bảo lưu gói', 'pauseTreatment', [{ key: 'holdUntil', label: 'Bảo lưu đến ngày', type: 'date' }, reasonField], { id: r._id }, 'Xét lý do từng trường hợp. Giữ nguyên số buổi; phải được chủ spa mở lại mới dùng tiếp.')}>Bảo lưu gói</button>)}</div>])} /></Panel></>; break;
     case 'treatment_uses': {
       const filteredUses = listRows('uses');
       content = <>
@@ -365,13 +399,24 @@ export default function Workspace() {
       </>;
       break;
     }
-    case 'cash': content = <><div className="metrics"><Metric title="Thu trong bộ lọc" value={viewPending ? '…' : vnd(data.pages.cash?.summary?.incoming || 0)} sub="Toàn bộ kết quả phù hợp" /><Metric title="Chi trong bộ lọc" value={viewPending ? '…' : vnd(data.pages.cash?.summary?.outgoing || 0)} sub="Toàn bộ kết quả phù hợp" /><Metric title="Chênh lệch thu / chi" value={viewPending ? '…' : vnd((data.pages.cash?.summary?.incoming || 0) - (data.pages.cash?.summary?.outgoing || 0))} sub="Giữ cả giao dịch đảo" /></div><Panel title="Sổ giao dịch" action={finance && <button className="primary" onClick={() => open('Ghi thu / chi khác', 'cash', [{ key: 'direction', label: 'Loại giao dịch', options: [['IN', 'Thu khác'], ['OUT', 'Chi phí']] }, amountField, methodField, { ...noteField, optional: false }])}>＋ Ghi thu chi</button>}><div className="inline-note">Tiền khách trả hóa đơn và tiền cọc phải ghi ở đúng module để cập nhật công nợ. Đảo giao dịch tạo bút toán ngược trong ngày hiện tại.</div><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Thời gian', 'Nội dung', 'Người tạo', 'Loại', 'Phương thức', 'Số tiền', 'Trạng thái', 'Thao tác']} rows={listRows('cash').map(r => [time(r.createdAt), <div key="receipt-note" className="cell-stack"><span>{r.note || label(r.kind)}</span><small>#{r._id.slice(-6)}</small>{r.transferReference && <small>Ảnh nhóm: {r.transferReference}</small>}</div>, lookup('staff', r.actorId), label(r.kind), label(r.method), <span key="amount" className={r.direction === 'IN' ? 'positive' : 'negative'}>{r.direction === 'IN' ? '+' : '−'}{vnd(r.amount)}</span>, r.reversed ? 'Đã đảo · vẫn giữ sổ gốc' : 'Đã ghi nhận', owner && !r.reversed && !['REVERSAL', 'PAYROLL'].includes(r.kind) ? <button key="reverse" onClick={() => open('Đảo giao dịch sai · không phải hoàn tiền khách', 'reverseCash', [reasonField], { id: r._id })}>Đảo sai sót</button> : '—'])} /></Panel></>; break;
+    case 'cash': content = <><div className="metrics"><Metric title="Thu trong bộ lọc" value={viewPending ? '…' : vnd(data.pages.cash?.summary?.incoming || 0)} sub="Toàn bộ kết quả phù hợp" /><Metric title="Chi trong bộ lọc" value={viewPending ? '…' : vnd(data.pages.cash?.summary?.outgoing || 0)} sub="Toàn bộ kết quả phù hợp" /><Metric title="Chênh lệch thu / chi" value={viewPending ? '…' : vnd((data.pages.cash?.summary?.incoming || 0) - (data.pages.cash?.summary?.outgoing || 0))} sub="Giữ cả giao dịch đảo" /></div><Panel title="Sổ giao dịch" action={finance && <button className="primary" onClick={() => open('Ghi thu / chi khác', 'cash', [{ key: 'direction', label: 'Loại giao dịch', options: [['IN', 'Thu khác'], ['OUT', 'Chi phí']] }, amountField, methodField, { ...noteField, optional: false }])}>＋ Ghi thu chi</button>}><div className="inline-note">Tiền khách trả hóa đơn và tiền cọc phải ghi ở đúng module để cập nhật công nợ. Đảo giao dịch tạo bút toán ngược trong ngày hiện tại.</div><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Thời gian', 'Nội dung', 'Người tạo', 'Loại', 'Phương thức', 'Số tiền', 'Trạng thái', 'Thao tác']} rows={listRows('cash').map(r => [time(r.createdAt), <div key="receipt-note" className="cell-stack"><span>{r.note || label(r.kind)}</span><small>#{r._id.slice(-6)}</small>{r.transferReference && <small>Ảnh nhóm: {r.transferReference}</small>}</div>, lookup('staff', r.actorId), label(r.kind), label(r.method), <span key="amount" className={r.direction === 'IN' ? 'positive' : 'negative'}>{r.direction === 'IN' ? '+' : '−'}{vnd(r.amount)}</span>, r.reversed ? 'Đã đảo · vẫn giữ sổ gốc' : 'Đã ghi nhận', owner && !r.reversed && !['REVERSAL', 'PAYROLL', 'REFUND'].includes(r.kind) ? <button key="reverse" onClick={() => open('Đảo giao dịch sai · không phải hoàn tiền khách', 'reverseCash', [reasonField], { id: r._id })}>Đảo sai sót</button> : '—'])} /></Panel></>; break;
     case 'days': content = <Panel title="Chốt sổ tiền mặt" action={<button className="primary" onClick={() => open('Mở sổ hôm nay', 'openDay', [{ key: 'day', label: 'Ngày · giờ Việt Nam', type: 'date' }, { key: 'opening', label: 'Tiền mặt đầu ngày (VNĐ)', type: 'number', min: 0 }], { day: data.today, opening: 0 })}>＋ Mở sổ</button>}><div className="inline-note">Tiền mặt kỳ vọng = đầu ngày + thực thu tiền mặt − thực chi tiền mặt. Chênh lệch được giữ nguyên, không tự tạo khoản cân sổ.</div><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Ngày', 'Đầu ngày', 'Kỳ vọng khi chốt', 'Đã đếm', 'Chênh lệch', 'Trạng thái', 'Thao tác']} rows={listRows('days').map((r: Row) => [r.day, vnd(r.opening), r.expected === undefined ? '—' : vnd(r.expected), r.counted === undefined ? '—' : vnd(r.counted), r.difference === undefined ? '—' : <span key="diff" className={r.difference ? 'negative' : 'positive'}>{vnd(r.difference)}</span>, <Badge key="s" value={r.status} />, r.status === 'OPEN' ? <button key="close" onClick={() => open('Chốt sổ cuối ngày', 'closeDay', [{ key: 'counted', label: 'Tiền mặt đếm thực tế (VNĐ)', type: 'number', min: 0 }, noteField], { day: r.day })}>Chốt sổ</button> : owner ? <button key="reopen" onClick={() => open('Mở lại sổ · chỉ chủ spa', 'reopenDay', [reasonField], { day: r.day })}>Mở lại</button> : '—'])} /></Panel>; break;
-    case 'reports': content = <><div className="report-filters"><label>Từ ngày<input type="date" value={period.from} onChange={e => setPeriod({ ...period, from: e.target.value })} /></label><label>Đến ngày<input type="date" value={period.to} min={period.from} onChange={e => setPeriod({ ...period, to: e.target.value })} /></label></div><div className="inline-note">Báo cáo tổng hợp toàn bộ giao dịch trong khoảng ngày đã chọn. Chưa ghi nhận doanh thu kế toán.</div><div className="metrics"><Metric title="Tổng thực thu" value={viewPending ? '…' : vnd(data.report.inflow)} sub="Gồm cọc, thu hóa đơn, thu khác, bút toán đảo" /><Metric title="Tổng thực chi" value={viewPending ? '…' : vnd(data.report.outflow)} sub="Gồm chi phí và bút toán đảo" /><Metric title="Dòng tiền ròng" value={viewPending ? '…' : vnd(data.report.inflow - data.report.outflow)} sub="Thực thu trừ thực chi" /></div><Panel title="Dòng tiền theo ngày"><div className="flow-chart">{!viewPending && data.report.days.slice(-14).map((day: Row) => {
-      const maximum = Math.max(data.report.inflow, data.report.outflow, 1);
-      return <div className="flow-row" key={day._id}><span>{day._id.slice(5)}</span><div className="bars"><div className="bar incoming" style={{ width: day.incoming / maximum * 100 + '%' }} /><div className="bar outgoing" style={{ width: day.outgoing / maximum * 100 + '%' }} /></div><small>Thu {vnd(day.incoming)} · Chi {vnd(day.outgoing)}</small></div>;
-    })}{viewPending ? <p role="status">Đang tổng hợp báo cáo…</p> : !data.report.days.length && <div className="empty">Chưa có giao dịch trong khoảng ngày này.</div>}</div><p className="muted">Biểu đồ hiển thị 14 ngày có giao dịch gần nhất trong khoảng lọc; số tổng tính toàn bộ khoảng ngày.</p></Panel></>; break;
-    case 'staff': content = <Panel title="Danh sách nhân viên" action={owner && <button className="primary" onClick={() => open('Tạo tài khoản nhân viên', 'user', [{ key: 'name', label: 'Họ và tên' }, { key: 'email', label: 'Email', type: 'email' }, { key: 'password', label: 'Mật khẩu ban đầu · tối thiểu 12 ký tự', type: 'password' }, { key: 'cashier', label: 'Cấp quyền thu ngân', type: 'checkbox', optional: true }])}>＋ Thêm nhân viên</button>}><Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Họ và tên', 'Email', 'Vai trò', 'Quyền thu ngân', 'Trạng thái', 'Thao tác']} rows={listRows('staff').map((r: Row) => [<button className="text-button" key="profile" onClick={() => setSelectedStaff(r._id)}>{r.name}</button>, r.email || '—', label(r.role), r.cashier || r.role === 'OWNER' ? 'Có' : 'Không', r.active ? 'Hoạt động' : 'Đã khóa', owner && r.role === 'STAFF' ? <div key="actions" className="actions"><button disabled={busy} onClick={() => open('Sửa nhân viên', 'updateUser', staffFields, edit(r))}>Sửa</button><button disabled={busy} onClick={() => statusAction(r, 'userStatus')}>{r.active ? 'Ngừng hoạt động' : 'Hoạt động lại'}</button></div> : '—'])} /></Panel>; break;
+    case 'reports': content = <Reports report={data.report} today={data.today} period={period} onPeriod={setPeriod} pending={viewPending} owner={owner} onInvoice={id => setDetail({ kind: 'invoice', id })} onStaff={setSelectedStaff} onPage={page => setListPaging(previous => ({ ...previous, key: filterKey, page }))} />; break;
+    case 'staff': content = <div className="staff-workspace">
+      <div className="report-stats staff-stats" aria-label="Thống kê nhân sự">
+        <div className="report-stat"><small>Tổng nhân sự</small><strong>{data.staff.length}</strong></div>
+        <div className="report-stat"><small>Đang hoạt động</small><strong>{data.staff.filter((s: Row) => s.active).length}</strong></div>
+        <div className="report-stat"><small>Đã khóa</small><strong>{data.staff.filter((s: Row) => !s.active).length}</strong></div>
+      </div>
+      <Panel title="Nhân sự trong spa" action={owner && <button className="primary" onClick={() => open('Tạo tài khoản nhân viên', 'user', [{ key: 'name', label: 'Họ và tên' }, { key: 'email', label: 'Email', type: 'email' }, { key: 'password', label: 'Mật khẩu ban đầu · tối thiểu 12 ký tự', type: 'password' }, { key: 'cashier', label: 'Cấp quyền thu ngân', type: 'checkbox', optional: true }])}>＋ Thêm nhân viên</button>}>
+        <Table pagination={primaryPagination} resetKey={tableResetKey} headers={['Nhân viên', 'Vai trò & quyền', 'Trạng thái', 'Thao tác']} rows={listRows('staff').map((r: Row) => [
+          <div key="identity" className="cell-stack staff-identity"><button className="text-button" onClick={() => setSelectedStaff(r._id)}>{r.name}</button><small>{r.email || 'Chưa có email'}</small></div>,
+          <div key="role" className="cell-stack"><span>{label(r.role)}</span><small>{r.role === 'OWNER' ? 'Toàn quyền quản lý' : r.cashier ? 'Có quyền thu ngân' : 'Quyền nhân viên'}</small></div>,
+          <span key="status" className={'badge ' + (r.active ? 'active' : 'inactive')}>{r.active ? 'Hoạt động' : 'Đã khóa'}</span>,
+          owner && r.role === 'STAFF' ? <div key="actions" className="actions"><button disabled={busy} onClick={() => open('Sửa nhân viên', 'updateUser', staffFields, edit(r))}>Sửa</button><button disabled={busy} onClick={() => statusAction(r, 'userStatus')}>{r.active ? 'Khóa tài khoản' : 'Mở lại tài khoản'}</button></div> : <span key="owner">Tài khoản chủ spa</span>
+        ])} />
+      </Panel>
+    </div>; break;
     case 'audit': content = <AuditLog data={data} filters={auditFilters} onFiltersChange={changes => setAuditFilters(previous => ({ ...previous, ...changes }))} pagination={primaryPagination} />; break;
     default: content = null;
   }
@@ -385,19 +430,19 @@ export default function Workspace() {
     }
     if (node.pending) return <span key={node.key} className="nav-item nav-pending" aria-disabled="true" title="Chờ xác định nghiệp vụ">{node.title}<small>Chưa triển khai</small></span>;
     if (!canViewPage(node.key, data!.user)) return null;
-    return <Link key={node.key} href={node.key === 'overview' ? '/' : '/workspace/' + node.key} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}>{node.title}</Link>;
+    return <Link key={node.key} href={workspaceHref(node.key)} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}>{node.title}</Link>;
   }
   return <div className="app">
     <header className="mobile-toolbar">
       <div className="mobile-brand-row">
         <button ref={mobileMenuButton} type="button" className="mobile-menu-toggle" aria-label="Mở hoặc đóng menu" title="Menu" aria-expanded={mobileMenuOpen} aria-controls="mobile-menu-panel" onClick={() => setMobileMenuOpen(open => !open)}>☰</button>
-        <span className="brand">✧ SpaCare</span>
+        <Brand href="/workspace" />
         <span className="mobile-account" title={data.user.name + " · " + label(data.user.role)}>{data.user.name}<small>{label(data.user.role)}</small></span>
         <button type="button" aria-label="Đăng xuất" onClick={logout}>↪</button>
       </div>
     </header>
     <aside className="sidebar">
-      <div className="brand">✧ SpaCare</div>
+      <Brand href="/workspace" />
       <div className="workspace-label">KHÔNG GIAN QUẢN LÝ</div>
       <nav aria-label="Menu chính">{menu.map(node => renderMenu(node))}</nav>
       <div className="sidebar-bottom">
@@ -419,7 +464,7 @@ export default function Workspace() {
             <p>{headers[tab]}</p>
           </div>
           {!['overview', 'cashier', 'reports', 'days', 'salary', 'commission', 'audit', 'products', 'product_groups', 'inventory'].includes(tab) && (
-            <input className="search" maxLength={100} placeholder="Tìm trong danh sách…" aria-label="Tìm kiếm" value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="search" maxLength={100} placeholder="Tìm trong danh sách…" aria-label="Tìm kiếm" value={search} onCompositionStart={() => { composingSearch.current = true; clearTimeout(searchTimer.current); }} onCompositionEnd={e => { composingSearch.current = false; setSearch(e.currentTarget.value); }} onChange={e => setSearch(e.target.value)} />
           )}
         </div>
         {error && !modal && <div className="alert error" role="alert">{error}</div>}
@@ -441,12 +486,12 @@ export default function Workspace() {
           <span className="mobile-nav-icon" aria-hidden="true">{({ products_group: '▣', operations: '◷', services_treatments: '✧', finance: '₫', admin: '⚙' } as Record<string, string>)[node.key]}</span><small>{node.title}</small>
         </button>
       ) : (
-        <Link href="/" key={node.key} className={tab === node.key ? 'active' : ''} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}><span className="mobile-nav-icon" aria-hidden="true">⌂</span><small>{node.title}</small></Link>
+        <Link href={workspaceHref(node.key)} key={node.key} className={tab === node.key ? 'active' : ''} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}><span className="mobile-nav-icon" aria-hidden="true">⌂</span><small>{node.title}</small></Link>
       ))}
     </nav>
     {selectedStaff && <StaffDetail key={selectedStaff} id={selectedStaff} onClose={() => setSelectedStaff(null)} onSchedule={id => router.push('/workspace/appointments?employee=' + id)} />}
-    {detail && <InvoiceDetail key={detail.kind + detail.id} record={detail} onClose={() => setDetail(null)} onInvoice={id => setDetail({ kind: 'invoice', id })} onPayment={(invoice, method) => { setDetail(null); openPayment(invoice, method); }} onCompleteService={finance ? invoice => { setDetail(null); open('Hoàn thành dịch vụ lẻ', 'completeInvoiceService', [{ key: 'staffId', label: 'Nhân viên trực tiếp thực hiện', options: choices('staff', r => r.name) }], { id: invoice._id }, 'Xác nhận dịch vụ đã thực hiện xong. Hoa hồng cố định được ghi cho nhân viên bạn chọn, không phụ thuộc hóa đơn đã trả tiền.'); } : undefined} onBook={bookCustomer} onSell={finance ? id => router.push('/workspace/cashier?customer=' + id) : undefined} />}
-    {modal && <FormModal catalogs={data} spec={modal} busy={busy} error={error} onClose={() => { if (!busy) { setModal(null); setError(''); } }} onSubmit={values => run(modal.action, values)} />}
+    {detail && <InvoiceDetail key={detail.kind + detail.id} record={detail} onClose={() => setDetail(null)} onInvoice={id => setDetail({ kind: 'invoice', id })} onPayment={(invoice, method) => { setDetail(null); openPayment(invoice, method); }} onRefund={owner ? invoice => { setDetail(null); open('Ghi nhận hoàn tiền gói', 'refundPackage', [amountField, methodField, reasonField, {key:'exceptionApproved',label:'Chủ spa đã duyệt ngoại lệ hoàn tiền, không phải tự hoàn khi dừng gói',type:'checkbox'}, {key:'receivedConfirmation',label:'Đã thực trả tiền cho khách',type:'checkbox'}, {key:'transferReference',label:'Tham chiếu chuyển khoản',optional:true}], {invoiceId:invoice._id,method:'CASH'}, 'Chỉ ghi sau khi chủ spa quyết định và đã thực hoàn tiền. Điều chỉnh hoa hồng tương ứng; không tự khôi phục buổi, xóa nợ hoặc sửa bảng lương đã duyệt.'); } : undefined} onCompleteService={finance ? invoice => { setDetail(null); open('Hoàn thành dịch vụ lẻ', 'completeInvoiceService', [{ key: 'staffId', label: 'Nhân viên trực tiếp thực hiện', options: choices('staff', r => r.name) }], { id: invoice._id }, 'Xác nhận dịch vụ đã thực hiện xong. Hoa hồng cố định được ghi cho nhân viên bạn chọn, không phụ thuộc hóa đơn đã trả tiền.'); } : undefined} onBook={bookCustomer} onSell={finance ? id => router.push('/workspace/cashier?customer=' + id) : undefined} />}
+    {modal && <FormModal catalogs={data} fieldErrors={fieldErrors} spec={modal} busy={busy} error={error} onClose={() => { if (!busy) { setModal(null); setError(''); } }} onSubmit={values => run(modal.action, values)} />}
   </div>;
 }
 function Metric({ title, value, sub }: { title: string; value: string; sub: string }) { return <section className="metric"><span>{title}</span><strong>{value}</strong><small>{sub}</small></section>; }
@@ -508,9 +553,11 @@ function CompactCell({ value, actions }: { value: React.ReactNode; actions: bool
   if (!actions || !isValidElement<{ className?: string }>(value) || value.props.className !== 'actions') return <>{value}</>;
   return <details className="row-action-menu" onClick={e => { if (e.target instanceof Element && e.target.closest('button:not(:disabled)')) e.currentTarget.open = false; }}><summary>Thao tác <span aria-hidden="true">⌄</span></summary><div className="row-action-options">{value}</div></details>;
 }
-function FormModal({ spec, busy, error, onClose, onSubmit, catalogs }: { catalogs: Row; spec: FormSpec; busy: boolean; error: string; onClose: () => void; onSubmit: (values: Row) => void }) {
+export function FormModal({ spec, busy, error, fieldErrors={}, onClose, onSubmit, catalogs }: { catalogs: Row; fieldErrors?:Record<string,string>; spec: FormSpec; busy: boolean; error: string; onClose: () => void; onSubmit: (values: Row) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Row>(spec.defaults || {});
+  const [localError,setLocalError] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [signature, setSignature] = useState<Signature>({ version: 1, strokes: [] });
   const packageOptions = spec.fields.find(f => f.key === 'treatmentId');
   useEffect(() => {
@@ -520,24 +567,30 @@ function FormModal({ spec, busy, error, onClose, onSubmit, catalogs }: { catalog
   }, [selected.customerId, selected.serviceId, packageOptions]);
   useEffect(() => { ref.current?.querySelector<HTMLElement>('input,select,button')?.focus(); }, []);
   function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); const fd = new FormData(e.currentTarget); const values: Row = { ...spec.defaults };
+    if (uploadingImage) { e.preventDefault(); return; }
+    e.preventDefault(); setLocalError(''); try { const fd = new FormData(e.currentTarget); const values: Row = { ...spec.defaults };
     for (const field of spec.fields) {
       const value = fd.get(field.key);
       if (field.optional && (value === '' || value === null) && field.type !== 'checkbox') { delete values[field.key]; continue; }
-      values[field.key] = field.type === 'checkbox' ? value === 'on' : field.type === 'number' ? Number(value) : field.type === 'datetime-local' ? new Date(`${value}:00+07:00`).toISOString() : value;
+      if (field.type === 'number' && moneyField(field.key) && value !== null && value !== '') {
+        const amount = parseMoney(String(value));
+        if (amount < (field.min ?? 0) || amount > (field.max ?? 1_000_000_000_000)) {setLocalError(field.label + ': số tiền ngoài giới hạn cho phép.');return;}
+      }
+      values[field.key] = field.type === 'checkbox' ? value === 'on' : field.type === 'number' ? (moneyField(field.key) ? parseMoney(String(value)) : Number(value)) : field.type === 'datetime-local' ? new Date(`${value}:00+07:00`).toISOString() : value;
     }
     if (spec.action === 'invoice' || spec.action === 'sellPackage') {
       for (const key of spec.action === 'invoice' ? ['serviceId', 'description', 'total'] : ['templateId', 'total', 'promotion', 'gifts']) {
-        values[key] = key === 'total' ? Number(fd.get(key)) : key === 'gifts' ? JSON.parse(String(fd.get(key) || '[]')) : fd.get(key);
+        values[key] = key === 'total' ? parseMoney(String(fd.get(key))) : key === 'gifts' ? JSON.parse(String(fd.get(key) || '[]')) : fd.get(key);
       }
     }
+    if (spec.action === 'invoice' && !String(values.description || '').trim()) delete values.description;
     if (spec.action === 'invoice' && fd.get('treatmentId')) {
       const drawn = JSON.parse(String(fd.get('signature') || 'null'));
       if (!isValidSignature(drawn)) { window.alert('Khách cần ký xác nhận buổi liệu trình.'); return; }
       values.treatmentId = fd.get('treatmentId'); values.signature = drawn; values.remainingBefore = Number(fd.get('remainingBefore'));
     }
     if (spec.signatureContext) { if (!isValidSignature(signature)) return; values.signature = signature; }
-    onSubmit(values);
+    onSubmit(values); } catch(e) {setLocalError((e as Error).message);}
   }
   return <div className="modal-backdrop"><div ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onKeyDown={e => {
     if (e.key === 'Escape') onClose();
@@ -548,5 +601,5 @@ function FormModal({ spec, busy, error, onClose, onSubmit, catalogs }: { catalog
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
-  }}><div className="section-head"><h2 id="modal-title">{spec.title}</h2><button disabled={busy} aria-label="Đóng" onClick={onClose}>×</button></div><form onSubmit={submit}>{spec.description && <p>{spec.description}</p>}{spec.transfer && <section className="payment-instructions"><strong>Thông tin nhận chuyển khoản</strong>{spec.transfer.bankName && spec.transfer.accountNumber && spec.transfer.accountName ? <><p>{spec.transfer.bankName}<br />Số tài khoản: {spec.transfer.accountNumber}<br />Chủ tài khoản: {spec.transfer.accountName}</p>{spec.transfer.qrImagePath && <img src={spec.transfer.qrImagePath} alt="Mã QR tài khoản nhận tiền của spa" width={240} height={240} />}<p>Nhập số tiền muốn thanh toán và nội dung bên dưới khi chuyển khoản. QR tài khoản không tự điền số tiền của hóa đơn.</p></> : <p>Chưa cấu hình tài khoản nhận tiền/QR. Liên hệ chủ spa để lấy thông tin chính xác.</p>}<p>Nội dung: <strong>{spec.transfer.reference}</strong></p><small>Quét mã chưa có nghĩa là đã thanh toán. Chỉ xác nhận sau khi kiểm tra tiền thực nhận.</small></section>}{spec.fields.length === 0 && !spec.description && <p>Thay đổi trạng thái bản ghi này? Lịch sử được giữ lại. Lịch hẹn chưa xử lý cần được hoàn thành hoặc hủy trước.</p>}{spec.signatureContext && <section className="session-confirmation"><dl><dt>Khách hàng</dt><dd>{spec.signatureContext.customer}</dd><dt>Gói liệu trình</dt><dd>{spec.signatureContext.packageName}</dd><dt>Nhân viên thực hiện</dt><dd>{selected.staffId ? spec.fields.find(f => f.key === 'staffId')?.options?.find(([id]) => id === selected.staffId)?.[1] || spec.signatureContext.staff : spec.signatureContext.staff}</dd><dt>Buổi xác nhận</dt><dd>Buổi {spec.signatureContext.sessionNumber} · còn {spec.signatureContext.remaining} buổi trước khi ghi nhận</dd></dl>{spec.fields.find(f => f.key === 'staffId') && <label>Nhân viên trực tiếp thực hiện<select name="staffId" required value={selected.staffId || ''} disabled={busy} onChange={e => { setSelected(previous => ({ ...previous, staffId: e.target.value })); setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn nhân viên…</option>{spec.fields.find(f => f.key === 'staffId')?.options?.map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>}<SignaturePad value={signature} onChange={setSignature} disabled={busy || (!!spec.fields.find(f => f.key === 'staffId') && !selected.staffId)} /></section>}{spec.readOnly && (spec.signaturePreview ? <SignatureImage signature={spec.signaturePreview} /> : <p>Phiếu cũ không có chữ ký trên màn hình.</p>)}{spec.fields.filter(f => !(spec.signatureContext && f.key === 'staffId')).map(f => f.remoteCustomers ? <div key={f.key}><CustomerPicker label={f.label} value={selected[f.key] || ''} onChange={value => setSelected(previous => ({ ...previous, [f.key]: value }))} required={!f.optional} disabled={busy} />{['invoice', 'sellPackage'].includes(spec.action) && <CommercialFields key={selected.customerId || 'new'} action={spec.action} data={catalogs} disabled={busy} customerId={selected.customerId} />}</div> : <label key={f.key}>{f.label}{f.type === 'checkbox' ? <input type="checkbox" name={f.key} required={!f.optional} defaultChecked={spec.defaults?.[f.key]} /> : f.options ? <select name={f.key} required={!f.optional} value={selected[f.key] || ''} onChange={e => { setSelected(previous => ({ ...previous, [f.key]: e.target.value })); if (spec.signatureContext && f.key === 'staffId') setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn…</option>{f.options.filter(([id]) => !f.optionScopes || (f.optionScopes[id]?.customerId === selected.customerId && f.optionScopes[id]?.serviceId === selected.serviceId)).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select> : <input name={f.key} type={f.type || 'text'} required={!f.optional} min={f.min} max={f.max} step={f.type === 'number' ? 1 : undefined} maxLength={f.type === 'password' ? 128 : 2000} defaultValue={spec.defaults?.[f.key]} />}{f.hint && <small>{f.hint}</small>}</label>)}{error && <div className="alert error" role="alert">{error}</div>}<div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>{spec.readOnly ? 'Đóng' : 'Hủy'}</button>{!spec.readOnly && <button className="primary" disabled={busy || (!!spec.signatureContext && !isValidSignature(signature))}>{busy ? 'Đang lưu…' : spec.action === 'completeAppointment' ? 'Xác nhận hoàn thành & liên kết hóa đơn' : spec.action === 'completeTreatmentAppointment' ? 'Xác nhận hoàn thành & trừ 1 buổi' : spec.action === 'use' ? 'Xác nhận chữ ký & ghi 1 buổi' : spec.action === 'payment' ? 'Xác nhận đã nhận tiền' : 'Lưu thông tin'}</button>}</div></form></div></div>;
+  }}><div className="section-head"><h2 id="modal-title">{spec.title}</h2><button disabled={busy} aria-label="Đóng" onClick={onClose}>×</button></div><ValidatedForm fieldErrors={fieldErrors} onSubmit={submit}>{spec.description && <p>{spec.description}</p>}{spec.transfer && <section className="payment-instructions"><strong>Thông tin nhận chuyển khoản</strong>{spec.transfer.bankName && spec.transfer.accountNumber && spec.transfer.accountName ? <><p>{spec.transfer.bankName}<br />Số tài khoản: {spec.transfer.accountNumber}<br />Chủ tài khoản: {spec.transfer.accountName}</p>{spec.transfer.qrImagePath && <img src={spec.transfer.qrImagePath} alt="Mã QR tài khoản nhận tiền của spa" width={240} height={240} />}<p>Nhập số tiền muốn thanh toán và nội dung bên dưới khi chuyển khoản. QR tài khoản không tự điền số tiền của hóa đơn.</p></> : <p>Chưa cấu hình tài khoản nhận tiền/QR. Liên hệ chủ spa để lấy thông tin chính xác.</p>}<p>Nội dung: <strong>{spec.transfer.reference}</strong></p><small>Quét mã chưa có nghĩa là đã thanh toán. Chỉ xác nhận sau khi kiểm tra tiền thực nhận.</small></section>}{spec.fields.length === 0 && !spec.description && <p>Thay đổi trạng thái bản ghi này? Lịch sử được giữ lại. Lịch hẹn chưa xử lý cần được hoàn thành hoặc hủy trước.</p>}{spec.signatureContext && <section className="session-confirmation"><dl><dt>Khách hàng</dt><dd>{spec.signatureContext.customer}</dd><dt>Gói liệu trình</dt><dd>{spec.signatureContext.packageName}</dd><dt>Nhân viên thực hiện</dt><dd>{selected.staffId ? spec.fields.find(f => f.key === 'staffId')?.options?.find(([id]) => id === selected.staffId)?.[1] || spec.signatureContext.staff : spec.signatureContext.staff}</dd><dt>Buổi xác nhận</dt><dd>Buổi {spec.signatureContext.sessionNumber} · còn {spec.signatureContext.remaining} buổi trước khi ghi nhận</dd></dl>{spec.fields.find(f => f.key === 'staffId') && <label>Nhân viên trực tiếp thực hiện<select name="staffId" required value={selected.staffId || ''} disabled={busy} onChange={e => { setSelected(previous => ({ ...previous, staffId: e.target.value })); setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn nhân viên…</option>{spec.fields.find(f => f.key === 'staffId')?.options?.map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>}<SignaturePad value={signature} onChange={setSignature} disabled={busy || (!!spec.fields.find(f => f.key === 'staffId') && !selected.staffId)} /></section>}{spec.readOnly && (spec.signaturePreview ? <SignatureImage signature={spec.signaturePreview} /> : <p>Phiếu cũ không có chữ ký trên màn hình.</p>)}{spec.fields.filter(f => !(spec.signatureContext && f.key === 'staffId')).map(f => f.remoteCustomers ? <div key={f.key}><CustomerPicker label={f.label} value={selected[f.key] || ''} onChange={value => setSelected(previous => ({ ...previous, [f.key]: value }))} required={!f.optional} disabled={busy} />{['invoice', 'sellPackage'].includes(spec.action) && <CommercialFields key={selected.customerId || 'new'} action={spec.action} data={catalogs} disabled={busy} customerId={selected.customerId} />}</div> : f.type === 'product-image' ? <ProductImagePicker key={f.key} name={f.key} initialValue={spec.defaults?.[f.key]} disabled={busy} onBusyChange={setUploadingImage} /> : <label key={f.key}>{f.label}{f.type === 'checkbox' ? <input type="checkbox" name={f.key} required={!f.optional} defaultChecked={spec.defaults?.[f.key]} /> : f.options ? <select name={f.key} required={!f.optional} value={selected[f.key] || ''} onChange={e => { setSelected(previous => ({ ...previous, [f.key]: e.target.value })); if (spec.signatureContext && f.key === 'staffId') setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn…</option>{f.options.filter(([id]) => !f.optionScopes || (f.optionScopes[id]?.customerId === selected.customerId && f.optionScopes[id]?.serviceId === selected.serviceId)).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select> : f.type === 'number' && moneyField(f.key) ? <MoneyInput name={f.key} required={!f.optional} defaultValue={spec.defaults?.[f.key]} /> : <input name={f.key} type={f.type || 'text'} required={!f.optional} min={f.min} max={f.max} step={f.type === 'number' ? f.step ?? 1 : undefined} maxLength={f.type === 'password' ? 128 : 2000} defaultValue={spec.defaults?.[f.key]} />}{f.hint && <small>{f.hint}</small>}</label>)}{(error || localError) && <div className="alert error" role="alert">{error || localError}</div>}<div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>{spec.readOnly ? 'Đóng' : 'Hủy'}</button>{!spec.readOnly && <button className="primary" disabled={busy || uploadingImage || (!!spec.signatureContext && !isValidSignature(signature))}>{busy ? 'Đang lưu…' : spec.action === 'completeAppointment' ? 'Xác nhận hoàn thành & liên kết hóa đơn' : spec.action === 'completeTreatmentAppointment' ? 'Xác nhận hoàn thành & trừ 1 buổi' : spec.action === 'use' ? 'Xác nhận chữ ký & ghi 1 buổi' : spec.action === 'payment' ? 'Xác nhận đã nhận tiền' : 'Lưu thông tin'}</button>}</div></ValidatedForm></div></div>;
 }

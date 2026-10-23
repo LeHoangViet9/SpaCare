@@ -9,8 +9,9 @@ export type Actor = {
   id: string;
   spaId: string;
   name: string;
-  role: 'OWNER' | 'STAFF';
+  role: 'OWNER' | 'STAFF' | 'CUSTOMER';
   cashier: boolean;
+  customerId?: string;
 };
 
 export async function actor(): Promise<Actor> {
@@ -33,8 +34,38 @@ export async function actor(): Promise<Actor> {
     spaId: String(user.spaId),
     name: user.name,
     role: user.role,
-    cashier: user.cashier,
+    cashier: !!user.cashier,
+    customerId: user.customerId ? String(user.customerId) : undefined,
   };
+}
+
+export async function maybeActor(): Promise<Actor | null> {
+  try {
+    const token = (await cookies()).get('spacare_session')?.value;
+    if (!token) return null;
+    await connect();
+    const session = await Session.findOne({
+      tokenHash: hash(token),
+      expiresAt: { $gt: new Date() },
+    });
+    if (!session) return null;
+    const user = await User.findOne({
+      _id: session.userId,
+      spaId: session.spaId,
+      active: true,
+    });
+    if (!user) return null;
+    return {
+      id: String(user._id),
+      spaId: String(user.spaId),
+      name: user.name,
+      role: user.role,
+      cashier: !!user.cashier,
+      customerId: user.customerId ? String(user.customerId) : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function checkOrigin(request: Request) {

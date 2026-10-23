@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { auditLines, auditActions } from '../src/lib/audit-view.ts';
+import { tsImport } from 'tsx/esm/api';
+const {auditLines,auditActions}=await tsImport('../src/lib/audit-view.ts',import.meta.url);
 
 test('audit formats money, customer references and payment method', () => {
   const lines = auditLines({ amount: 500000, method: 'BANK_TRANSFER', customerId: 'abc123456', reason: 'Thu lần hai' }, { customers: [{ _id: 'abc123456', name: 'Ngọc Anh' }] });

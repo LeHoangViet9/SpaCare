@@ -7,6 +7,7 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request);
     const user = await actor();
+    ensure(['OWNER', 'STAFF'].includes(user.role), 'Bạn không có quyền thực hiện thao tác quản trị.', 403);
     const raw = await request.text();
     ensure(raw.length <= 65536, 'Yêu cầu quá lớn.', 413);
     let body;

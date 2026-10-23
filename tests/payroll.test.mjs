@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tsImport } from 'tsx/esm/api';
-import { monthBounds, salaryTotal, payrollInputs } from '../src/lib/payroll-rules.ts';
+const { monthBounds, salaryTotal, payrollInputs } = await tsImport('../src/lib/payroll-rules.ts', import.meta.url);
 const { payrollStaffScope, payrollQuery } = await tsImport('../src/lib/payroll-read.ts', import.meta.url);
 const id = 'a'.repeat(24), other = 'b'.repeat(24), spaId = 'c'.repeat(24);
 test('service commission is a fixed integer amount per service, without client tenant or employee scope', () => {
@@ -40,4 +40,12 @@ test('payroll approval needs expected amount and payout requires actual-payment 
   assert.equal(payout.amount, undefined); assert.equal(payout.staffId, undefined);
   assert.equal(payrollInputs.setStaffSalary.safeParse({ staffId: id, baseSalary: -1 }).success, false);
   assert.throws(() => payrollQuery(new URLSearchParams({ month: '2026-12', employee: 'bad' })));
+});
+
+ test('leave records validate calendar days and never accept salary deductions', () => {
+ const value = {staffId: id, day:'2026-02-28', type:'PERMITTED', deductions: 500000};
+ assert.equal(payrollInputs.recordStaffLeave.parse(value).deductions, undefined);
+ for (const day of ['2026-02-30','2026-13-01','bad']) assert.equal(payrollInputs.recordStaffLeave.safeParse({...value,day}).success,false);
+ for (const type of ['PERMITTED','UNPERMITTED']) assert.equal(payrollInputs.recordStaffLeave.parse({...value,type}).type,type);
+ assert.equal(payrollInputs.recordStaffLeave.safeParse({...value,type:'PAID'}).success,false);
 });

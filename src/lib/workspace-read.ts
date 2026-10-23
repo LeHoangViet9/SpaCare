@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { readReport } from './report-read';
 import { Customer, Service, Product, ProductGroup, PackageTemplate, User, Appointment, Invoice, Deposit, Allocation, CashEntry, Treatment, TreatmentUse, Day, Audit } from './models';
 import { invoiceScope } from './invoice-read';
 import { canViewPage } from './navigation';
@@ -14,12 +15,12 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const scope = { spaId: user.spaId };
   const finance = user.role === 'OWNER' || user.cashier;
   const today = spaDay();
-  const assignedQuery = await invoiceScope({ ...user, role: 'STAFF', cashier: false });
-  const assignedBills = await Invoice.find(assignedQuery).select('_id customerId').lean();
+  const assignedQuery = user.role === 'OWNER' ? scope : await invoiceScope({ ...user, role: 'STAFF', cashier: false });
+  const assignedBills = user.role === 'OWNER' ? [] : await Invoice.find(assignedQuery).select('_id customerId').lean();
   const assignableIds = new Set(assignedBills.map(i => String(i._id)));
   const filters: Record<string, Row> = {
     packageTemplates: scope,
-    customers: scope, services: scope, staff: scope, treatments: scope, uses: scope,
+    customers: scope, services: scope, staff: { ...scope, role: { $in: ['OWNER', 'STAFF'] } }, treatments: scope, uses: scope,
     appointments: { ...scope, ...(finance ? {} : { staffId: user.id }) },
     invoices: finance ? scope : assignedQuery,
     deposits: finance ? scope : { ...scope, customerId: { $in: assignedBills.map(i => i.customerId) } },
@@ -91,11 +92,14 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const auditIds = (key: string) => listed('audit').flatMap(a => [a.details?.[key], a.details?.before?.[key], a.details?.after?.[key]])
     .filter(id => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id));
   // Catalogs and usable balances support form choices; history is loaded only by page.
-  const services = await Service.find(scope).lean();
-  const packageTemplates = await PackageTemplate.find(scope).lean();
-  const productGroups = query.section === 'cashier' && finance ? await ProductGroup.find(scope).select('name').lean() : [];
-  const products = query.section === 'cashier' && finance ? await Product.find({ ...scope, active: true }).select('name sku unit groupId price stock active').lean() : [];
-  const staff = await User.find(scope).select(fields.staff).lean();
+  // Independent reads can share a network round trip; no transaction writes here.
+  const [services, packageTemplates, productGroups, products, staff] = await Promise.all([
+    Service.find(scope).lean(),
+    PackageTemplate.find(scope).lean(),
+    query.section === 'cashier' && finance ? ProductGroup.find(scope).select('name').lean() : [],
+    query.section === 'cashier' && finance ? Product.find({ ...scope, active: true }).select('name sku unit groupId price stock active').lean() : [],
+    User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } }).select(fields.staff).lean(),
+  ]);
   const appointments: Row[] = query.section === 'overview'
     ? await Appointment.find({ ...filters.appointments, status: 'CONFIRMED', endAt: { $gte: new Date() } }).sort({ startAt: 1, _id: 1 }).limit(6).lean()
     : listed('appointments');
@@ -139,9 +143,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   ]);
   let report: Row = { inflow: 0, outflow: 0, days: [] };
   if (query.section === 'reports') {
-    const days = await CashEntry.aggregate([{ $match: { ...aggregateScope, ...(query.from || query.to ? { day: { ...(query.from ? { $gte: query.from } : {}), ...(query.to ? { $lte: query.to } : {}) } } : {}) } },
-      { $group: { _id: '$day', incoming: { $sum: { $cond: [{ $eq: ['$direction', 'IN'] }, '$amount', 0] } }, outgoing: { $sum: { $cond: [{ $eq: ['$direction', 'OUT'] }, '$amount', 0] } } } }, { $sort: { _id: 1 } }]);
-    report = { inflow: days.reduce((s, d) => s + d.incoming, 0), outflow: days.reduce((s, d) => s + d.outgoing, 0), days };
+    report = await readReport(user, query);
   }
   const paymentInfo = finance || invoices.length ? { bankName: process.env.BANK_NAME || '', accountNumber: process.env.BANK_ACCOUNT_NUMBER || '', accountName: process.env.BANK_ACCOUNT_NAME || '', qrImagePath: /^\/[a-zA-Z0-9_./-]+$/.test(process.env.BANK_QR_IMAGE_PATH || '') && !(process.env.BANK_QR_IMAGE_PATH || '').includes('..') && !(process.env.BANK_QR_IMAGE_PATH || '').startsWith('//') ? process.env.BANK_QR_IMAGE_PATH : '' } : undefined;
   return { user, today, pages, products, productGroups, packageTemplates, customers, services, staff, appointments, invoices, deposits, allocations: listed('allocations'), cash: listed('cash'), treatments: packages, uses: listed('uses'), days: listed('days'), audit: listed('audit'), paymentInfo, report,

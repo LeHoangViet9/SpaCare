@@ -37,8 +37,10 @@ export const User = model(
     name: String,
     email: { type: String, required: true },
     passwordHash: { type: String, required: true, select: false },
+    salaryPolicy: { type: Schema.Types.Mixed, select: false },
     baseSalary: { ...amount, required: false, select: false },
-    role: { type: String, enum: ['OWNER', 'STAFF'], required: true },
+    role: { type: String, enum: ['OWNER', 'STAFF', 'CUSTOMER'], required: true },
+    customerId: optionalId,
     cashier: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
   },
@@ -90,6 +92,7 @@ export const PackageTemplate = model('PackageTemplate', {
 export const ProductGroup = model('ProductGroup', { name: { type: String, required: true }, nameKey: { type: String, required: true } }, [[{ spaId: 1, nameKey: 1 }, { unique: true }]]);
 export const Product = model('Product', {
   name: { type: String, required: true }, sku: { type: String, required: true }, unit: { type: String, required: true },
+  sizeMl: { type: Number, min: 1, max: 100_000, validate: Number.isSafeInteger, required: false },
   groupId: optionalId, price: amount, stock: { type: Number, min: 0, max: 1_000_000_000, validate: Number.isSafeInteger, default: 0 }, active: { type: Boolean, default: true },
   description: String, imageUrl: String,
   minStock: { type: Number, min: 0, max: 1_000_000_000, validate: Number.isSafeInteger, default: 0 },
@@ -119,6 +122,7 @@ export const Appointment = model(
 );
 
 export const Invoice = model('Invoice', {
+  sellerId: optionalId, sellerName: String, saleCommissionVersion: Number, saleCommissionAccrued: Number, refunded: { type: Number, default: 0 },
   performedBy: optionalId,
   performedAt: Date,
   createdBy: optionalId,
@@ -184,7 +188,7 @@ export const CashEntry = model(
     transferReference: String,
     kind: {
       type: String,
-      enum: ['DEPOSIT', 'PAYMENT', 'INCOME', 'EXPENSE', 'REVERSAL', 'PAYROLL'],
+      enum: ['DEPOSIT', 'PAYMENT', 'INCOME', 'EXPENSE', 'REVERSAL', 'PAYROLL', 'REFUND'],
       required: true,
     },
     day: String,
@@ -247,13 +251,26 @@ export const TreatmentUse = model('TreatmentUse', {
 
 export const Commission = model('Commission', {
   staffId: id, staffName: String, serviceId: id, serviceName: String, customerId: id,
-  invoiceId: id, sourceType: { type: String, enum: ['APPOINTMENT', 'TREATMENT_USE', 'INVOICE'], required: true },
-  sourceId: id, amount, earnedAt: { type: Date, required: true }, payrollId: optionalId,
+  invoiceId: id, category: { type: String, enum: ['SERVICE', 'PACKAGE_SALE'], default: 'SERVICE' },
+  sourceType: { type: String, enum: ['APPOINTMENT', 'TREATMENT_USE', 'INVOICE', 'PACKAGE_PAYMENT', 'PACKAGE_ADJUSTMENT'], required: true },
+  sourceId: id, amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
 }, [[{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, invoiceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
+
+export const SaleCommission = model('SaleCommission', {
+  staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
+  category: {type:String, default:'PACKAGE_SALE'}, sourceType:String, sourceId:id,
+  amount: {...amount, min:-1_000_000_000_000}, earnedAt:Date, payrollId:optionalId,
+}, [[{spaId:1,sourceType:1,sourceId:1},{unique:true}], [{spaId:1,staffId:1,earnedAt:-1}]]);
+export const Workday = model('Workday', {staffId:id, day:String, period:String, note:String, actorId:id}, [[{spaId:1,staffId:1,day:1},{unique:true}]]);
+export const StaffLeave = model('StaffLeave', {
+  staffId: id, staffName: String, day: { type: String, required: true }, startDay:String, endDay:String, period:String, paid:Boolean, status:{type:String,enum:['PENDING','APPROVED','REJECTED']}, reviewedBy:optionalId, reviewedAt:Date,
+  type: { type: String, enum: ['PERMITTED', 'UNPERMITTED'], required: true }, note: String, actorId: id,
+}, [[{ spaId: 1, staffId: 1, day: 1, period:1 }], [{ spaId: 1, day: -1 }]]);
 
 export const Payroll = model('Payroll', {
   staffId: id, staffName: String, month: { type: String, required: true }, baseSalary: amount,
-  commissionTotal: amount, commissionCount: Number, carryoverCount: Number,
+  commissionTotal: {...amount,min:-1_000_000_000_000}, commissionCount: Number, carryoverCount: Number,
+  attendanceDigest:String, earnedBase: Number, leaveDeduction:Number, attendanceConfirmed:Boolean, workdays:Number, leaveStats:Schema.Types.Mixed, salaryPolicy:Schema.Types.Mixed, advance:{...amount,default:0}, saleCommissionTotal:Number, serviceCommissionTotal:Number, saleCommissionIds:[{type:Schema.Types.ObjectId}],
   bonus: { ...amount, default: 0 }, deductions: { ...amount, default: 0 }, total: amount, note: String,
   commissionIds: [{ type: Schema.Types.ObjectId }],
   status: { type: String, enum: ['DRAFT', 'APPROVED', 'PAID'], default: 'DRAFT' },
@@ -320,6 +337,9 @@ export const allModels = [
   TreatmentUse,
   Commission,
   Payroll,
+  StaffLeave,
+  Workday,
+  SaleCommission,
   Day,
   Audit,
   Idempotency,

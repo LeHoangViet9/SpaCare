@@ -25,6 +25,19 @@ export function allocationResult(balance: number, due: number, amount: number) {
 export function overlaps(start: Date, end: Date, otherStart: Date, otherEnd: Date) {
   return start < otherEnd && end > otherStart;
 }
+export function withinSpaHours(start: Date, end: Date): boolean {
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return false;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  const parts = (date: Date) => Object.fromEntries(formatter.formatToParts(date).map(part => [part.type, part.value]));
+  const from = parts(start), to = parts(end);
+  const startMinute = Number(from.hour) * 60 + Number(from.minute);
+  const endMinute = Number(to.hour) * 60 + Number(to.minute);
+  return from.year === to.year && from.month === to.month && from.day === to.day
+    && startMinute >= 9 * 60 && endMinute <= 22 * 60;
+}
 export function spaDay(date = new Date()): string {
   return new Date(date.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 }
