@@ -1663,7 +1663,19 @@ input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"]) 
   .report-filters > label { width: 100%; }
   .report-filters > button { grid-column: 1 / -1; }
 }
-@media (max-width: 700px) { .filter-controls .date-filter-pair { width: 100%; flex-basis: 100%; gap: 8px; } .app .date-filter-pair input { padding-inline: 8px; font-size: 15px; min-height: 48px; } }
+@media (max-width: 700px) {
+  .filter-controls .date-filter-pair { width: 100%; gap: 8px; }
+  .app .list-filters .filter-controls { gap: 10px 8px; }
+  .app .list-filters .filter-controls label { min-width: 0; font-size: 13px; }
+  .app .list-filters .filter-controls input,
+  .app .list-filters .filter-controls select {
+    width: 100%; max-width: 100%; min-width: 0;
+    padding: 8px 6px; min-height: 44px; font-size: 14px;
+  }
+  .app .date-filter-pair input { overflow: hidden; }
+  .app .date-filter-pair input::-webkit-date-and-time-value { min-width: 0; text-align: left; }
+  .app .date-filter-pair input::-webkit-calendar-picker-indicator { margin: 0; padding: 2px; flex-shrink: 0; }
+}
 
 /* Consistent content gutters for standalone employee/payroll panels. */
 .panel-padded, .payroll-config { padding: 24px; }

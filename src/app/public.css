@@ -551,6 +551,9 @@
    BOOKING WIZARD & TOUCH-FRIENDLY STEPS
    ========================================================================== */
 .pub-booking-form-wrap {
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
   padding: 36px;
   margin-bottom: 40px;
 }
@@ -608,6 +611,8 @@
 
 /* Section inside booking */
 .pub-booking-section {
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: 36px;
 }
 
@@ -766,6 +771,8 @@
 
 /* Horizontal Days Scroll */
 .pub-days-scroll-container {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   padding-bottom: 8px;
   scrollbar-width: none;
@@ -797,6 +804,10 @@
 }
 
 .pub-day-chip-label {
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
   font-size: 13px;
   font-weight: 700;
   color: var(--pub-ink);
@@ -1305,7 +1316,7 @@
   .pub-day-chip { min-width: 84px; min-height: 70px; }
   .pub-day-chip-label { font-size: 14px; }
   .pub-day-chip-date { font-size: 17px; }
-  .pub-custom-date-label { flex-wrap: wrap; font-size: 15px; }
+  .pub-custom-date-label { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; font-size: 15px; }
   .pub-date-input { width: 100%; max-width: 100%; }
   .pub-booking-auth-prompt { flex-direction: column; align-items: stretch; padding: 14px; }
   .pub-prompt-text strong { font-size: 16px; }
