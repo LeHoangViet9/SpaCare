@@ -98,6 +98,8 @@ const schemas = {
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, signature, remainingBefore }),
   completeAppointment: z.object({ id: objectId, existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
+  updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text,
+    packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
   invoice: z.object({
     staffId: objectId.optional(),
@@ -137,7 +139,7 @@ const schemas = {
 export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
-  'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
+  'updateInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
@@ -798,6 +800,46 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           linkedInvoiceId = String(invoice._id);
           break;
         }
+        case 'updateInvoice': {
+          const d = schemas.updateInvoice.parse(data);
+          target = await get(Invoice,d.id);
+          ensure(target.updatedAt?.toISOString() === d.expectedUpdatedAt, 'Hóa đơn đã thay đổi. Tải lại trước khi sửa.',409);
+          ensure((!target.kind || ['SERVICE','PACKAGE'].includes(target.kind)) && !target.performedAt && !target.treatmentUseId && !target.appointmentId && !target.giftOfInvoiceId, 'Hóa đơn đã thực hiện hoặc có liên kết vận hành, không thể sửa.',409);
+          const family = await Invoice.find({...scope,$or:[{_id:target._id},{giftOfInvoiceId:target._id}]}).session(session);
+          const ids=family.map(i=>i._id);
+          for(const invoice of family) {
+            ensure(!invoice.paid && !invoice.refunded && !invoice.performedAt && !invoice.saleCommissionAccrued,'Hóa đơn đã phát sinh giao dịch, không thể sửa.',409);
+          }
+          for(const model of [Payment,Allocation,Commission,SaleCommission,SharedSaleCommission]) {
+            ensure(!await model.exists({...scope,invoiceId:{$in:ids}}).session(session),'Hóa đơn đã có lịch sử giao dịch hoặc hoa hồng, không thể sửa.',409);
+          }
+          const plans=await Treatment.find({...scope,invoiceId:{$in:ids}}).session(session);
+          ensure(target.kind==='PACKAGE' || !plans.length,'Hóa đơn có liệu trình cũ cần đối soát riêng, không thể sửa trực tiếp.',409);
+          for(const plan of plans) {
+            ensure(plan.status==='ACTIVE' && !(plan.usedSessions || 0) && (timedPackage(plan) || plan.remaining===plan.totalSessions),'Liệu trình đã dùng hoặc thay đổi trạng thái, không thể sửa.',409);
+          }
+          ensure(!await TreatmentUse.exists({...scope,treatmentId:{$in:plans.map(p=>p._id)}}).session(session),'Liệu trình đã sử dụng, không thể sửa.',409);
+          ensure(!await Appointment.exists({...scope,treatmentId:{$in:plans.map(p=>p._id)}}).session(session),'Liệu trình đã có lịch hẹn. Cần xử lý liên kết trước khi sửa.',409);
+          const closed=await Day.exists({...scope,day:spaDay(target.createdAt),status:'CLOSED'}).session(session);
+          ensure(!closed,'Ngày lập hóa đơn đã chốt sổ. Chủ spa cần mở lại trước khi sửa.',409);
+          if(d.dueDate) dayBounds(d.dueDate);
+          appointmentBefore=target.toObject();
+          const plan=plans.find(p=>String(p.invoiceId)===String(target._id));
+          if(target.kind==='PACKAGE') {
+            ensure(plan && d.packageName && d.packageType,'Cần nhập đầy đủ thông tin liệu trình.');
+            ensure(d.packageType==='TIME' ? !!d.durationMonths && !!d.startsOn && d.totalSessions===undefined : !!d.totalSessions && d.durationMonths===undefined && !d.startsOn,'Chọn số buổi hoặc thời gian, không nhập cả hai.');
+            const snapshot={...packageSnapshot(d,d.startsOn),...(d.packageType==='SESSIONS' && !timedPackage(plan!) && plan!.expiresOn ? {expiresOn:plan!.expiresOn} : {})};
+            appointmentBefore!.treatment=plan!.toObject();
+            for(const field of ['totalSessions','remaining','durationMonths','startsOn','expiresOn','usedSessions']) plan!.set(field,undefined);
+            plan!.set('templateId',undefined);
+            Object.assign(plan!,snapshot,{name:d.packageName});
+            await plan!.save({session});
+          } else ensure(!d.packageType && !d.packageName && d.totalSessions===undefined && d.durationMonths===undefined && !d.startsOn,'Hóa đơn dịch vụ không có thông tin gói.');
+          target.description=d.description; target.total=d.total; target.dueDate=d.dueDate; target.status=invoiceState(d.total,0);
+          await target.save({session});
+          linkedInvoiceId=String(target._id);
+          break;
+        }
         case 'invoice': {
           const d = schemas.invoice.parse(data);
           const customer = await get(Customer, d.customerId);
@@ -1036,6 +1078,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       if (appointmentBefore) {
         details.before = appointmentBefore;
         details.after = target.toObject();
+        if(op === 'updateInvoice') details.treatmentAfter = await Treatment.findOne({...scope,invoiceId:target._id}).session(session).lean();
       }
       if (financialBefore) {
         details.before = financialBefore;

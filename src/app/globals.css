@@ -1820,3 +1820,24 @@ label textarea { margin-top: 8px; }
 
 .salary-table { border-collapse:collapse; }
 .salary-table th, .salary-table td { border:1px solid #dce4d9; }
+
+/* Salary uses one bounded list panel, like invoices. */
+.payroll-workspace.salary-frame { display:block; width:100%; min-width:0; overflow:hidden; }
+.salary-frame > .section-head { margin:0; border-bottom:1px solid var(--line); }
+.salary-frame > .list-filters { border:0; border-radius:0; margin:0; padding:18px 24px; background:transparent; }
+.salary-frame > .inline-note, .salary-frame > .alert { margin:0 24px 16px; }
+.salary-frame-content { min-width:0; }
+.salary-frame-content > p { padding:0 24px 24px; }
+.salary-frame .salary-table-hint { padding:0 24px; margin:0 0 12px; }
+.salary-frame .salary-table-scroll { padding-bottom:12px; }
+.salary-frame .salary-caption { padding:10px 24px 16px; }
+.salary-frame .salary-table th, .salary-frame .salary-table td { border-inline:0; border-bottom:1px solid var(--line); }
+.salary-frame .salary-table thead th { background:#f5f7f2; }
+.salary-frame .salary-table tbody tr:hover td { background:#f7faf6; }
+.salary-frame .salary-table tbody tr:hover .salary-net { background:#e5f1e7; }
+@media(max-width:700px) {
+ .salary-frame > .list-filters { padding:14px 16px; }
+ .salary-frame > .inline-note, .salary-frame > .alert { margin-inline:16px; }
+ .salary-frame .salary-table-hint { padding-inline:16px; }
+ .salary-frame .salary-caption { padding-inline:16px; }
+}

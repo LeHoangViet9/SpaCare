@@ -53,6 +53,37 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     assert.equal(filteredDays.todayDay!.status, 'OPEN');
     const customer = await call('customer', { name: 'Khách test', phone: '0900000000' });
     const service = await call('service', { name: 'Dịch vụ test', price: 350000, duration: 60 });
+    await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
+      const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});
+      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
+      const invoice=await Invoice.findById(sale.invoiceId);
+      const payload={id:String(invoice!._id),expectedUpdatedAt:invoice!.updatedAt.toISOString(),description:'Gói đã sửa',total:600000,packageName:'Liệu trình đã sửa',packageType:'SESSIONS',totalSessions:8,reason:'Nhập nhầm số buổi'};
+      await assert.rejects(operate(employee,'updateInvoice',payload,randomUUID()),/Chỉ chủ spa/);
+      const key=randomUUID();await call('updateInvoice',payload,key);await call('updateInvoice',payload,key);
+      assert.equal((await Invoice.findById(invoice!._id))!.total,600000);
+      const plan=await Treatment.findOne({spaId,invoiceId:invoice!._id});assert.equal(plan!.remaining,8);assert.equal(plan!.name,'Liệu trình đã sửa');
+      assert.equal(await Audit.countDocuments({spaId,action:'updateInvoice',targetId:invoice!._id}),1);
+      await assert.rejects(call('updateInvoice',payload),/đã thay đổi/);
+      const fresh=await Invoice.findById(invoice!._id);
+      await Payment.create({spaId,invoiceId:invoice!._id,amount:1,receiptId:new mongoose.Types.ObjectId(),reversed:true});
+      await assert.rejects(call('updateInvoice',{...payload,expectedUpdatedAt:fresh!.updatedAt.toISOString(),total:700000}),/lịch sử giao dịch/);
+      assert.equal((await Invoice.findById(invoice!._id))!.total,600000);assert.equal((await Treatment.findById(plan!._id))!.remaining,8);
+      const second=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
+      const secondInvoice=await Invoice.findById(second.invoiceId);
+      const secondPayload={...payload,id:String(secondInvoice!._id),expectedUpdatedAt:secondInvoice!.updatedAt.toISOString()};
+      const secondPlan=await Treatment.findOne({spaId,invoiceId:secondInvoice!._id});
+      await assert.rejects(call('updateInvoice',{...secondPayload,packageType:'TIME',totalSessions:undefined,durationMonths:24,startsOn:'2026-02-30'}),/không hợp lệ/);
+      assert.equal((await Treatment.findById(secondPlan!._id))!.remaining,5);
+      assert.equal(await Audit.countDocuments({spaId,action:'updateInvoice',targetId:secondInvoice!._id}),0);
+      await call('updateInvoice',{...secondPayload,packageType:'TIME',totalSessions:undefined,durationMonths:24,startsOn:spaDay()});
+      const timePlan=await Treatment.findById(secondPlan!._id);assert.equal(timePlan!.packageType,'TIME');assert.equal(timePlan!.remaining,undefined);assert.equal(timePlan!.durationMonths,24);
+      await Commission.create({spaId,staffId:staff._id,staffName:'Staff',serviceId:service.id,customerId:customer.id,invoiceId:secondInvoice!._id,sourceType:'INVOICE',sourceId:secondInvoice!._id,amount:0,earnedAt:new Date()});
+      const secondFresh=await Invoice.findById(secondInvoice!._id);
+      await assert.rejects(call('updateInvoice',{...secondPayload,expectedUpdatedAt:secondFresh!.updatedAt.toISOString()}),/lịch sử giao dịch/);
+      const other=await Spa.create({name:'Edit isolation'});extraSpaIds.push(other._id);
+      const foreign=await Invoice.create({spaId:other._id,customerId:new mongoose.Types.ObjectId(),description:'foreign',total:1,paid:0,kind:'SERVICE'});
+      await assert.rejects(call('updateInvoice',{id:String(foreign._id),expectedUpdatedAt:foreign.updatedAt.toISOString(),description:'bad',total:2,reason:'test'}),/Không tìm thấy/);
+    });
     await t.test('public bookings serialize conflicts, retries and internal bookings without partial writes', async () => {
       const publicSpa = await Spa.create({ name: 'Public booking fixture' });
       extraSpaIds.push(publicSpa._id);

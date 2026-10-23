@@ -21,7 +21,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const use = invoice.treatmentUseId ? await TreatmentUse.findOne({ ...scope, _id: invoice.treatmentUseId }).select('+signature').lean() : null;
   // Signature access remains as strict as the existing treatment-use endpoint.
   const canSeeSignature = !!use && (user.role === 'OWNER' || String(use.actorId) === user.id || String(use.staffId) === user.id);
-  const packages = await Treatment.find({ ...scope, customerId: invoice.customerId, invoiceId: { $in: [invoice._id, ...gifts.map(g => g._id)] } }).select('name').lean();
+  const packages = await Treatment.find({ ...scope, customerId: invoice.customerId, invoiceId: { $in: [invoice._id, ...gifts.map(g => g._id)] } }).select('name invoiceId packageType totalSessions remaining durationMonths startsOn expiresOn usedSessions status').lean();
   const performer = invoice.performedBy ? await User.findOne({ ...scope, _id: invoice.performedBy }).select('name').lean() : null;
   const signatureFilter = { ...scope, $and: [
     { $or: [
@@ -35,7 +35,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const signaturePage = Math.min(requestedSignaturePage, Math.max(1, Math.ceil(signatureTotal / 5)));
   const signatures = await TreatmentUse.find(signatureFilter).select('+signature').sort({ performedAt: -1, _id: -1 }).skip((signaturePage - 1) * 5).limit(5).lean();
   const events = await Audit.find({ ...scope, $or: [{ targetId: invoice._id }, { 'details.invoiceId': id }, ...(use ? [{ targetId: use._id }, { 'details.treatmentUseId': String(use._id) }] : [])] }).sort({ createdAt: -1 }).select('action actorId createdAt details.amount details.reason details.note').lean();
-  return { invoice: { ...invoice, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
+  return { treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
     canCompleteService: !!((user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
     signatures: signatures.map(s => ({ id: s._id, signature: s.signature || null, sessionNumber: s.sessionNumber,
       packageName: packages.find(p => String(p._id) === String(s.treatmentId))?.name,

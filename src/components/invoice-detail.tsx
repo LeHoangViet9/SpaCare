@@ -7,7 +7,7 @@ import { auditActions } from '@/lib/audit-view';
 import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
-export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund }: { record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
+export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit }: { record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
   const [data, setData] = useState<Row | null>(null);
@@ -34,6 +34,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
         {data.total > 10 && <div className="customer-picker-pages"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</> : <>
         <p>#{data.invoice._id.slice(-6)} · {new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</p>
         <h3>{data.invoice.description}</h3><p>Tổng: <strong>{money(data.invoice.total)}</strong> · Đã trả: {money(data.invoice.paid)} · Còn nợ: {money(data.invoice.total - data.invoice.paid)}</p>
+        {onEdit && (!data.invoice.kind || ['SERVICE','PACKAGE'].includes(data.invoice.kind)) && !data.invoice.paid && !data.invoice.performedAt && !data.invoice.appointmentId && <button onClick={()=>onEdit(data.invoice,data.treatment)}>Sửa hóa đơn</button>}
         {data.invoice.kind === 'PACKAGE' && <p>Người tư vấn bán gói: {data.invoice.saleParticipants?.length ? data.invoice.saleParticipants.map((p:Row)=>p.staffName).join(', ') : data.invoice.sellerName || 'Chưa ghi ở giao dịch cũ'}{data.invoice.saleParticipants?.length > 1 && ` · Chia đều quỹ 5% cho ${data.invoice.saleParticipants.length} người`} · Đã hoàn: {money(data.invoice.refunded || 0)}</p>}{onRefund && data.invoice.kind === 'PACKAGE' && data.invoice.paid > (data.invoice.refunded || 0) && <button onClick={()=>onRefund(data.invoice)}>Ghi nhận hoàn tiền gói</button>}
         {data.invoice.kind === 'PRODUCT' && <p>Sản phẩm: {data.invoice.productSku} · {data.invoice.quantity} {data.invoice.productUnit} × {money(data.invoice.unitPrice)} · Đã xuất kho</p>}
         {data.invoice.performedAt && <p>Đã thực hiện: <strong>{data.invoice.performerName || 'Nhân viên đã ghi nhận'}</strong> · {new Date(data.invoice.performedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
