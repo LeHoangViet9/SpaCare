@@ -1012,6 +1012,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(view.summary.saleCommission,50000); assert.ok(view.rows.every(r=>String(r.staffId)===worker.id && r.shareCount===2));
       assert.equal(view.rows[0].customerName,'Shared guest');
       await assert.rejects(readPayroll(worker,payrollQuery(new URLSearchParams({month,view:'commission',employee:who.id}))));
+      const overview=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'salary',employee:worker.id})));
+      assert.equal(overview.total,1); assert.equal(overview.rows.length,1); assert.equal(overview.rows[0].status,'NOT_CREATED');
+      assert.equal(overview.rows[0].total,null); assert.equal(overview.rows[0].saleCommissionTotal,50000);
+      assert.equal(await Payroll.countDocuments({...scope,staffId:worker.id}),0);
       const draft=await call('savePayroll',{staffId:worker.id,month,baseSalary:0}); const payroll=(await Payroll.findById(draft.id))!;
       assert.equal(payroll.saleCommissionTotal,50000); assert.equal(payroll.sharedSaleCommissionIds.length,2); assert.equal(payroll.saleCommissionIds.length,0);
       await call('approvePayroll',{id:draft.id,expectedTotal:50000}); await call('payPayroll',{id:draft.id,method:'CASH',receivedConfirmation:true});

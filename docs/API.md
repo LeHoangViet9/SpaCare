@@ -321,3 +321,9 @@ Payment/Allocation/refund/reversal giữ transaction tuần tự, Control guard,
 
 ## Sửa rollback nhóm tư vấn — 23/10/2026
 PROPOSED kỹ thuật: saleParticipants dùng child Schema tường minh với _id=false, versionKey=false, strict=throw như schema cha. Tránh Mongoose track __v mặc định trên subdocument khi khôi phục transaction, làm StrictModeError che lỗi gốc. Giữ nguyên test lỗi giả lập Treatment.create và kiểm tra rollback Invoice/Audit/Idempotency; không nới strict hay thay dữ liệu nghiệp vụ. Không đổi field/index hoặc cần migration dữ liệu.
+
+
+## Một bảng tổng hợp lương và công/nghỉ — 23/10/2026
+Theo yêu cầu mới nhất: trang Lương chỉ có một bảng chung theo nhân viên/tháng, đủ lương cơ bản, công/nghỉ, lương tính, hai loại hoa hồng, thưởng/phụ cấp, phạt/khấu trừ, tạm ứng, tổng thực nhận, trạng thái và thao tác. Bỏ các khối cài lương/công/nghỉ độc lập trên trang chính; Công/nghỉ mở hộp quản lý riêng cho người được chọn, Cài đặt và Tính lương nằm trên dòng. Phạt vẫn là khoản deductions nhập tay có lý do, không tự đặt mức phạt.
+PROPOSED kỹ thuật: GET payroll view=salary phân trang theo STAFF trong phạm vi, trả một dòng mỗi nhân viên (kể cả chưa có Payroll); chưa lập dùng status=NOT_CREATED, _id uncreated-ID chỉ phục vụ hiển thị, không ghi Payroll giả. Tổng thực nhận/lương theo công/thưởng/phạt chưa tính hiển thị Chưa tính hoặc dấu gạch, không giả thành 0. Preview hoa hồng lấy toàn bộ khoản chưa chốt đến hết tháng giống savePayroll, gồm tồn kỳ trước. Các tổng salarySummary vẫn chỉ cộng bảng lương đã lưu. Mọi tham chiếu cùng spa/quyền như trước.
+Rows thêm currentWorkdays/currentLeaveStats cho công/nghỉ thực tế, tách khỏi snapshot đã tính lương; không thay đổi snapshot APPROVED/PAID khi nguồn công/nghỉ/hoa hồng thay đổi. Bấm Tính lương vẫn dùng transaction/idempotency/audit savePayroll và kiểm tra dữ liệu công theo chính sách. Không tự duyệt/ghi chi. Không đổi schema/index.

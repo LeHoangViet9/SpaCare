@@ -1,6 +1,6 @@
 'use client';
 import { formatCurrency } from '@/lib/currency';
-import EmployeeAttendance from './employee-attendance';
+import AttendanceDialog from './attendance-dialog';
 import SalaryTable from './salary-table';
 import PdfExport from './pdf-export';
 import { useEffect, useState } from 'react';
@@ -13,6 +13,7 @@ export default function PayrollPanel({ user, section, today, refreshKey, onOpen 
   onOpen: (title: string, action: string, fields: Field[], defaults?: Row, description?: string) => void;
 }) {
   const owner = user.role === 'OWNER';
+  const [attendanceRecord,setAttendanceRecord]=useState<Row|null>(null);
   const [month, setMonth] = useState(today.slice(0, 7));
   const [employee, setEmployee] = useState('');
   const [page, setPage] = useState(1);
@@ -66,21 +67,22 @@ export default function PayrollPanel({ user, section, today, refreshKey, onOpen 
       return <div className="report-stat" key={key}><small>{title}</small><strong>{loading ? '…' : money(item?.total)}</strong><span>{loading ? '…' : item?.count || 0} bảng lương</span></div>;
     })}</div>}
     {section === 'commission' && <p className="inline-note">Hoa hồng gồm cả chủ spa trực tiếp bán gói. Bán gói hưởng 5% theo tiền thực thu đã ghi nhận; phần chưa thu chưa phát sinh hoa hồng.</p>}
-    {section === 'salary' && <p className="inline-note">Lập nháp → Duyệt → Ghi nhận chi lương. Tổng số tính toàn bộ tháng và nhân viên đã chọn, gồm cả các trang tiếp theo.</p>}
+    {section === 'salary' && <p className="inline-note">Mỗi nhân viên một dòng: công/nghỉ, lương, hoa hồng, thưởng, phạt/khấu trừ, tạm ứng và tổng thực nhận. Chọn Tính lương tháng để tạo nháp, kiểm tra rồi duyệt và ghi nhận chi. Dòng Chưa tính lương chưa phải bảng lương đã lưu.</p>}
     {section === 'commission' && <div className="profile-summary"><div><small>Hoa hồng dịch vụ</small><strong>{loading ? "…" : money(data?.summary.serviceCommission)}</strong></div><div><small>Hoa hồng bán gói 5%</small><strong>{loading ? "…" : money(data?.summary.saleCommission)}</strong></div><div><small>Hoa hồng trong tháng</small><strong>{loading ? '…' : money(data?.summary.commission)}</strong></div><div><small>Ca / buổi dịch vụ ghi nhận</small><strong>{loading ? '…' : data?.summary.sessions || 0}</strong></div><div><small>Chưa vào bảng lương</small><strong>{loading ? '…' : money(data?.summary.unsettled)}</strong></div></div>}
     <section className="panel panel-padded"><h3>{section === 'salary' ? `Bảng lương tháng ${month.slice(5)}/${month.slice(0, 4)}` : 'Chi tiết hoa hồng'}</h3>
-      {loading ? <p role="status">Đang tải…</p> : !data?.rows.length ? <p>{section === 'salary' ? 'Chưa có bảng lương tháng này. Mở mục Lương cơ bản nhân viên bên dưới để chọn người và lập nháp.' : 'Chưa có bản ghi trong tháng này.'}</p> : section === 'salary' ? <SalaryTable rows={data.rows} owner={owner}
-        onEdit={r => editPayroll(people.find(p => p._id === r.staffId) || { _id: r.staffId, name: r.staffName }, r)}
+      {loading ? <p role="status">Đang tải…</p> : !data?.rows.length ? <p>{section === 'salary' ? 'Chưa có nhân viên phù hợp trong tháng này.' : 'Chưa có bản ghi trong tháng này.'}</p> : section === 'salary' ? <SalaryTable rows={data.rows} owner={owner}
+        onEdit={r => editPayroll(people.find(p => p._id === r.staffId) || { _id: r.staffId, name: r.staffName }, r.status === 'NOT_CREATED' ? undefined : r)}
+        onAttendance={setAttendanceRecord} canCreate={month <= today.slice(0,7)}
+        renderSettings={r=>{const p=people.find(p=>p._id===r.staffId) || {_id:r.staffId,name:r.staffName,baseSalary:r.baseSalary};return owner ? <details className="salary-row-settings"><summary>Cài đặt</summary><div className="actions"><button disabled={loading} onClick={() => onOpen('Cài lương cơ bản', 'setStaffSalary', [numberField('baseSalary', 'Lương cơ bản / tháng (VNĐ)')], { staffId: p._id, baseSalary: p.baseSalary ?? 0 }, p.name + '. Chỉ áp dụng cấu hình, không sửa bảng lương đã lập.')}>Cài lương</button><button disabled={loading} onClick={()=>onOpen('Chính sách lương theo ngày','setSalaryPolicy',[
+ {key:'standardDays',label:'Ngày công chuẩn / tháng',type:'number',min:1,max:31,step:0.5},
+ {key:'paidLeaveDays',label:'Hạn mức ngày nghỉ hưởng lương / tháng',type:'number',min:0,max:31,step:0.5},
+ {key:'mode',label:'Cách tính lương',options:[['NONE','Lương tháng, không tự khấu trừ'],['DAILY','Theo ngày công đã xác nhận']]},
+],{staffId:p._id,...(p.salaryPolicy || {standardDays:26,paidLeaveDays:0,mode:'NONE'})},'Các giá trị ban đầu chỉ là gợi ý. Chủ spa lưu mới áp dụng. Theo ngày: lương cơ bản × (công thực tế + nghỉ hưởng lương trong hạn mức) / công chuẩn, tối đa lương cơ bản; làm tròn VNĐ. Không suy công từ lịch hẹn.')}>Chính sách lương</button></div></details>:null;}}
         onApprove={r => onOpen('Duyệt bảng lương', 'approvePayroll', [], { id: r._id, expectedTotal: r.total }, `${r.staffName} · ${r.month} · ${money(r.total)}. Bao gồm hoa hồng trong bảng. Duyệt khóa số liệu; chưa ghi chi tiền.`)}
         onPay={pay} /> : <div className="payroll-records">{data.rows.map((r: Row) => <article key={r._id} className="payroll-record"><div className="section-head"><strong>{r.serviceName}</strong><strong className="positive">{money(r.amount)}</strong></div><p>{r.staffName} · {new Date(r.earnedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p><p>Khách hàng: <strong>{r.customerName || 'Chưa ghi nhận'}</strong>{r.customerPhone && <> · <span>{r.customerPhone}</span></>}</p><small>{r.category === 'PACKAGE_SALE' ? (r.shareCount > 1 ? `Bán gói · chia đều 5% / ${r.shareCount} người` : 'Bán gói 5%') + ' · hóa đơn #' + String(r.invoiceId).slice(-6) : r.sourceType === 'TREATMENT_USE' ? 'Buổi liệu trình' : 'Dịch vụ lẻ'} · #{String(r.sourceId).slice(-6)}</small><p>{r.payrollId ? `${status[r.payrollStatus] || 'Đã vào bảng lương'} · ${r.payrollMonth || ''}` : 'Chưa vào bảng lương'}</p></article>)}</div>}
       {!loading && data && data.total > 10 && <div className="customer-picker-pages"><button disabled={data.page <= 1} onClick={() => setPage(data.page - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(data.page + 1)}>Sau</button></div>}
     </section>
-    {section === 'salary' && <details className="panel payroll-config salary-settings" open={!loading && !data?.total}><summary>{owner ? 'Lương cơ bản nhân viên' : 'Lương cơ bản của bạn'}</summary><div className="payroll-people">{people.filter(p => !employee || p._id === employee).map(p => <article key={p._id}><div><strong>{p.name}</strong><p>{p.baseSalary === null ? 'Chưa cài lương cơ bản' : money(p.baseSalary) + ' / tháng'}</p></div>{owner && <div className="actions"><button disabled={loading} onClick={() => onOpen('Cài lương cơ bản', 'setStaffSalary', [numberField('baseSalary', 'Lương cơ bản / tháng (VNĐ)')], { staffId: p._id, baseSalary: p.baseSalary ?? 0 }, p.name + '. Chỉ áp dụng cấu hình, không sửa bảng lương đã lập.')}>Cài lương</button><button disabled={loading} onClick={()=>onOpen('Chính sách lương theo ngày','setSalaryPolicy',[
- {key:'standardDays',label:'Ngày công chuẩn / tháng',type:'number',min:1,max:31,step:0.5},
- {key:'paidLeaveDays',label:'Hạn mức ngày nghỉ hưởng lương / tháng',type:'number',min:0,max:31,step:0.5},
- {key:'mode',label:'Cách tính lương',options:[['NONE','Lương tháng, không tự khấu trừ'],['DAILY','Theo ngày công đã xác nhận']]},
-],{staffId:p._id,...(p.salaryPolicy || {standardDays:26,paidLeaveDays:0,mode:'NONE'})},'Các giá trị ban đầu chỉ là gợi ý. Chủ spa lưu mới áp dụng. Theo ngày: lương cơ bản × (công thực tế + nghỉ hưởng lương trong hạn mức) / công chuẩn, tối đa lương cơ bản; làm tròn VNĐ. Không suy công từ lịch hẹn.')}>Chính sách lương</button>{!data?.rows.some((r: Row) => r.staffId === p._id && r.status !== 'DRAFT') && <button disabled={loading || month > today.slice(0, 7)} onClick={() => editPayroll(p, data?.rows.find((r: Row) => r.staffId === p._id))}>Lập / cập nhật nháp</button>}</div>}</article>)}</div></details>}
-    {section === 'salary' && <EmployeeAttendance data={data} owner={owner} userId={user.id} employee={employee} today={today} loading={loading} onOpen={onOpen} onLeavePage={setLeavePage} onWorkPage={setWorkPage} />}
+    {section === 'salary' && attendanceRecord && <AttendanceDialog person={attendanceRecord} month={month} today={today} user={user} refreshKey={refreshKey} onClose={()=>setAttendanceRecord(null)} onOpen={onOpen} />}
     {owner && section === 'commission' && <section className="panel payroll-config">
       <div className="section-head"><h3>Hoa hồng theo dịch vụ</h3><button className="primary" disabled={loading || !services.length} onClick={() => configureCommission()}>＋ Tạo hoa hồng</button></div>
       <label><strong>Tìm dịch vụ</strong><input type="search" placeholder="Nhập tên dịch vụ" value={serviceSearch} onChange={e => { setServiceSearch(e.target.value); setServicePage(1); }} /></label>

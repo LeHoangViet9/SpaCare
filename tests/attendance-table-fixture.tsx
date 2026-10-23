@@ -1,0 +1,10 @@
+import React from 'react';
+import assert from 'node:assert/strict';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {readFileSync} from 'node:fs';
+import EmployeeAttendance from '../src/components/employee-attendance';
+const data={people:[{_id:'owner',name:'Owner must not appear',role:'OWNER'},{_id:'staff',name:'Nguyễn Thị Mai',role:'STAFF'}],leaveSummary:[{staffId:'staff',permitted:1,unpermitted:0,paid:1,unpaid:0}],workSummary:[{_id:'staff',days:23}],leaves:[{_id:'leave',staffId:'staff',staffName:'Nguyễn Thị Mai',day:'2026-10-20',type:'PERMITTED',period:'FULL',status:'PENDING'}],leaveTotal:1,workdays:[{_id:'work',staffId:'staff',day:'2026-10-21',period:'FULL'}],workTotal:1};
+const html=renderToStaticMarkup(<EmployeeAttendance data={data} owner={true} userId="owner" employee="" today="2026-10-23" loading={false} onOpen={()=>{}} onLeavePage={()=>{}} onWorkPage={()=>{}} />);
+assert.equal((html.match(/<table/g)||[]).length,3); assert.doesNotMatch(html,/<article/); assert.doesNotMatch(html,/Owner must not appear/);
+assert.match(html,/Danh sách nghỉ phép/); assert.match(html,/Ngày công thực tế đã ghi/); assert.match(html,/Tổng hợp ngày công/); assert.match(html,/>Duyệt</);
+if(process.argv.includes('--preview')) console.log(JSON.stringify('<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+['ui.css','globals.css','public.css'].map(f=>readFileSync('src/app/'+f,'utf8')).join('\n')+'</style><body><main class="app" style="padding:16px;display:block">'+html+'</main></body></html>'));
