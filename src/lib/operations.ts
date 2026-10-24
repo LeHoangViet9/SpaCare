@@ -892,10 +892,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           }
           ensure(service.active, 'Dịch vụ không hoạt động.');
           ensure(!d.signature && !d.remainingBefore, 'Chỉ dùng chữ ký xác nhận khi chọn liệu trình.');
-          ensure(!d.staffId, 'Chọn nhân viên thực hiện khi hoàn thành dịch vụ, không phải lúc tạo hóa đơn lẻ.');
+          if (d.staffId) {
+            const performer = await get(User, d.staffId);
+            ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Người thực hiện phải là chủ spa hoặc nhân viên đang hoạt động.');
+          }
           if (d.dueDate) dayBounds(d.dueDate);
           ensure((d.total ?? service.price) > 0, 'Dịch vụ mua lẻ phải có giá lớn hơn 0.');
-          const { cashCard, ...invoiceData } = d;
+          const { cashCard, staffId, ...invoiceData } = d;
           target = await create(Invoice, {
             ...invoiceData,
             ...await consultant(customer, d.consultantId), kind: 'SERVICE', commission: service.commission || 0,
@@ -904,6 +907,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             paid: 0,
           });
           if (cashCard) await redeemCard({ ...cashCard, invoiceId: String(target._id) });
+          if (staffId) await accrueCommission(target, staffId, 'INVOICE', String(target._id));
           break;
         }
         case 'sellCashCard': {

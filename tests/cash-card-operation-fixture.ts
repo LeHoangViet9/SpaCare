@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
-import { ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
+import { Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
 const actor={id:ownerId,spaId,name:'Owner',role:'OWNER' as const,cashier:false};
@@ -12,7 +12,7 @@ function match(row:any,filter:any):boolean{return Object.entries(filter).every((
 function doc(name:string,row:any):any{if(!row)return null;return {...clone(row),toObject(){const {toObject,save,...v}=this;return clone(v);},async save(){const i=state[name].findIndex(v=>String(v._id)===String(this._id));state[name][i]=this.toObject();}};}
 function query(value:any):any{return {distinct:(key:string)=>query([...new Set((value||[]).map((row:any)=>row[key]).filter(Boolean))]),session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
 let failModel='';
-for(const model of [ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
+for(const model of [Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
   (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
@@ -80,3 +80,26 @@ let snapshot=clone(state);await assert.rejects(call('invoice',inline));assert.de
 state.Day[0].status='CLOSED';snapshot=clone(state);await assert.rejects(call('invoice',inline));assert.deepEqual(state,snapshot);state.Day[0].status='OPEN';
 await assert.rejects(call('invoice',{...inline,treatmentId:'1'.repeat(24)}),e=>(e as any).status===409);
 console.log('Model doubles verified: sale, gift, split payment, retry, concurrent debit and rollback. Not a real MongoDB transaction test.');
+
+// Completed walk-in services credit the selected performer atomically, including card payment.
+const performerId='8'.repeat(24);
+state.User.push({_id:performerId,spaId,name:'Performer',role:'STAFF',active:true,cashier:false});
+state.Service[0].commission=20000;
+const completionKey=randomUUID();
+const completedInput={customerId,serviceId,total:400000,staffId:performerId};
+const completed=await call('invoice',completedInput,completionKey);
+await call('invoice',completedInput,completionKey);
+const completedInvoice=state.Invoice.find(v=>v._id===completed.id);
+assert.equal(String(completedInvoice.performedBy),performerId);
+assert.ok(completedInvoice.performedAt);
+assert.equal(state.Commission.filter(v=>v.invoiceId===completed.id).length,1);
+assert.equal(state.Commission.find(v=>v.invoiceId===completed.id).amount,20000);
+await call('completeInvoiceService',{id:completed.id,staffId:performerId});
+assert.equal(state.Commission.filter(v=>v.invoiceId===completed.id).length,1);
+const beforeCompletionFailure=clone(state);failModel='Commission';
+await assert.rejects(call('invoice',completedInput),/INJECTED_LEDGER_FAILURE/);
+failModel='';assert.deepEqual(state,beforeCompletionFailure,'commission failure rolls back the new invoice');
+state.User.find(v=>v._id===performerId).active=false;
+await assert.rejects(call('invoice',completedInput));
+state.User.find(v=>v._id===performerId).active=true;
+await assert.rejects(call('invoice',{...completedInput,staffId:'7'.repeat(24)}));
