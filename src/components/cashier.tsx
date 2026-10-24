@@ -26,7 +26,6 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [consultantId, setConsultantId] = useState('');
   const [performerId, setPerformerId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [startsOn, setStartsOn] = useState(treatmentDay());
@@ -51,7 +50,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
   function resetSelection() { setSelected(null); setParticipantIds([data.user.id]); setDescription(''); setPrice(''); setQuantity('1'); setGifts([]); setGiftCashCardAmount('0'); setPromotion(''); setPerformerId(''); setSignature({ version: 1, strokes: [] }); setError(''); }
   useEffect(() => {
     if (!initialCustomer) return;
-    setCustomer(initialCustomer); setConsultantId(initialCustomer.consultantId || ''); resetSelection(); setCatalogPage(1);
+    setCustomer(initialCustomer); resetSelection(); setCatalogPage(1);
   }, [initialCustomer?._id]);
   function choose(row: Row) { setSelected(row); setDescription(row.name); setQuantity('1'); setPrice(String(mode === 'session' ? 0 : row.price)); setSignature({ version: 1, strokes: [] }); setError(''); }
   function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -61,7 +60,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
     if (mode === 'package' && (gifts.length || giftCardValue>0) && (!promotion.trim() || gifts.some(g => !g.templateId))) { setError('Nhập đợt khuyến mãi và chọn đủ gói quà tặng.'); return; }
     if (mode !== 'session') { try { const value = parseMoney(price); if (value < 1) throw new Error('Giá bán phải lớn hơn 0.'); } catch(e) {setError((e as Error).message);return;} }
     const cardValue = new FormData(e.currentTarget).get('cashCard');
-    const common = { customerId: customer._id, ...(consultantId ? { consultantId } : {}) };
+    const common = { customerId: customer._id };
     if (mode === 'product') onSubmit('sellProduct', { ...common, productId: selected._id, quantity: Number(quantity), unitPrice: parseMoney(price), ...(dueDate ? { dueDate } : {}) });
     else if (mode === 'package') onSubmit('sellPackage', { ...common, templateId: selected._id, total: amount, dueDate, ...(startsOn ? { startsOn } : {}), participantIds, promotion, giftCashCardAmount: parseMoney(giftCashCardAmount), gifts: gifts.map(g => ({templateId:g.templateId})) });
     else onSubmit('invoice', { ...common, ...(mode === 'service' && cardValue ? {cashCard:JSON.parse(String(cardValue))} : {}), serviceId: mode === 'session' ? selected.serviceId : selected._id, ...(description.trim()?{description:description.trim()}:{}), total: amount,
@@ -69,7 +68,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
   }
   return <ValidatedForm onSubmit={submit} className="cashier">
     <section className="panel panel-padded cashier-customer"><div className="section-head"><h3>1. Khách hàng</h3><div className="actions"><button type="button" onClick={onNewCustomer} disabled={busy}>+ Khách mới</button><button type="button" onClick={onInvoices} disabled={busy}>Danh sách hóa đơn</button></div></div>
-      <CustomerPicker label="Khách hàng" value={customer?._id || ''} onChange={() => {}} onCustomerChange={c => { setCustomer(c); setConsultantId(c.consultantId || ''); resetSelection(); setCatalogPage(1); }} required disabled={busy} />
+      <CustomerPicker label="Khách hàng" value={customer?._id || ''} onChange={() => {}} onCustomerChange={c => { setCustomer(c); resetSelection(); setCatalogPage(1); }} required disabled={busy} />
     </section>
     <section className="panel panel-padded cashier-catalog"><h3>2. Chọn thao tác</h3>
       <div className="cashier-modes" role="group" aria-label="Loại hóa đơn">{([['service', 'Dịch vụ lẻ'], ['package', 'Bán gói mới'], ['session', 'Dùng gói đã mua'], ['product', 'Sản phẩm']] as const).map(([key, title]) => <button type="button" key={key} aria-pressed={mode === key} disabled={busy} onClick={() => { setMode(key); setSearch(''); setCategory(''); setCatalogPage(1); resetSelection(); }}>{title}</button>)}</div>
@@ -96,7 +95,6 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
         {mode === 'package' && (timedPackage(selected) || gifts.some(g => timedPackage(templates.find(t => t._id === g.templateId) || {}))) && <label>Ngày bắt đầu sử dụng gói theo thời gian<input name="startsOn" type="date" required value={startsOn} onChange={e => setStartsOn(e.target.value)} /><small>Gói triệt lông 36 tháng tính từ ngày mua; gói khác theo thỏa thuận. {timedPackage(selected) && startsOn && `Hết hạn: ${packageExpiry(startsOn, selected.durationMonths)}`}</small></label>}
         {mode === 'package' && <label>Thẻ tiền tặng kèm (VNĐ, 0 nếu không tặng)<MoneyInput min={0} max={1_000_000_000_000} required value={giftCashCardAmount} onValueChange={setGiftCashCardAmount}/><small>Chỉ dùng dịch vụ lẻ, không hết hạn, không đổi tiền mặt.</small></label>}
         {mode === 'package' && <SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={amount} disabled={busy} />}
-        {mode !== 'package' && <label>Nhân viên tư vấn<select name="consultantId" value={consultantId} onChange={e => setConsultantId(e.target.value)}><option value="">Theo khách / lần bán gói</option>{data.staff.filter((s: Row) => s.active).map((s: Row) => <option key={s._id} value={s._id}>{s.name}</option>)}</select></label>}
         {mode !== 'session' && <label>Hạn thanh toán{mode === 'service' ? ' (nếu có)' : ''}<input name="dueDate" type="date" min={mode === 'package' ? data.today : undefined} required={mode === 'package'} value={dueDate} onChange={e => setDueDate(e.target.value)} /></label>}
         {mode === 'session' && <section><label>Nhân viên trực tiếp thực hiện<select required value={performerId} onChange={e => { setPerformerId(e.target.value); setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn nhân viên…</option>{data.staff.filter((s: Row) => s.active).map((s: Row) => <option key={s._id} value={s._id}>{s.name}</option>)}</select></label><strong>Khách ký xác nhận dùng 1 buổi</strong><SignaturePad value={signature} onChange={setSignature} disabled={busy || !performerId} /></section>}
       </fieldset>}

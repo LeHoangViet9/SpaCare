@@ -55,7 +55,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
         {data.invoice.kind === 'GIFT' && <p>Quà tặng 0đ · Hóa đơn mua #{data.invoice.giftOfInvoiceId?.slice(-6)}</p>}
         {data.invoice.promotion && <p>Khuyến mãi: {data.invoice.promotion}</p>}
         {data.gifts?.length > 0 && <section><h3>Quà tặng kèm</h3>{data.gifts.map((gift: Row) => <p key={gift._id}>{gift.description} · <strong>0đ</strong></p>)}</section>}
-        <p>Người tạo: <strong>{data.invoice.creatorName || 'Chưa ghi nhận ở hóa đơn cũ'}</strong><br />Tư vấn: {data.invoice.consultantName || 'Chưa gán'}</p>
+        <p>Người tạo: <strong>{data.invoice.creatorName || 'Chưa ghi nhận ở hóa đơn cũ'}</strong></p>
         <section><h3>Chữ ký khách hàng</h3>
           {data.signatures?.length ? data.signatures.map((s: Row) => <article key={s.id} className="invoice-signature"><p><strong>{s.packageName || data.invoice.description}{s.sessionNumber ? ` · Buổi ${s.sessionNumber}` : ''}</strong><br />{new Date(s.performedAt).toLocaleString('vi-VN')}</p>{s.signature ? <SignatureImage signature={s.signature} /> : <p>Buổi cũ chưa có chữ ký trên màn hình.</p>}</article>) : <p>Chưa có chữ ký đã lưu trong phạm vi bạn được phép xem.</p>}
           {data.signatureTotal > 5 && <div className="customer-picker-pages"><button disabled={data.signaturePage <= 1} onClick={() => setPage(data.signaturePage - 1)}>Trước</button><span>Trang {data.signaturePage}/{Math.ceil(data.signatureTotal / 5)}</span><button disabled={data.signaturePage * 5 >= data.signatureTotal} onClick={() => setPage(data.signaturePage + 1)}>Sau</button></div>}
