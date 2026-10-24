@@ -1890,3 +1890,49 @@ label textarea { margin-top: 8px; }
 .service-selector-field { display:grid; gap:8px; min-width:0; }
 .service-selector-field select,.service-selector-field input { width:100%; min-width:0; }
 .service-selector-field small { color:var(--muted); }
+
+/* Cash card list: readable customer and balance cards on narrow screens. */
+@media(max-width:760px) {
+ .cash-card-manager>.section-head { display:flex; flex-direction:column; align-items:stretch; gap:12px; padding:16px; }
+ .cash-card-manager>.section-head h3 { margin:0; }
+ .cash-card-manager>.section-head p { margin:6px 0 0; }
+ .cash-card-manager>.section-head>.primary { width:100%; }
+ .cash-card-manager .card-manager-toolbar { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; padding:0 16px 16px; }
+ .cash-card-manager .card-manager-toolbar form { grid-column:1/-1; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; }
+ .cash-card-manager .card-manager-toolbar label { min-width:0; font-size:13px; }
+ .cash-card-manager .card-manager-toolbar input,.cash-card-manager .card-manager-toolbar select { width:100%; min-width:0; box-sizing:border-box; }
+ .cash-card-manager .card-manager-toolbar button { min-height:42px; }
+ .cash-card-manager .card-manager-table { overflow:visible; padding:0 16px; }
+ .cash-card-manager .card-manager-table table { display:block; width:100%; min-width:0; }
+ .cash-card-manager .card-manager-table thead { display:none; }
+ .cash-card-manager .card-manager-table tbody { display:grid; gap:12px; }
+ .cash-card-manager .card-manager-table tr { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); border:1px solid var(--line); border-radius:14px; padding:14px; gap:12px; background:var(--paper); }
+ .cash-card-manager .card-manager-table td { display:flex; flex-direction:column; align-items:flex-start; min-width:0; border:0; padding:0; font-size:14px; overflow-wrap:anywhere; }
+ .cash-card-manager .card-manager-table td::before { content:attr(data-label); font-size:12px; color:var(--muted); margin-bottom:4px; }
+ .cash-card-manager .card-manager-table td:nth-child(1) { order:1; }
+ .cash-card-manager .card-manager-table td:nth-child(2) { order:2; align-items:flex-end; }
+ .cash-card-manager .card-manager-table td:nth-child(2)::before { display:none; }
+ .cash-card-manager .card-manager-table td:nth-child(3) { order:0; grid-column:1/-1; }
+ .cash-card-manager .card-manager-table td:nth-child(3)::before { display:none; }
+ .cash-card-manager .card-manager-table td:nth-child(3)>button { font-size:16px; font-weight:700; text-align:left; }
+ .cash-card-manager .card-manager-table td:nth-child(4) { order:4; white-space:normal; }
+ .cash-card-manager .card-manager-table td:nth-child(5) { order:3; white-space:normal; }
+ .cash-card-manager .card-manager-table td:nth-child(5) strong { font-size:20px; color:var(--ink); }
+ .cash-card-manager .card-manager-table td:nth-child(6) { order:5; }
+ .cash-card-manager .card-manager-table td:nth-child(7) { display:none; }
+ .cash-card-manager .card-manager-table td:nth-child(8) { order:6; }
+ .cash-card-manager .card-manager-table td:nth-child(9) { order:7; grid-column:1/-1; border-top:1px solid var(--line); padding-top:12px; }
+ .cash-card-manager .card-manager-table td:nth-child(9)::before { display:none; }
+ .cash-card-manager .card-manager-table td:nth-child(9)>button { width:100%; min-height:40px; }
+ .cash-card-manager .card-manager-table td[colspan] { grid-column:1/-1; }
+ .cash-card-manager .card-manager-table td[colspan]::before { display:none; }
+ .cash-card-manager .card-manager-footer { padding:16px; gap:12px; }
+ .cash-card-manager .card-manager-footer>.actions { width:100%; display:flex; justify-content:space-between; }
+ .cash-card-manager .card-manager-note { padding:0 16px 16px; line-height:1.6; }
+ .cash-card-manager .card-customer-phone { margin-top:2px; font-size:14px; }
+}
+
+.cash-card-panel .card-payment-toggle { display:flex; align-items:center; gap:10px; font-weight:700; padding:12px 0; }
+.card-payment-toggle input[type=checkbox] { width:20px; height:20px; flex-shrink:0; }
+.card-payment-due { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:12px; border-radius:10px; background:#edf7f1; color:#164f38; margin:12px 0; }
+.card-payment-due strong { font-size:22px; font-variant-numeric:tabular-nums; }

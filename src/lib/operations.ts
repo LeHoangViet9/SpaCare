@@ -1,8 +1,8 @@
 import { ServiceGroup } from './models';
 import { serviceGroupName, serviceGroupKey } from './service-groups';
 import { CashCard, CashCardUse } from './models';
-import { cashCardInputs, cardPayment, ensureCardService } from './cash-card-rules';
-import { timedPackage, treatmentAvailable, useToken, packageSnapshot, packageStartOnPurchase } from './treatment-rules';
+import { invoiceCardInput, cashCardInputs, cardPayment, ensureCardService } from './cash-card-rules';
+import { nextSessionNumber, timedPackage, treatmentAvailable, useToken, packageSnapshot, packageStartOnPurchase } from './treatment-rules';
 import { leavesOverlap, summarizeLeave, attendanceSalary, dayUnits, leaveDays } from './leave-rules';
 import { packageCommissionDelta, sharedCommissionDeltas } from './sale-commission';
 import { isValidSignature, type Signature } from './signature';
@@ -108,6 +108,7 @@ const schemas = {
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
   invoice: z.object({
+    cashCard: invoiceCardInput.optional(),
     staffId: objectId.optional(),
     treatmentId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(),
     customerId: objectId,
@@ -257,6 +258,27 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if (!references.length) return false;
         return !!await Appointment.exists({ ...scope, staffId: actor.id, status: { $in: ['CONFIRMED', 'COMPLETED'] }, $or: references }).session(session);
       };
+      const redeemCard = async (d: z.infer<typeof cashCardInputs.redeemCashCard>) => {
+          const invoice = await get(Invoice, d.invoiceId);
+          ensure(actor.role === 'OWNER' || actor.cashier || await assignedInvoice(invoice), 'Chỉ dùng thẻ cho hóa đơn lịch mình phụ trách.', 403);
+          ensureCardService(invoice.toObject());
+          ensure(!await Treatment.exists({ ...scope, invoiceId: invoice._id }).session(session), 'Không dùng thẻ cho hóa đơn mua gói.', 409);
+          const card = await get(CashCard, d.cardId);
+          ensure(String(card.customerId) === String(invoice.customerId), 'Thẻ và hóa đơn phải cùng khách hàng.', 409);
+          const before = card.balance;
+          const next = cardPayment(before, invoice.total - invoice.paid, d.amount, d.additionalAmount);
+          await touchDay();
+          card.balance = next.balance;
+          await card.save({ session });
+          invoice.cardPaid = money((invoice.cardPaid || 0) + d.amount, true);
+          await updatePaid(invoice, next.settled);
+          const use = await create(CashCardUse, { cardId: card._id, customerId: invoice.customerId, invoiceId: invoice._id, amount: d.amount, balanceBefore: before, balanceAfter: next.balance, actorId: actor.id });
+          if (d.additionalAmount) {
+            const entry = await receipt({ customerId: invoice.customerId, amount: d.additionalAmount, method: d.method!, kind: 'PAYMENT', direction: 'IN', note: 'Thu thêm sau khi dùng thẻ tiền' });
+            await create(Payment, { invoiceId: invoice._id, amount: d.additionalAmount, receiptId: entry._id, receivedConfirmation: true });
+          }
+          return use;
+      };
       const accrueCommission = async (invoice: any, staffId: string, sourceType: string, sourceId: string, earnedAt = new Date()) => {
         const staff = await get(User, staffId);
         const service = await get(Service, String(invoice.serviceId));
@@ -326,7 +348,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         ensure(staff.active, 'Nhân viên thực hiện không hoạt động.');
         const performedAt = new Date();
         const signatureDigest = sha(JSON.stringify(d.signature));
-        const sessionNumber = timedPackage(treatment) ? (treatment.usedSessions || 0) + 1 : treatment.totalSessions - treatment.remaining + 1;
+        const sessionNumber = nextSessionNumber(treatment);
         const snapshot = JSON.stringify({ treatmentId: d.treatmentId, ...(appointmentId ? { appointmentId } : {}),
           customerId: String(customer._id), customerName: customer.name, name: treatment.name,
           staffId, staffName: staff.name, actorId: actor.id, sessionNumber, remainingBefore: useToken(treatment), packageType: treatment.packageType || 'SESSIONS', startsOn: treatment.startsOn, expiresOn: treatment.expiresOn,
@@ -346,7 +368,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         linkedInvoiceId = String(sessionInvoice._id);
         if (service) await accrueCommission(sessionInvoice, staffId, 'TREATMENT_USE', String(recorded._id), performedAt);
         if (timedPackage(treatment)) treatment.usedSessions = sessionNumber;
-        else { treatment.remaining -= 1; if (!treatment.remaining) treatment.status = 'COMPLETED'; }
+        else { if(treatment.openingBalance) treatment.usedSessions=sessionNumber; treatment.remaining -= 1; if (!treatment.remaining) treatment.status = 'COMPLETED'; }
         await treatment.save({ session });
         return recorded;
       };
@@ -461,6 +483,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'refundPackage': {
           const d = schemas.refundPackage.parse(data);
           ensure(!await CashCard.exists({ ...scope, sourceInvoiceId: d.invoiceId }).session(session), 'Gói có thẻ tiền tặng: cần chốt quy trình xử lý thẻ trước khi hoàn tiền.', 409); const invoice = await get(Invoice,d.invoiceId);
+          ensure(!invoice.openingBalance,'Không hoàn tiền bằng chứng từ chuyển số dư lịch sử.',409);
           ensure(invoice.kind === 'PACKAGE','Chỉ hoàn tiền cho hóa đơn bán gói.');
           ensure(d.amount <= invoice.paid - (invoice.refunded || 0),'Số hoàn vượt phần thực thu còn lại.');
           paymentEvidence(d.method,d.receivedConfirmation,d.reason,d.transferReference);
@@ -811,6 +834,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'updateInvoice': {
           const d = schemas.updateInvoice.parse(data);
           target = await get(Invoice,d.id);
+          ensure(!target.openingBalance,'Không sửa chứng từ chuyển số dư bằng luồng sửa hóa đơn bán mới.',409);
           ensure(target.updatedAt?.toISOString() === d.expectedUpdatedAt, 'Hóa đơn đã thay đổi. Tải lại trước khi sửa.',409);
           ensure((!target.kind || ['SERVICE','PACKAGE'].includes(target.kind)) && !target.performedAt && !target.treatmentUseId && !target.appointmentId && !target.giftOfInvoiceId, 'Hóa đơn đã thực hiện hoặc có liên kết vận hành, không thể sửa.',409);
           ensure(!await CashCard.exists({ ...scope, sourceInvoiceId: target._id }).session(session), 'Hóa đơn đã phát hành thẻ tặng, không thể sửa.', 409);
@@ -853,6 +877,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const d = schemas.invoice.parse(data);
           const customer = await get(Customer, d.customerId);
           const service = await get(Service, d.serviceId);
+          ensure(!d.cashCard || !d.treatmentId, 'Thẻ tiền chỉ dùng cho dịch vụ lẻ.', 409);
           if (d.treatmentId) {
             const plan = await get(Treatment, d.treatmentId);
             const purchase = await get(Invoice, String(plan.invoiceId));
@@ -870,13 +895,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(!d.staffId, 'Chọn nhân viên thực hiện khi hoàn thành dịch vụ, không phải lúc tạo hóa đơn lẻ.');
           if (d.dueDate) dayBounds(d.dueDate);
           ensure((d.total ?? service.price) > 0, 'Dịch vụ mua lẻ phải có giá lớn hơn 0.');
+          const { cashCard, ...invoiceData } = d;
           target = await create(Invoice, {
-            ...d,
+            ...invoiceData,
             ...await consultant(customer, d.consultantId), kind: 'SERVICE', commission: service.commission || 0,
             description: d.description || service.name,
             total: invoiceCharge(service.price, d.total, false),
             paid: 0,
           });
+          if (cashCard) await redeemCard({ ...cashCard, invoiceId: String(target._id) });
           break;
         }
         case 'sellCashCard': {
@@ -889,25 +916,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         }
         case 'redeemCashCard': {
           const d = schemas.redeemCashCard.parse(data);
-          const invoice = await get(Invoice, d.invoiceId);
-          ensure(actor.role === 'OWNER' || actor.cashier || await assignedInvoice(invoice), 'Chỉ dùng thẻ cho hóa đơn lịch mình phụ trách.', 403);
-          ensureCardService(invoice.toObject());
-          ensure(!await Treatment.exists({ ...scope, invoiceId: invoice._id }).session(session), 'Không dùng thẻ cho hóa đơn mua gói.', 409);
-          const card = await get(CashCard, d.cardId);
-          ensure(String(card.customerId) === String(invoice.customerId), 'Thẻ và hóa đơn phải cùng khách hàng.', 409);
-          const before = card.balance;
-          const next = cardPayment(before, invoice.total - invoice.paid, d.amount, d.additionalAmount);
-          await touchDay();
-          card.balance = next.balance;
-          await card.save({ session });
-          invoice.cardPaid = money((invoice.cardPaid || 0) + d.amount, true);
-          await updatePaid(invoice, next.settled);
-          target = await create(CashCardUse, { cardId: card._id, customerId: invoice.customerId, invoiceId: invoice._id, amount: d.amount, balanceBefore: before, balanceAfter: next.balance, actorId: actor.id });
-          if (d.additionalAmount) {
-            const entry = await receipt({ customerId: invoice.customerId, amount: d.additionalAmount, method: d.method!, kind: 'PAYMENT', direction: 'IN', note: 'Thu thêm sau khi dùng thẻ tiền' });
-            await create(Payment, { invoiceId: invoice._id, amount: d.additionalAmount, receiptId: entry._id, receivedConfirmation: true });
-          }
-          linkedInvoiceId = String(invoice._id);
+          target = await redeemCard(d);
+          linkedInvoiceId = d.invoiceId;
           break;
         }
         case 'deposit': {

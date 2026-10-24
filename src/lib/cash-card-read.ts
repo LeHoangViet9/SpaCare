@@ -18,7 +18,7 @@ export async function readCashCards(user: Actor, query: z.infer<typeof cashCardQ
   ensure(await Customer.exists({ spaId: user.spaId, _id: query.customerId }), 'Không tìm thấy khách trong spa.', 404);
   const total = await CashCard.countDocuments(filter);
   const page = Math.min(query.page, Math.max(1, Math.ceil(total / 10)));
-  const cards = await CashCard.find(filter).select('amount balance origin sourceInvoiceId promotion createdAt').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 10).limit(10).lean();
+  const cards = await CashCard.find(filter).select('sourceLabel openingDate amount balance origin sourceInvoiceId promotion createdAt').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 10).limit(10).lean();
   // Ordinary staff only see redemptions for the invoice whose access was checked above.
   const useFilter = { spaId:user.spaId,customerId:query.customerId,...(query.cardId ? {cardId:query.cardId}:{}), ...(!canSell ? { invoiceId: query.invoiceId } : {}) };
   const useTotal = await CashCardUse.countDocuments(useFilter);
@@ -30,7 +30,7 @@ export async function readCashCards(user: Actor, query: z.infer<typeof cashCardQ
 export const cashCardListQuery = z.object({
   search: z.string().trim().max(100).default(''),
   status: z.enum(['', 'AVAILABLE', 'EXHAUSTED']).default(''),
-  origin: z.enum(['', 'PURCHASE', 'GIFT']).default(''),
+  origin: z.enum(['', 'PURCHASE', 'GIFT', 'OPENING']).default(''),
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),
 });
 export async function readCashCardList(user: Actor, query: z.infer<typeof cashCardListQuery>) {
@@ -51,7 +51,7 @@ export async function readCashCardList(user: Actor, query: z.infer<typeof cashCa
   const filter={$and:filters};
   const total=await CashCard.countDocuments(filter);
   const page=Math.min(query.page,Math.max(1,Math.ceil(total/10)));
-  const cards=await CashCard.find(filter).select('customerId amount balance origin sourceInvoiceId promotion createdAt').sort({createdAt:-1,_id:-1}).skip((page-1)*10).limit(10).lean();
+  const cards=await CashCard.find(filter).select('sourceLabel openingDate customerId amount balance origin sourceInvoiceId promotion createdAt').sort({createdAt:-1,_id:-1}).skip((page-1)*10).limit(10).lean();
   const people=cards.length ? await Customer.find({...scope,_id:{$in:cards.map(c=>c.customerId)}}).select('name phone').lean() : [];
   return {total,page,pageSize:10,cards:cards.map(card=>{
     const customer=people.find(c=>String(c._id)===String(card.customerId));

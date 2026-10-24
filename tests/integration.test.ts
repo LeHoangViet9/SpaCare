@@ -1,3 +1,4 @@
+import { parseOpening, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
 import { ServiceGroup } from '../src/lib/models';
 import { CashCard, CashCardUse } from '../src/lib/models';
 import { readCashCards } from '../src/lib/cash-card-read';
@@ -124,9 +125,39 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await CashCard.findById(gift!._id))!.balance,800000);assert.equal((await Invoice.findById(freshBill.id))!.paid,0);
       const cards=await readCashCards(a,{customerId:c.id,page:1,usePage:1});assert.equal(cards.total,3);
       await assert.rejects(readCashCards(staffActor,{customerId:c.id,page:1,usePage:1}),status(403));
+      const inlineKey=randomUUID(), inlineData={customerId:c.id,serviceId:svc.id,cashCard:{cardId:gift!._id.toString(),amount:300000,additionalAmount:100000,method:'CASH',receivedConfirmation:true}};
+      const inline=await op('invoice',inlineData,inlineKey);await op('invoice',inlineData,inlineKey);
+      assert.equal((await Invoice.findById(inline.id))!.paid,400000);assert.equal((await Invoice.findById(inline.id))!.cardPaid,300000);
+      assert.equal((await CashCard.findById(gift!._id))!.balance,500000);
+      const invoiceCount=await Invoice.countDocuments(scope), useCount=await CashCardUse.countDocuments(scope);
+      await assert.rejects(op('invoice',{...inlineData,customerId:c2.id}),status(409));
+      assert.equal(await Invoice.countDocuments(scope),invoiceCount);assert.equal(await CashCardUse.countDocuments(scope),useCount);
+      const savedCreate=Payment.create;
+      try{(Payment as any).create=async()=>{throw new Error('INLINE_PAYMENT_ROLLBACK');};await assert.rejects(op('invoice',inlineData),/INLINE_PAYMENT_ROLLBACK/);}finally{(Payment as any).create=savedCreate;}
+      assert.equal(await Invoice.countDocuments(scope),invoiceCount);assert.equal((await CashCard.findById(gift!._id))!.balance,500000);
       await op('closeDay',{day:spaDay(),counted:1000000});
       await assert.rejects(op('redeemCashCard',{cardId:gift!._id.toString(),invoiceId:freshBill.id,amount:100000}));
-      assert.equal((await CashCard.findById(gift!._id))!.balance,800000);
+      assert.equal((await CashCard.findById(gift!._id))!.balance,500000);
+    });
+    await t.test('opening balances: paid historic rights, no cash, retry, usage and rollback',async()=>{
+      const spa=await Spa.create({name:'Opening balance isolation'});extraSpaIds.push(spa._id);
+      const password=randomUUID(), email=randomUUID()+'@example.test';
+      const owner=await User.create({spaId:spa._id,name:'Opening owner',email,passwordHash:hashPassword(password),role:'OWNER'});
+      await Control.create({spaId:spa._id,revision:0});const scope={spaId:spa._id};
+      const a:Actor={id:String(owner._id),spaId:String(spa._id),name:owner.name,role:'OWNER',cashier:false};
+      const svc=await Service.create({...scope,name:'Opening service',price:400000,commission:10000});
+      const input=parseOpening({version:1,targetDatabase:'spacare_test',confirmations:{treatmentsFullyPaid:true,cosmeticsDebtSeparate:true},customers:[{name:'Opening customer',phone:'0900123456',sourceStartDate:'2024-01-07',treatments:[{serviceName:svc.name,remaining:8,historicalPaymentStatus:'FULLY_PAID',createNewReceipt:false}],cashCard:{sourceLabel:'Old card',remainingVnd:800000},debt:{sourceLabel:'Old cosmetics',outstandingVnd:7000000}}]});
+      await checkOpeningIndexes();const report=await inspectOpening(owner,input);assert.deepEqual(report.errors,[]);
+      const oldCreate=Treatment.create;
+      try{(Treatment as any).create=async()=>{throw new Error('OPENING_ROLLBACK');};await assert.rejects(writeOpening({email,password},input,{},report.approval,'opening-integration-batch'),/OPENING_ROLLBACK/);}finally{(Treatment as any).create=oldCreate;}
+      assert.equal(await Customer.countDocuments(scope),0);assert.equal(await Invoice.countDocuments(scope),0);
+      const result=await writeOpening({email,password},input,{},report.approval,'opening-integration-batch');await writeOpening({email,password},input,{},report.approval,'opening-integration-batch');
+      assert.equal(await Treatment.countDocuments(scope),1);assert.equal(await Invoice.countDocuments(scope),2);assert.equal(await CashEntry.countDocuments(scope),0);assert.equal(await Commission.countDocuments(scope),0);assert.equal(await SaleCommission.countDocuments(scope),0);
+      const treatment=await Treatment.findOne(scope);assert.equal(treatment!.totalSessions,undefined);assert.equal(treatment!.remaining,8);
+      await operate(a,'use',{treatmentId:String(treatment!._id),signature:signed,remainingBefore:8},randomUUID());
+      const updated=await Treatment.findOne(scope);assert.equal(updated!.remaining,7);assert.equal(updated!.usedSessions,1);assert.equal((await TreatmentUse.findOne(scope))!.sessionNumber,1);assert.equal((await Commission.findOne(scope))!.amount,10000);
+      assert.equal(await CashEntry.countDocuments(scope),0);
+      await assert.rejects(operate(a,'updateInvoice',{id:result.created.invoices[0],expectedUpdatedAt:(await Invoice.findById(result.created.invoices[0]))!.updatedAt.toISOString(),description:'Bad edit',total:100,reason:'Test'},randomUUID()));
     });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});

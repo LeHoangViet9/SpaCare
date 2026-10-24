@@ -23,7 +23,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const use = invoice.treatmentUseId ? await TreatmentUse.findOne({ ...scope, _id: invoice.treatmentUseId }).select('+signature').lean() : null;
   // Signature access remains as strict as the existing treatment-use endpoint.
   const canSeeSignature = !!use && (user.role === 'OWNER' || String(use.actorId) === user.id || String(use.staffId) === user.id);
-  const packages = await Treatment.find({ ...scope, customerId: invoice.customerId, invoiceId: { $in: [invoice._id, ...gifts.map(g => g._id)] } }).select('name invoiceId packageType totalSessions remaining durationMonths startsOn expiresOn usedSessions status').lean();
+  const packages = await Treatment.find({ ...scope, customerId: invoice.customerId, invoiceId: { $in: [invoice._id, ...gifts.map(g => g._id)] } }).select('openingBalance openingRemaining name invoiceId packageType totalSessions remaining durationMonths startsOn expiresOn usedSessions status').lean();
   const performer = invoice.performedBy ? await User.findOne({ ...scope, _id: invoice.performedBy }).select('name').lean() : null;
   const signatureFilter = { ...scope, $and: [
     { $or: [

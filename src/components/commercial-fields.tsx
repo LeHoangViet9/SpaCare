@@ -1,6 +1,7 @@
 'use client';
 import { packageLabel, timedPackage, useToken, treatmentAvailable, treatmentDay } from '@/lib/treatment-rules';
 import {serviceGroupNames} from '@/lib/service-groups';
+import InvoiceCardPayment from './invoice-card-payment';
 import SaleParticipants from './sale-participants';
 import { FormFields } from './validated-form';
 import { parseMoney } from '@/lib/currency';
@@ -36,6 +37,7 @@ export default function CommercialFields({ action, data, disabled, customerId }:
     {!packageSale && <label>Nội dung<input name="description" maxLength={500} value={description} onChange={e => setDescription(e.target.value)} /></label>}
     {!packageSale && <label>Thanh toán<select name="treatmentId" value={treatment?._id || ''} onChange={e => { setTreatmentId(e.target.value); setSignature({ version: 1, strokes: [] }); }}><option value="">Mua lẻ · thu theo giá nhập</option>{treatments.map((t: Row) => <option key={t._id} value={t._id}>{t.name} · {packageLabel(t)} · 0đ</option>)}</select></label>}
     <label>Giá bán (VNĐ)<MoneyInput name="total" required min={treatment ? 0 : 1} max={1_000_000_000_000} value={treatment ? '0' : total} readOnly={!!treatment} onValueChange={setTotal} /></label>
+    {!packageSale && !treatment && customerId && selection && <InvoiceCardPayment key={customerId+selection+total} customerId={customerId} total={(()=>{try{return parseMoney(total);}catch{return 0;}})()} disabled={disabled}/>}
     {treatment && <><p>Dùng 1 buổi liệu trình · Không thu thêm tiền</p><SignaturePad value={signature} onChange={setSignature} disabled={disabled} /><input type="hidden" name="signature" value={JSON.stringify(signature)} /><input type="hidden" name="remainingBefore" value={useToken(treatment)} /></>}
     {packageSale && <><SaleParticipants people={data.staff || []} value={participantIds} onChange={setParticipantIds} total={Number(total)} disabled={disabled} />{(timedPackage(templates.find((t: Row) => t._id === selection) || {}) || gifts.some(g => timedPackage(templates.find((t: Row) => t._id === g.templateId) || {}))) && <label>Ngày bắt đầu sử dụng<input name="startsOn" type="date" required defaultValue={treatmentDay()} /><small>Gói triệt lông 36 tháng tự tính từ ngày mua.</small></label>}<label>Đợt khuyến mãi<input name="promotion" maxLength={2000} required={gifts.length > 0 || giftCardValue>0} placeholder="Ví dụ: ưu đãi tháng 10" /></label>
       {gifts.map((gift, index) => <div className="gift-row" key={gift.id}><label>Quà tặng · 0đ<select name={`gifts.${index}.templateId`} required value={gift.templateId} onChange={e => setGifts(old => old.map((v, i) => i === index ? {...v,templateId:e.target.value} : v))}><option value="">Chọn gói tặng…</option>{templates.map((r: Row) => <option key={r._id} value={r._id}>{r.name} · {packageLabel(r)}</option>)}</select></label><button type="button" onClick={() => setGifts(old => old.filter((_, i) => i !== index))}>Bỏ</button></div>)}

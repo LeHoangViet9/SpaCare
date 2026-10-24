@@ -131,6 +131,7 @@ const saleParticipantSchema = new Schema({ staffId: id, staffName: { type: Strin
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  openingBalance: Boolean, openingDate: String,
   saleParticipants: [saleParticipantSchema],
   sellerId: optionalId, sellerName: String, saleCommissionVersion: Number, saleCommissionAccrued: Number, refunded: { type: Number, default: 0 },
   performedBy: optionalId,
@@ -165,7 +166,8 @@ export const Invoice = model('Invoice', {
 
 // Immutable sources and redemption ledger; balances change only in operations transactions.
 export const CashCard = model('CashCard', {
-  customerId: id, amount, balance: amount, origin: { type: String, enum: ['PURCHASE', 'GIFT'], required: true },
+  openingDate: String, sourceLabel: String,
+  customerId: id, amount, balance: amount, origin: { type: String, enum: ['PURCHASE', 'GIFT', 'OPENING'], required: true },
   receiptId: optionalId, sourceInvoiceId: optionalId, promotion: String, actorId: id,
 }, [[{ spaId: 1, customerId: 1, createdAt: -1 }],
   [{ spaId: 1, receiptId: 1 }, { unique: true, partialFilterExpression: { receiptId: { $exists: true } } }],
@@ -234,6 +236,7 @@ export const CashEntry = model(
 export const Treatment = model(
   'Treatment',
   {
+    openingBalance: Boolean, openingRemaining: Number,
     templateId: optionalId,
     giftOfInvoiceId: optionalId,
     promotion: String,

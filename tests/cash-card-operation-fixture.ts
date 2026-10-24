@@ -61,4 +61,22 @@ assert.equal(state.ServiceGroup.length,1);assert.equal(state.ServiceGroup[0].nam
 await assert.rejects(call('serviceGroup',{name:'da mặt'}),e=>(e as any).status===409);
 state.Service[0].category='Nhóm cũ';await assert.rejects(call('serviceGroup',{name:' NHÓM CŨ '}),e=>(e as any).status===409);
 const groupsBefore=clone(state);failModel='ServiceGroup';await assert.rejects(call('serviceGroup',{name:'Rollback group'}),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,groupsBefore);
+state.Day[0].status='OPEN';
+const createCard=await call('sellCashCard',{...sale,amount:800000});
+const inline={customerId,serviceId,total:400000,cashCard:{cardId:createCard.id,amount:300000,additionalAmount:100000,method:'CASH',receivedConfirmation:true}};
+const inlineKey=randomUUID(), countBefore=state.Invoice.length, receiptsBefore=state.CashEntry.length;
+const created=await call('invoice',inline,inlineKey);await call('invoice',inline,inlineKey);
+assert.equal(state.Invoice.length,countBefore+1);assert.equal(state.Invoice.find(v=>v._id===created.id).paid,400000);
+assert.equal(state.Invoice.find(v=>v._id===created.id).cardPaid,300000);assert.equal(state.CashCard.find(v=>v._id===createCard.id).balance,500000);
+assert.equal(state.CashEntry.length,receiptsBefore+1);assert.equal(state.Payment.at(-1).amount,100000);
+for(const model of ['CashCardUse','Payment','Audit']){
+  const snapshot=clone(state);failModel=model;await assert.rejects(call('invoice',inline),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,snapshot,'inline creation must roll back '+model);
+}
+for(const cashCard of [{cardId:createCard.id,amount:600000},{cardId:createCard.id,amount:100000,additionalAmount:400000},{cardId:createCard.id,amount:100000,additionalAmount:100000,method:'CASH',receivedConfirmation:false}]){
+  const snapshot=clone(state);await assert.rejects(call('invoice',{...inline,cashCard}));assert.deepEqual(state,snapshot);
+}
+const foreign=state.CashCard.find(v=>v._id===createCard.id);foreign.customerId='9'.repeat(24);
+let snapshot=clone(state);await assert.rejects(call('invoice',inline));assert.deepEqual(state,snapshot);state.CashCard.find(v=>v._id===createCard.id).customerId=customerId;
+state.Day[0].status='CLOSED';snapshot=clone(state);await assert.rejects(call('invoice',inline));assert.deepEqual(state,snapshot);state.Day[0].status='OPEN';
+await assert.rejects(call('invoice',{...inline,treatmentId:'1'.repeat(24)}),e=>(e as any).status===409);
 console.log('Model doubles verified: sale, gift, split payment, retry, concurrent debit and rollback. Not a real MongoDB transaction test.');

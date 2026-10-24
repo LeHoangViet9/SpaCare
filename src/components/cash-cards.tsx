@@ -51,8 +51,8 @@ export default function CashCards({ customerId, invoice, onChanged, cardId, hide
         <button type="submit" disabled={busy || !confirmed}>Xác nhận mua thẻ</button>
       </fieldset></ValidatedForm>}
       {data.cards.map((card:Row)=><article key={card._id} className="cash-card-item">
-        <strong>Thẻ #{card._id.slice(-6)} · {card.origin==='GIFT'?'Được tặng':'Khách mua'}</strong>
-        <p>Mệnh giá {money(card.amount)} · Còn <strong>{money(card.balance)}</strong></p>
+        <strong>Thẻ #{card._id.slice(-6)} · {card.origin==='OPENING'?'Số dư chuyển từ sổ cũ':card.origin==='GIFT'?'Được tặng':'Khách mua'}</strong>
+        <p>{card.origin==='OPENING'?'Số dư lúc chuyển':'Mệnh giá'} {money(card.amount)} · Còn <strong>{money(card.balance)}</strong></p>
         {card.sourceInvoiceId && <p>Hóa đơn gói #{card.sourceInvoiceId.slice(-6)}{card.promotion?' · '+card.promotion:''}</p>}
         {invoice && due>0 && card.balance>0 && <button type="button" disabled={busy} onClick={()=>{setSelected(card);setSelling(false);setUsed(String(Math.min(card.balance,due)));setAdditional(String(due-Math.min(card.balance,due)));setConfirmed(false);}}>Dùng thẻ này</button>}
       </article>)}

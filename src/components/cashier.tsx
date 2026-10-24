@@ -1,11 +1,12 @@
 'use client';
 import { packageLabel, timedPackage, useToken, packageExpiry, treatmentDay } from '@/lib/treatment-rules';
+import InvoiceCardPayment from './invoice-card-payment';
 import SaleParticipants from './sale-participants';
 import ValidatedForm from '@/components/validated-form';
 import { formatCurrency } from '@/lib/currency';
 import MoneyInput from './money-input';
 import { parseMoney } from '@/lib/currency';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import CustomerPicker from './customer-picker';
 import SignaturePad from './signature-pad';
 import { isValidSignature, type Signature } from '@/lib/signature';
@@ -15,6 +16,7 @@ const money = formatCurrency;
 export default function Cashier({ data, busy, initialMode, initialCustomer, onSubmit, onInvoices, onNewCustomer }: {
   data: Row; busy: boolean; initialMode: CashierMode; initialCustomer?: Row | null; onSubmit: (action: string, values: Row) => void; onInvoices: () => void; onNewCustomer: () => void;
 }) {
+  const [cardPreview,setCardPreview]=useState({context:'',amount:0});
   const [mode, setMode] = useState<CashierMode>(initialMode);
   const [customer, setCustomer] = useState<Row | null>(null);
   const [search, setSearch] = useState('');
@@ -43,6 +45,9 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
   const pageCount = Math.max(1, Math.ceil(catalog.length / 8));
   const page = Math.min(catalogPage, pageCount);
   const amount = mode === 'session' ? 0 : (price ? (()=>{try{return parseMoney(price);}catch{return 0;}})() : 0) * (mode === 'product' ? Number(quantity) : 1);
+  const cardContext=(customer?._id||'')+(selected?._id||'')+amount;
+  const appliedCard=mode==='service'&&cardPreview.context===cardContext?cardPreview.amount:0;
+  const previewCard=useCallback((value:number)=>setCardPreview({context:cardContext,amount:value}),[cardContext]);
   function resetSelection() { setSelected(null); setParticipantIds([data.user.id]); setDescription(''); setPrice(''); setQuantity('1'); setGifts([]); setGiftCashCardAmount('0'); setPromotion(''); setPerformerId(''); setSignature({ version: 1, strokes: [] }); setError(''); }
   useEffect(() => {
     if (!initialCustomer) return;
@@ -55,10 +60,11 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
     if (mode === 'session' && !isValidSignature(signature)) { setError('Khách cần ký xác nhận buổi thực hiện.'); return; }
     if (mode === 'package' && (gifts.length || giftCardValue>0) && (!promotion.trim() || gifts.some(g => !g.templateId))) { setError('Nhập đợt khuyến mãi và chọn đủ gói quà tặng.'); return; }
     if (mode !== 'session') { try { const value = parseMoney(price); if (value < 1) throw new Error('Giá bán phải lớn hơn 0.'); } catch(e) {setError((e as Error).message);return;} }
+    const cardValue = new FormData(e.currentTarget).get('cashCard');
     const common = { customerId: customer._id, ...(consultantId ? { consultantId } : {}) };
     if (mode === 'product') onSubmit('sellProduct', { ...common, productId: selected._id, quantity: Number(quantity), unitPrice: parseMoney(price), ...(dueDate ? { dueDate } : {}) });
     else if (mode === 'package') onSubmit('sellPackage', { ...common, templateId: selected._id, total: amount, dueDate, ...(startsOn ? { startsOn } : {}), participantIds, promotion, giftCashCardAmount: parseMoney(giftCashCardAmount), gifts: gifts.map(g => ({templateId:g.templateId})) });
-    else onSubmit('invoice', { ...common, serviceId: mode === 'session' ? selected.serviceId : selected._id, ...(description.trim()?{description:description.trim()}:{}), total: amount,
+    else onSubmit('invoice', { ...common, ...(mode === 'service' && cardValue ? {cashCard:JSON.parse(String(cardValue))} : {}), serviceId: mode === 'session' ? selected.serviceId : selected._id, ...(description.trim()?{description:description.trim()}:{}), total: amount,
       ...(mode === 'session' ? { treatmentId: selected._id, remainingBefore: useToken(selected), signature, staffId: performerId } : dueDate ? { dueDate } : {}) });
   }
   return <ValidatedForm onSubmit={submit} className="cashier">
@@ -81,6 +87,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
         <div className="section-head"><strong>{selected.name}</strong><button type="button" onClick={resetSelection}>Bỏ chọn</button></div>
         {mode !== 'package' && mode !== 'product' && <label>Nội dung<input name="description" value={description} maxLength={500} onChange={e => setDescription(e.target.value)} /></label>}
         <label>{mode === 'product' ? 'Đơn giá (VNĐ)' : 'Giá bán (VNĐ)'}<MoneyInput name={mode === "product" ? "unitPrice" : "total"} value={mode === 'session' ? '0' : price} min={mode === 'session' ? 0 : 1} max={1_000_000_000_000} required readOnly={mode === 'session'} onValueChange={setPrice} /></label>
+        {mode === 'service' && customer && <InvoiceCardPayment key={customer._id+selected._id+amount} customerId={customer._id} total={amount} disabled={busy} onAppliedChange={previewCard}/>}
         {mode === 'product' && <label>Số lượng ({selected.unit})<input name="quantity" type="number" value={quantity} min={1} max={selected.stock} step={1} required onChange={e => setQuantity(e.target.value)} /><small>Tồn kho: {selected.stock}. Lưu hóa đơn sẽ xuất kho.</small></label>}
         {mode === 'package' && <><label>Đợt khuyến mãi<input name="promotion" value={promotion} maxLength={2000} required={!!gifts.length || giftCardValue>0} onChange={e => setPromotion(e.target.value)} placeholder="Tên chương trình / đợt" /></label>
           {gifts.map((gift, index) => <div key={gift.id} className="gift-row"><label>Quà tặng · 0đ<select name={`gifts.${index}.templateId`} required value={gift.templateId} onChange={e => setGifts(old => old.map((v, i) => i === index ? {...v,templateId:e.target.value} : v))}><option value="">Chọn gói…</option>{templates.map(t => <option key={t._id} value={t._id}>{t.name} · {packageLabel(t)}</option>)}</select></label><button type="button" onClick={() => setGifts(old => old.filter((_, i) => i !== index))}>Bỏ</button></div>)}
@@ -94,10 +101,11 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
         {mode === 'session' && <section><label>Nhân viên trực tiếp thực hiện<select required value={performerId} onChange={e => { setPerformerId(e.target.value); setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn nhân viên…</option>{data.staff.filter((s: Row) => s.active).map((s: Row) => <option key={s._id} value={s._id}>{s.name}</option>)}</select></label><strong>Khách ký xác nhận dùng 1 buổi</strong><SignaturePad value={signature} onChange={setSignature} disabled={busy || !performerId} /></section>}
       </fieldset>}
       <div className="cashier-total"><span>{mode === 'session' ? 'Thu thêm' : 'Tổng hóa đơn'}</span><strong>{money(Number.isFinite(amount) ? amount : 0)}</strong></div>
+      {mode==='service' && appliedCard>0 && <div className="cashier-total card-payment-due" role="status"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
       {mode === 'session' && selected && <p>Ghi 1 buổi · Không thu thêm tiền</p>}
       {error && <p className="negative" role="alert">{error}</p>}
       <button type="submit" className="primary cashier-save" disabled={busy || !selected || !customer || (mode === 'session' && !isValidSignature(signature))}>{busy ? 'Đang lưu…' : mode === 'session' ? 'Xác nhận dùng 1 buổi' : mode === 'package' ? 'Tạo gói & hóa đơn' : 'Lưu hóa đơn'}</button>
-      {mode !== 'session' && <small className="cashier-save-note">Sau khi lưu, chọn thu tiền khi thực nhận tiền.</small>}
+      {mode !== 'session' && <small className="cashier-save-note">Nếu áp dụng thẻ, lưu hóa đơn sẽ trừ thẻ và thu thêm theo xác nhận. Phần còn nợ có thể thu sau.</small>}
     </section>
   </ValidatedForm>;
 }

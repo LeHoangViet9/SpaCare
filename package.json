@@ -25,7 +25,9 @@
     "dev:demo": "tsx --env-file-if-exists=.env.demo.local scripts/dev-demo.ts",
     "db:demo:check": "tsx --env-file-if-exists=.env.demo.local scripts/seed-demo.ts --check",
     "test:ui": "playwright test --config=playwright.config.mjs",
-    "db:import-catalog": "tsx --env-file=.env.local scripts/import-catalog.ts"
+    "db:import-catalog": "tsx --env-file=.env.local scripts/import-catalog.ts",
+    "db:opening:preview": "tsx scripts/import-opening-balances.ts",
+    "db:opening:live": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-opening-balances.ts"
   },
   "dependencies": {
     "next": "^16.0.0",

@@ -1,5 +1,5 @@
 // Date strings are local spa days (Asia/Ho_Chi_Minh), inclusive at both ends.
-type Plan = { packageType?: string; remaining?: number; totalSessions?: number; usedSessions?: number; startsOn?: string; expiresOn?: string; status?: string; durationMonths?: number };
+type Plan = { openingBalance?: boolean; openingRemaining?: number; packageType?: string; remaining?: number; totalSessions?: number; usedSessions?: number; startsOn?: string; expiresOn?: string; status?: string; durationMonths?: number };
 export const treatmentDay = (at = new Date()) => at.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
 export const timedPackage = (p: Plan) => p.packageType === 'TIME';
 export const useToken = (p: Plan) => timedPackage(p) ? (p.usedSessions || 0) : (p.remaining || 0);
@@ -9,6 +9,7 @@ export function treatmentAvailable(p: Plan, day = treatmentDay()) {
 }
 export function packageLabel(p: Plan) {
   if (timedPackage(p)) return p.expiresOn ? `Không giới hạn · ${p.startsOn} – ${p.expiresOn}` : `${p.durationMonths} tháng · không giới hạn số lần`;
+  if(p.openingBalance) return `Còn ${p.remaining || 0} buổi chuyển từ sổ cũ`;
   return p.remaining === undefined ? `${p.totalSessions} buổi` : `Còn ${p.remaining}/${p.totalSessions} buổi`;
 }
 export function packageExpiry(start: string, months: number) {
@@ -34,4 +35,9 @@ export function availableTreatmentFilter(day = treatmentDay()) {
 // Confirmed for the spa's 36-month hair-removal catalog; other plans retain their agreed start date.
 export function packageStartOnPurchase(p: Plan, category: string | undefined, today: string, requested?: string) {
   return timedPackage(p) && p.durationMonths === 36 && category?.normalize('NFC').trim().toLocaleLowerCase('vi') === 'triệt lông' ? today : requested;
+}
+
+// Imported rights have unknown original quota; numbering starts at transfer, not the original purchase.
+export function nextSessionNumber(p: Plan) {
+  return timedPackage(p) || p.openingBalance ? (p.usedSessions || 0) + 1 : (p.totalSessions || 0) - (p.remaining || 0) + 1;
 }
