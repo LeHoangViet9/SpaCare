@@ -5,7 +5,7 @@ import { pageKeys } from '../src/lib/navigation.ts';
 
 test('every available list has server pagination; invalid ranges and pagination are rejected', () => {
   for (const section of pageKeys()) {
-    if (!['overview', 'reports', 'cashier', 'salary', 'commission', 'products', 'product_groups', 'inventory'].includes(section)) assert.ok(sectionCollection[section], section);
+    if (!['cash_cards', 'overview', 'reports', 'cashier', 'salary', 'commission', 'products', 'product_groups', 'inventory'].includes(section)) assert.ok(sectionCollection[section], section);
     assert.equal(workspaceQuery(new URLSearchParams({ section })).section, section);
   }
   for (const input of ['page=0', 'pageSize=101', 'allocationPage=-1', 'section=unknown', 'actor=bad', 'from=2026-02-30', 'from=2026-10-22&to=2026-10-21']) {

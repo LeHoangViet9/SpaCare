@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { money, invoiceState, amountDue, allocationResult, overlaps, spaDay, dayBounds, confirmation, withinSpaHours } from '../src/lib/rules.ts';
+import { money, invoiceState, amountDue, allocationResult, overlaps, spaDay, dayBounds, confirmation, withinSpaHours, withinArrivalHours } from '../src/lib/rules.ts';
 test('cọc 500k áp 350k còn 150k và hóa đơn hết nợ', () => {
   const result = allocationResult(500000, 350000, 350000);
   assert.deepEqual(result, { balance: 150000, due: 0 });
@@ -106,4 +106,11 @@ test('chuyển khoản chấp nhận thiếu tham chiếu nhưng không chấp n
   assert.equal(invoiceState(100000, 50000), 'PARTIALLY_PAID');
   assert.equal(invoiceState(100000, 100000), 'PAID');
   for (const [total, paid] of [[0, 1], [-1, 0], [0, -1], [NaN, 0], ['0', 0]]) assert.throws(() => invoiceState(total, paid));
+});
+
+test('arrival hours accept closing time without requiring an end time', () => {
+  const at = time => new Date(`2026-10-23T${time}:00+07:00`);
+  for (const time of ['09:00','12:00','21:59','22:00']) assert.equal(withinArrivalHours(at(time)), true);
+  for (const time of ['08:59','22:01']) assert.equal(withinArrivalHours(at(time)), false);
+  assert.equal(withinArrivalHours(new Date('invalid')), false);
 });

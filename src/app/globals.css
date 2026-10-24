@@ -1439,13 +1439,13 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .invoice-history article { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
 .appointment-agenda > section { margin: 20px 0; }
 .appointment-timeline-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
-.appointment-timeline { display: grid; grid-template-columns: 150px repeat(26, 40px); min-width: 1190px; }
+.appointment-timeline { display: grid; grid-template-columns: 150px repeat(27, 40px); min-width: 1230px; }
 .timeline-corner, .timeline-hour { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; min-height: 42px; padding: 8px; background: var(--paper); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .timeline-corner { left: 0; z-index: 3; border-right: 1px solid var(--line); }
 .timeline-hour { grid-column: span 2; justify-content: flex-start; border-right: 1px solid var(--line); }
-.timeline-staff-row { display: grid; grid-column: 1 / -1; grid-template-columns: 150px repeat(26, 40px); min-height: 84px; }
+.timeline-staff-row { display: grid; grid-column: 1 / -1; grid-template-columns: 150px repeat(27, 40px); min-height: 84px; }
 .timeline-staff-name { position: sticky; left: 0; z-index: 1; display: flex; align-items: center; padding: 10px; overflow: hidden; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.timeline-track { display: grid; grid-column: 2 / -1; grid-row: 1; grid-template-columns: repeat(26, 40px); grid-template-rows: 1fr; position: relative; min-height: 84px; border-bottom: 1px solid var(--line); background: #fff; }
+.timeline-track { display: grid; grid-column: 2 / -1; grid-row: 1; grid-template-columns: repeat(27, 40px); grid-template-rows: 1fr; position: relative; min-height: 84px; border-bottom: 1px solid var(--line); background: #fff; }
 .timeline-slot { grid-row: 1; border-right: 1px solid var(--line); background: linear-gradient(to bottom, transparent 48%, #f0f2ef 49%, #f0f2ef 51%, transparent 52%); }
 .timeline-appointment { grid-row: 1; z-index: 1; align-self: stretch; min-width: 0; margin: 8px 2px; overflow: hidden; border: 1px solid #8fb4a1; border-radius: 8px; background: #e7f2eb; color: var(--ink); }
 .timeline-appointment.outside-hours { border-color: #cf8744; background: #fff2e5; }
@@ -1465,8 +1465,8 @@ body:has(.modal-backdrop) { overflow: hidden; }
   .profile-tabs { gap: 6px; }
   .profile-tabs button { flex: 1; font-size: 12px; padding: 10px 7px; }
   .appointment-timeline-scroll { margin-inline: -4px; }
-  .appointment-timeline { grid-template-columns: 112px repeat(26, 40px); }
-  .timeline-staff-row { grid-template-columns: 112px repeat(26, 40px); }
+  .appointment-timeline { grid-template-columns: 112px repeat(27, 40px); }
+  .timeline-staff-row { grid-template-columns: 112px repeat(27, 40px); }
   .timeline-staff-name { padding: 8px; font-size: 12px; }
 }
 
@@ -1862,3 +1862,27 @@ label textarea { margin-top: 8px; }
  .salary-mobile-detail .actions button { flex:1 1 120px; min-height:42px; margin:0; }
  .salary-frame > .inline-note { display:none; }
 }
+
+.cash-card-panel { margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.cash-card-item { border-bottom: 1px solid var(--line); padding: 12px 0; }
+.cash-card-panel fieldset { min-width: 0; display: grid; gap: 12px; margin: 12px 0; }
+.cash-card-panel label { display: grid; gap: 6px; }
+
+.cash-card-manager { min-width:0; }
+.card-manager-toolbar { display:flex; align-items:end; flex-wrap:wrap; gap:12px; padding:0 20px 20px; }
+.card-manager-toolbar form { display:flex; gap:8px; align-items:end; flex:1 1 280px; }
+.card-manager-toolbar label { display:grid; gap:6px; min-width:0; }
+.card-manager-toolbar form label { flex:1; }
+.card-manager-table { max-width:100%; overflow-x:auto; }
+.card-manager-table table { width:100%; min-width:1080px; border-collapse:collapse; }
+.card-manager-table th,.card-manager-table td { padding:14px 16px; text-align:left; border-bottom:1px solid var(--line); vertical-align:middle; }
+.card-manager-table th { background:var(--paper); font-size:12px; white-space:nowrap; }
+.card-manager-table td { font-size:13px; }
+.card-money { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.card-code { display:block; max-width:155px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+.card-full-code { overflow-wrap:anywhere; }
+.card-customer-phone { display:block; margin-top:6px; color:var(--muted); }
+.card-manager-footer { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; align-items:center; padding:16px 20px; font-size:13px; }
+.card-manager-empty { text-align:center; padding:35px 12px; color:var(--muted); }
+.card-manager-note { padding:0 20px 16px; font-size:13px; color:var(--muted); }
+@media(max-width:600px) { .card-manager-toolbar { padding:0 12px 12px; } .card-manager-toolbar form { flex-basis:100%; } .card-manager-toolbar>label { flex:1; } .cash-card-manager>.section-head { align-items:flex-start; } .cash-card-manager .section-head p { font-size:13px; } }

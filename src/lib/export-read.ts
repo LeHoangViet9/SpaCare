@@ -31,6 +31,8 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
       ] },
       { heading: 'Thanh toán', columns: ['Khoản mục', 'Số tiền'], widths: [0.65, 0.35], rows: [
         ['Tổng hóa đơn', money(bill.total)], ['Đã thanh toán', money(bill.paid)],
+        ...(bill.cardPaid ? [['Trong đó dùng thẻ tiền (không thu mới)', money(bill.cardPaid)]] : []),
+        ...(bill.giftCashCardAmount ? [['Mệnh giá thẻ tặng kèm', money(bill.giftCashCardAmount)]] : []),
         ...(bill.refunded ? [['Đã hoàn', money(bill.refunded)]] : []),
         ['Còn phải thanh toán', money(Math.max(0, bill.total - bill.paid))],
         ['Hạn thanh toán', bill.dueDate || 'Chưa đặt'],

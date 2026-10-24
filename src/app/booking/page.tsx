@@ -20,7 +20,7 @@ export default async function BookingPage({
     _id: string;
     name: string;
     price: number;
-    duration: number;
+    duration?: number;
     category?: string;
   }> = [];
 
@@ -35,7 +35,7 @@ export default async function BookingPage({
       _id: String(doc._id),
       name: doc.name || 'Dịch vụ Spa',
       price: doc.price || 0,
-      duration: doc.duration || 60,
+
       category: doc.category || undefined,
     }));
   } catch {

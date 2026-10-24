@@ -1,3 +1,4 @@
+import { log, requestId } from '@/lib/logger';
 import { randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { loginInput } from '@/lib/login-identity';
@@ -9,6 +10,8 @@ import { failure } from '@/lib/http';
 const dummyHash = hashPassword('dummy-password-for-timing-check');
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
+  const id = requestId();
+  const started = Date.now();
   try {
     checkOrigin(request);
     const { identity, password } = loginInput.parse(await request.json());
@@ -24,6 +27,7 @@ export async function POST(request: Request) {
     const expiresAt = new Date(Date.now() + 8 * 3600_000);
     await Session.create({ spaId: user.spaId, userId: user._id, tokenHash: hash(token), expiresAt });
     (await cookies()).set('spacare_session', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', expires: expiresAt, path: '/' });
-    return Response.json({ ok: true, role: user.role, name: user.name });
-  } catch (e) { return failure(e); }
+    log('info', 'auth.login.completed', { requestId: id, actorId: String(user._id), spaId: String(user.spaId), status: 200, durationMs: Date.now() - started });
+    return Response.json({ ok: true, role: user.role, name: user.name }, { headers: { 'X-Request-Id': id } });
+  } catch (e) { return failure(e, { requestId: id, durationMs: Date.now() - started }); }
 }

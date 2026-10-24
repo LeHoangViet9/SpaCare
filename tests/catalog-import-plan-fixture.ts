@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { planCatalog, catalogRowKey } from '../src/lib/catalog-import-plan';
+import { packageStartOnPurchase, packageExpiry } from '../src/lib/treatment-rules';
+const headers = { A: 'Nhóm dịch vụ', B: 'Tên dịch vụ', C: 'Giá từ (VNĐ)', D: 'Giá đến (VNĐ)', E: 'Hoa hồng (VNĐ)', F: 'Bảo hành', G: 'Ghi chú' };
+const row = { row: 2, cells: { A: 'CHĂM SÓC DA', B: 'Cấp ẩm', C: '300000', D: '300000', E: '20000' } };
+const rows = [{ row: 1, cells: headers }, row];
+const plain = planCatalog(rows);
+assert.equal(plain.errors.length, 0);
+assert.equal(plain.entries[0].service.price, 300000);
+assert.equal('duration' in plain.entries[0].service, false);
+assert.equal(planCatalog([{ row: 1, cells: headers }, { ...row, cells: { ...row.cells, D: '400000' } }]).errors.length, 1);
+const range = planCatalog([{ row: 1, cells: headers }, { ...row, cells: { ...row.cells, D: '400000' } }], true);
+assert.equal(range.entries[0].service.price, 300000);
+assert.equal(range.entries[0].source.max, 400000);
+const selected = planCatalog([{ row: 1, cells: { ...headers, H: 'Giá mặc định (VNĐ)' } }, { ...row, cells: { ...row.cells, D: '400000', H: '350000' } }]);
+assert.equal(selected.entries[0].service.price, 350000);
+assert.equal(planCatalog([...rows, { ...row, row: 3 }]).errors.length, 1);
+for (const value of ['-1', '12.5', 'NaN', '999999999999999999']) {
+  assert.ok(planCatalog([{ row: 1, cells: headers }, { ...row, cells: { ...row.cells, E: value } }]).errors.length);
+}
+const laser = planCatalog([{ row: 1, cells: headers }, { row: 2, cells: { A: 'TRIỆT LÔNG', B: 'Nách', C: '700000', D: '700000', E: '0', F: '3 năm từ ngày mua', G: 'Giá lẻ: 100,000 đ/lần; không giới hạn số lần trong bảo hành' } }]);
+assert.deepEqual(laser.errors, []);
+assert.equal(laser.entries[0].service.price, 100000);
+assert.equal(laser.entries[0].service.commission, 0);
+assert.equal(laser.entries[0].package!.price, 700000);
+assert.equal(laser.entries[0].package!.durationMonths, 36);
+assert.equal(catalogRowKey(plain.entries[0]), catalogRowKey({ ...plain.entries[0], row: 90, service: { ...plain.entries[0].service, name: ' CẤP  ẨM ' } }));
+assert.ok(planCatalog([{ row: 1, cells: { A: 'Tên dịch vụ' } }]).errors.length);
+assert.ok(planCatalog([{ row: 1, cells: headers }]).errors.length);
+const day = packageStartOnPurchase(laser.entries[0].package!, 'TRIỆT LÔNG', '2026-10-24', '2027-01-01');
+assert.equal(day, '2026-10-24');
+assert.equal(packageExpiry(day!, 36), '2029-10-24');
+assert.equal(packageStartOnPurchase({ packageType: 'TIME', durationMonths: 24 }, 'CHĂM SÓC DA', '2026-10-24', '2027-01-01'), '2027-01-01');

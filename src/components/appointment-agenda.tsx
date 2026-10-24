@@ -3,7 +3,7 @@ const statuses: Record<string, string> = { CONFIRMED: 'Đã đặt', POSTPONED: 
 const OPEN_MINUTES = 9 * 60;
 const CLOSE_MINUTES = 22 * 60;
 const SLOT_MINUTES = 30;
-const SLOT_COUNT = (CLOSE_MINUTES - OPEN_MINUTES) / SLOT_MINUTES;
+const SLOT_COUNT = (CLOSE_MINUTES - OPEN_MINUTES) / SLOT_MINUTES + 1;
 
 function localMinutes(value: string) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -28,27 +28,31 @@ export default function AppointmentAgenda({ rows, data, onCustomer, onComplete, 
     {[...groups].map(([day, visits]) => {
       const staffIds = [...new Set(visits.map(row => row.staffId))];
       return <section key={day}>
-      <h3>{day}</h3>
+      <h3>{day}</h3><p className="timeline-note">Giờ khách đến; chiều rộng ô không biểu thị thời gian thực hiện.</p>
       <div className="appointment-timeline-scroll" role="region" aria-label={`Lịch hẹn ngày ${day}`} tabIndex={0}>
         <div className="appointment-timeline">
           <div className="timeline-corner">Nhân viên</div>
-          {Array.from({ length: 14 }, (_, index) => <strong className="timeline-hour" key={index}>{`${String(index + 9).padStart(2, '0')}:00`}</strong>)}
+          {Array.from({ length: 14 }, (_, index) => <strong className="timeline-hour" style={index === 13 ? { gridColumn: 'span 1' } : undefined} key={index}>{`${String(index + 9).padStart(2, '0')}:00`}</strong>)}
           {staffIds.map(staffId => {
             const staffVisits = visits.filter(row => row.staffId === staffId);
+            const laneEnds: number[] = [];
             return <div className="timeline-staff-row" key={`${day}-${staffId}`}>
               <strong className="timeline-staff-name" title={lookup('staff', staffId)}>{lookup('staff', staffId)}</strong>
               <div className="timeline-track">
-                {Array.from({ length: SLOT_COUNT }, (_, index) => <span className="timeline-slot" key={index} />)}
+                {Array.from({ length: SLOT_COUNT }, (_, index) => <span className="timeline-slot" style={{ gridColumn: index + 1, gridRow: '1 / -1' }} key={index} />)}
                 {staffVisits.map(row => {
                   const start = localMinutes(row.startAt);
-                  const end = localMinutes(row.endAt);
+                  const end = row.endAt ? localMinutes(row.endAt) : start;
                   const startSlot = Math.max(0, Math.min(SLOT_COUNT - 1, Math.floor((start - OPEN_MINUTES) / SLOT_MINUTES)));
                   const endSlot = Math.max(startSlot + 1, Math.min(SLOT_COUNT, Math.ceil((end - OPEN_MINUTES) / SLOT_MINUTES)));
-                  const outside = start < OPEN_MINUTES || end > CLOSE_MINUTES || end <= start;
+                  const outside = start < OPEN_MINUTES || end > CLOSE_MINUTES;
                   const gridStart = startSlot + 1;
-                  const span = endSlot - startSlot;
+                  const span = row.endAt ? endSlot - startSlot : 1;
+                  let lane = laneEnds.findIndex(end => end <= startSlot);
+                  if (lane === -1) lane = laneEnds.length;
+                  laneEnds[lane] = startSlot + span;
                   const clock = new Date(row.startAt).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
-                  return <article key={row._id} className={`timeline-appointment${outside ? ' outside-hours' : ''}`} style={{ gridColumn: `${gridStart} / span ${span}` }} title={`${clock} · ${lookup('customers', row.customerId)} · ${lookup('services', row.serviceId)}`}>
+                  return <article key={row._id} className={`timeline-appointment${outside ? ' outside-hours' : ''}`} style={{ gridColumn: `${gridStart} / span ${span}`, gridRow: lane + 1 }} title={`${clock} · ${lookup('customers', row.customerId)} · ${lookup('services', row.serviceId)}`}>
                     <div className="timeline-appointment-content">
                       <button className="text-button" onClick={() => onCustomer(row.customerId)}>{clock} · {lookup('customers', row.customerId)}</button>
                       <span>{lookup('customers', row.customerId, 'phone')}</span>
@@ -62,7 +66,7 @@ export default function AppointmentAgenda({ rows, data, onCustomer, onComplete, 
           })}
         </div>
       </div>
-      {visits.some(row => localMinutes(row.startAt) < OPEN_MINUTES || localMinutes(row.endAt) > CLOSE_MINUTES) && <p className="timeline-note">Lịch viền cam nằm ngoài khung giờ hoạt động 09:00–22:00.</p>}
+      {visits.some(row => localMinutes(row.startAt) < OPEN_MINUTES || (row.endAt && localMinutes(row.endAt) > CLOSE_MINUTES)) && <p className="timeline-note">Lịch viền cam nằm ngoài khung giờ hoạt động 09:00–22:00.</p>}
       </section>;
     })}
     {!rows.length && <p role="status">{pagination?.loading ? 'Đang tải lịch.' : 'Không có lịch phù hợp.'}</p>}

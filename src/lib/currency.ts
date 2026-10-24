@@ -6,4 +6,4 @@ export function parseMoney(value: string): number {
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1_000_000_000_000) throw new Error('Số tiền vượt giới hạn.');
   return amount;
 }
-export const moneyField = (key: string) => /^(amount|price|total|unitPrice|commission|baseSalary|bonus|deductions|advance|opening|counted)$/.test(key);
+export const moneyField = (key: string) => /^(giftCashCardAmount|additionalAmount|amount|price|total|unitPrice|commission|baseSalary|bonus|deductions|advance|opening|counted)$/.test(key);

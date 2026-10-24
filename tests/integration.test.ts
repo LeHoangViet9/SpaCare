@@ -1,3 +1,7 @@
+import { CashCard, CashCardUse } from '../src/lib/models';
+import { readCashCards } from '../src/lib/cash-card-read';
+import { importCatalog } from '../src/lib/catalog-import';
+import type { CatalogEntry } from '../src/lib/catalog-import-plan';
 import test from 'node:test';
 const signed = { version: 1, strokes: [[[0.1, 0.6], [0.3, 0.2], [0.7, 0.8]]] }; 
 import assert from 'node:assert/strict';
@@ -53,6 +57,71 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     assert.equal(filteredDays.todayDay!.status, 'OPEN');
     const customer = await call('customer', { name: 'Khách test', phone: '0900000000' });
     const service = await call('service', { name: 'Dịch vụ test', price: 350000, duration: 60 });
+    await t.test('cash cards: full purchase, gift, service-only split payment, concurrency, permissions and rollback', async () => {
+      const status = (code:number) => (error:unknown) => (error as {status?:number}).status === code;
+      const spa = await Spa.create({name:'Cash card isolation'}); extraSpaIds.push(spa._id);
+      const user = await User.create({spaId:spa._id,name:'Card owner',email:randomUUID()+'@example.test',passwordHash:'test',role:'OWNER'});
+      const worker = await User.create({spaId:spa._id,name:'Card staff',email:randomUUID()+'@example.test',passwordHash:'test',role:'STAFF'});
+      await Control.create({spaId:spa._id,revision:0});
+      const a:Actor={id:String(user._id),spaId:String(spa._id),name:'Card owner',role:'OWNER',cashier:false};
+      const staffActor:Actor={...a,id:String(worker._id),role:'STAFF'};
+      const op=(action:string,data:any,key=randomUUID())=>operate(a,action,data,key);
+      await op('openDay',{day:spaDay(),opening:0});
+      const c=await op('customer',{name:'Card customer',phone:'0999888777'});
+      const svc=await op('service',{name:'Card service',price:400000});
+      const scope={spaId:spa._id};
+      const sale={customerId:c.id,amount:800000,method:'CASH',receivedConfirmation:true};
+      const key=randomUUID(); const card=await op('sellCashCard',sale,key); await op('sellCashCard',sale,key);
+      assert.equal(await CashCard.countDocuments(scope),1); assert.equal(await CashEntry.countDocuments({...scope,kind:'CARD_SALE'}),1);
+      await assert.rejects(op('sellCashCard',{...sale,amount:900000},key),status(409));
+      await assert.rejects(operate(staffActor,'sellCashCard',sale,randomUUID()),status(403));
+      const bill=await op('invoice',{customerId:c.id,serviceId:svc.id});
+      const useKey=randomUUID(),use={cardId:card.id,invoiceId:bill.id,amount:400000};
+      await assert.rejects(operate(staffActor,'redeemCashCard',use,randomUUID()),status(403));
+      const cashBefore=await CashEntry.countDocuments(scope);
+      await op('redeemCashCard',use,useKey);await op('redeemCashCard',use,useKey);
+      assert.equal((await CashCard.findById(card.id))!.balance,400000);
+      assert.equal((await Invoice.findById(bill.id))!.paid,400000);assert.equal((await Invoice.findById(bill.id))!.cardPaid,400000);
+      assert.equal(await CashCardUse.countDocuments(scope),1);assert.equal(await CashEntry.countDocuments(scope),cashBefore);
+      await assert.rejects(op('redeemCashCard',use),status(409));
+      const c2=await op('customer',{name:'Other customer',phone:'0999888778'});
+      const wrong=await op('invoice',{customerId:c2.id,serviceId:svc.id});
+      await assert.rejects(op('redeemCashCard',{...use,invoiceId:wrong.id}),status(409));
+      const other=await CashCard.create({spaId:new mongoose.Types.ObjectId(),customerId:c.id,amount:1,balance:1,origin:'GIFT',actorId:user._id});
+      try {await assert.rejects(op('redeemCashCard',{...use,cardId:String(other._id),invoiceId:wrong.id,amount:1}),status(404));}finally{await CashCard.deleteOne({_id:other._id});}
+      const bill1=await op('invoice',{customerId:c.id,serviceId:svc.id}),bill2=await op('invoice',{customerId:c.id,serviceId:svc.id});
+      const race=await Promise.allSettled([bill1,bill2].map(b=>op('redeemCashCard',{...use,invoiceId:b.id,amount:300000})));
+      assert.equal(race.filter(r=>r.status==='fulfilled').length,1);assert.equal((await CashCard.findById(card.id))!.balance,100000);
+      const card2=await op('sellCashCard',{...sale,amount:200000});
+      const bill3=await op('invoice',{customerId:c.id,serviceId:svc.id});
+      await op('redeemCashCard',{cardId:card2.id,invoiceId:bill3.id,amount:200000,additionalAmount:200000,method:'BANK_TRANSFER',receivedConfirmation:true});
+      assert.equal((await Invoice.findById(bill3.id))!.paid,400000);assert.equal((await Invoice.findById(bill3.id))!.cardPaid,200000);
+      assert.equal((await Payment.findOne({...scope,invoiceId:bill3.id}))!.amount,200000);
+      const template=await op('packageTemplate',{serviceId:svc.id,name:'Card gift package',totalSessions:5,price:3000000});
+      const beforeGiftCash=await CashEntry.countDocuments(scope);
+      const pack=await op('sellPackage',{customerId:c.id,templateId:template.id,dueDate:spaDay(),promotion:'Gift card campaign',giftCashCardAmount:800000});
+      const gift=await CashCard.findOne({...scope,sourceInvoiceId:pack.invoiceId});assert.equal(gift!.amount,800000);assert.equal(gift!.origin,'GIFT');
+      assert.equal(await CashEntry.countDocuments(scope),beforeGiftCash);
+      await assert.rejects(op('redeemCashCard',{cardId:gift!._id.toString(),invoiceId:pack.invoiceId,amount:1}),status(409));
+      for(const kind of ['PRODUCT','SESSION','GIFT']) {
+        const blocked=await Invoice.create({...scope,customerId:c.id,serviceId:svc.id,description:'Blocked',total:1,paid:0,kind});
+        await assert.rejects(op('redeemCashCard',{cardId:gift!._id.toString(),invoiceId:String(blocked._id),amount:1}),status(409));
+      }
+      const receipt=await CashEntry.findOne({...scope,kind:'CARD_SALE'});
+      await assert.rejects(op('reverseCash',{id:String(receipt!._id),reason:'Not a refund'}));
+      const freshBill=await op('invoice',{customerId:c.id,serviceId:svc.id});
+      const oldCreate=CashCardUse.create;
+      try {
+        (CashCardUse as any).create=async()=>{throw new Error('CARD_LEDGER_ROLLBACK');};
+        await assert.rejects(op('redeemCashCard',{cardId:gift!._id.toString(),invoiceId:freshBill.id,amount:100000,additionalAmount:300000,method:'CASH',receivedConfirmation:true}),/CARD_LEDGER_ROLLBACK/);
+      } finally {(CashCardUse as any).create=oldCreate;}
+      assert.equal((await CashCard.findById(gift!._id))!.balance,800000);assert.equal((await Invoice.findById(freshBill.id))!.paid,0);
+      const cards=await readCashCards(a,{customerId:c.id,page:1,usePage:1});assert.equal(cards.total,3);
+      await assert.rejects(readCashCards(staffActor,{customerId:c.id,page:1,usePage:1}),status(403));
+      await op('closeDay',{day:spaDay(),counted:1000000});
+      await assert.rejects(op('redeemCashCard',{cardId:gift!._id.toString(),invoiceId:freshBill.id,amount:100000}));
+      assert.equal((await CashCard.findById(gift!._id))!.balance,800000);
+    });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});
       const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
@@ -84,7 +153,21 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const foreign=await Invoice.create({spaId:other._id,customerId:new mongoose.Types.ObjectId(),description:'foreign',total:1,paid:0,kind:'SERVICE'});
       await assert.rejects(call('updateInvoice',{id:String(foreign._id),expectedUpdatedAt:foreign.updatedAt.toISOString(),description:'bad',total:2,reason:'test'}),/Không tìm thấy/);
     });
-    await t.test('public bookings serialize conflicts, retries and internal bookings without partial writes', async () => {
+    await t.test('salary privacy: staff including cashier see only themselves; other employee filters return 403',async()=>{
+      const colleague=await User.create({spaId,name:'Private salary colleague',email:`${randomUUID()}@example.test`,passwordHash:hashPassword(randomUUID()),role:'STAFF',baseSalary:9876543});
+      const query=payrollQuery(new URLSearchParams({month:spaDay().slice(0,7),view:'salary'}));
+      for(const cashier of [false,true]) {
+        const result=await readPayroll({...employee,cashier},query);
+        assert.equal(result.total,1);assert.equal(result.rows.length,1);
+        assert.ok(result.rows.every(r=>String(r.staffId)===employee.id));
+        assert.ok(result.people.every(p=>String(p._id)===employee.id));
+        assert.ok(!JSON.stringify(result).includes('Private salary colleague'));
+        await assert.rejects(readPayroll({...employee,cashier},{...query,employee:String(colleague._id)}),(e:any)=>e.status===403);
+      }
+      const management=await readPayroll(actor,{...query,employee:String(colleague._id)});
+      assert.equal(management.rows[0].baseSalary,9876543);
+    });
+    await t.test('arrival bookings allow shared times and preserve transactional retries', async () => {
       const publicSpa = await Spa.create({ name: 'Public booking fixture' });
       extraSpaIds.push(publicSpa._id);
       const scope = { spaId: publicSpa._id };
@@ -95,23 +178,20 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const atHour = (hour: number) => `${day}T${hour}:00:00+07:00`;
       const requests = ['0912345678', '0912345679'].map(phone => ({ key: randomUUID(), data: { serviceId: String(svc._id), name: 'Guest', phone, startAt: atHour(10) } }));
       const results = await Promise.allSettled(requests.map(r => reservePublicBooking(r.data, null, r.key)));
-      assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
-      const failed = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
-      assert.equal(failed.reason.status, 409);
-      assert.match(failed.reason.message, /Khung giờ này đã có lịch/);
-      assert.equal(await Appointment.countDocuments(scope), 1);
-      assert.equal(await Customer.countDocuments(scope), 1);
-      assert.equal(await Audit.countDocuments(scope), 1);
-      assert.equal(await Idempotency.countDocuments(scope), 1);
+      assert.equal(results.filter(r => r.status === 'fulfilled').length, 2);
+      assert.equal(await Appointment.countDocuments(scope), 2);
+      assert.equal(await Customer.countDocuments(scope), 2);
+      assert.equal(await Audit.countDocuments(scope), 2);
+      assert.equal(await Idempotency.countDocuments(scope), 2);
       const index = results.findIndex(r => r.status === 'fulfilled');
       const winner = (results[index] as PromiseFulfilledResult<any>).value;
       assert.deepEqual(await reservePublicBooking(requests[index].data, null, requests[index].key), winner);
-      assert.equal(await Notification.countDocuments({ ...scope, userId: person._id }), 1);
-      const notification = await Notification.findOne(scope);
+      assert.equal(await Notification.countDocuments({ ...scope, userId: person._id }), 2);
+      const notification = await Notification.findOne({ ...scope, appointmentId: winner.appointmentId });
       assert.equal(String(notification!.appointmentId), winner.appointmentId);
       assert.equal(notification!.url, `/workspace/appointments?search=${winner.appointmentId}`);
       await assert.rejects(reservePublicBooking({ ...requests[index].data, startAt: atHour(11) }, null, requests[index].key), (e: any) => e.status === 409);
-      await assert.rejects(reservePublicBooking({ ...requests[index].data, startAt: `${day}T10:30:00+07:00` }, null, randomUUID()), (e: any) => e.status === 409);
+      await reservePublicBooking({ ...requests[index].data, startAt: `${day}T10:30:00+07:00` }, null, randomUUID());
       await reservePublicBooking({ ...requests[index].data, startAt: atHour(11) }, null, randomUUID());
       await Appointment.updateOne({ ...scope, _id: winner.appointmentId }, { status: 'POSTPONED' });
       const replacement = await reservePublicBooking(requests[index].data, null, randomUUID());
@@ -123,11 +203,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         reservePublicBooking({ ...requests[index].data, startAt: atHour(12) }, null, randomUUID()),
         operate(publicActor, 'appointment', { serviceId: String(svc._id), customerId: String(cust!._id), staffId: String(person._id), startAt: atHour(12) }, randomUUID()),
       ]);
-      assert.equal(race.filter(r => r.status === 'fulfilled').length, 1);
-      assert.equal(await Appointment.countDocuments({ ...scope, status: 'CONFIRMED', startAt: new Date(atHour(12)) }), 1);
+      assert.equal(race.filter(r => r.status === 'fulfilled').length, 2);
+      assert.equal(await Appointment.countDocuments({ ...scope, status: 'CONFIRMED', startAt: new Date(atHour(12)) }), 2);
       const secondStaff = await User.create({ ...scope, name: 'Available staff', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'STAFF' });
       const parallelVisit = await reservePublicBooking(requests[index].data, null, randomUUID());
-      assert.equal(String((await Appointment.findById(parallelVisit!.appointmentId))!.staffId), String(secondStaff._id));
+      assert.equal(String((await Appointment.findById(parallelVisit!.appointmentId))!.staffId), String(person._id));
     });
     await assert.rejects(call('customer', { name: 'Duplicate', phone: '+84 900 000 000' }), /Số điện thoại đã tồn tại/);
     await call('updateCustomer', { id: customer.id, name: 'Updated', phone: '0900000000' });
@@ -145,7 +225,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await call('serviceStatus', { id: service.id, active: false });
     await assert.rejects(call('invoice', { customerId: customer.id, serviceId: service.id }));
     await call('serviceStatus', { id: service.id, active: true });
-    // Postponing frees the old slot; rescheduling checks collisions and records history.
+    // Arrival-only scheduling preserves postponed history and authorization without interval blocking.
     const at = (hours: number) => {
       if (hours < 0) return new Date(Date.now() + hours * 3600000).toISOString();
       const day = spaDay(new Date(Date.now() + Math.floor(hours / 24) * 86400000));
@@ -161,7 +241,8 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await call('appointmentStatus', { id: a.id, status: 'POSTPONED', reason: 'Khách đến muộn' });
     assert.equal((await Appointment.findById(a.id))!.status, 'POSTPONED');
     const b = await call('appointment', { ...bookingData, startAt: firstTime });
-    await assert.rejects(call('rescheduleAppointment', { id: a.id, staffId: bookingData.staffId, startAt: firstTime, reason: 'Occupied' }), /đã có lịch/);
+    const simultaneous = await call('appointment', { ...bookingData, startAt: firstTime });
+    assert.equal((await Appointment.findById(simultaneous.id))!.endAt, undefined);
     assert.equal((await Appointment.findById(a.id))!.status, 'POSTPONED');
     await assert.rejects(call('rescheduleAppointment', { id: a.id, staffId: bookingData.staffId, startAt: at(-1), reason: 'Past' }));
     await call('updateService', { id: service.id, name: 'Updated service', price: 350000, duration: 90 });
@@ -180,7 +261,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await assert.rejects(call('rescheduleAppointment', move), /đã được xếp lại/);
     assert.equal(saved.status, 'CONFIRMED');
     assert.equal(saved.startAt.toISOString(), laterTime);
-    assert.equal(saved.endAt.getTime() - saved.startAt.getTime(), 60 * 60000);
+    assert.equal(saved.endAt, undefined);
     const history = (await Audit.findOne({ spaId, action: 'rescheduleAppointment', targetId: a.id }))!;
     assert.equal(new Date(history.details.before.startAt).toISOString(), firstTime);
     assert.equal(history.details.after.status, 'POSTPONED');
@@ -1064,6 +1145,36 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(Math.max(...thirds.map(r=>r.amount))-Math.min(...thirds.map(r=>r.amount)),1);
       const own=await readPayroll(who,payrollQuery(new URLSearchParams({month,view:'commission',employee:who.id})));
       assert.equal(own.summary.saleCommission,thirds.find(r=>String(r.staffId)===who.id)!.amount);
+    });
+    await t.test('catalog import: owner authentication, concurrent retries, package date and atomic rollback', async () => {
+      const spa = await Spa.create({ name: 'Catalog import fixture' }); extraSpaIds.push(spa._id);
+      const scope = { spaId: spa._id }, password = randomUUID();
+      const owner = await User.create({ ...scope, name: 'Catalog owner', email: randomUUID() + '@example.test', passwordHash: hashPassword(password), role: 'OWNER' });
+      const employee = await User.create({ ...scope, name: 'Catalog staff', email: randomUUID() + '@example.test', passwordHash: hashPassword(password), role: 'STAFF' });
+      await Control.create({ ...scope, revision: 0 });
+      const row: CatalogEntry = { row: 2, service: { name: 'Triệt lông Nách', category: 'TRIỆT LÔNG', price: 100000, commission: 0 }, source: { min: 700000, max: 700000, notes: 'fixture' }, package: { name: 'Triệt lông Nách · 3 năm', packageType: 'TIME', durationMonths: 36, price: 700000 } };
+      await assert.rejects(importCatalog(String(employee._id), password, [row]), (e:any)=>e.status===403);
+      await assert.rejects(importCatalog(String(owner._id), 'wrong', [row]), (e:any)=>e.status===403);
+      await Promise.all([importCatalog(String(owner._id), password, [row]), importCatalog(String(owner._id), password, [row])]);
+      assert.equal(await Service.countDocuments(scope), 1); assert.equal(await PackageTemplate.countDocuments(scope), 1);
+      assert.equal(await Audit.countDocuments({ ...scope, action:'importCatalog' }), 1);
+      assert.equal(await Invoice.countDocuments(scope), 0); assert.equal(await CashEntry.countDocuments(scope), 0); assert.equal(await Commission.countDocuments(scope), 0);
+      const plan = await PackageTemplate.findOne(scope), service = await Service.findOne(scope);
+      assert.equal(service!.duration, undefined); assert.equal(service!.price,100000); assert.equal(plan!.price,700000); assert.equal(plan!.totalSessions,undefined);
+      await assert.rejects(importCatalog(String(owner._id), password, [{...row,service:{...row.service,price:200000}}]), (e:any)=>e.status===409);
+      const originalCreate = PackageTemplate.create;
+      try {
+        (PackageTemplate as any).create = async () => { throw new Error('import rollback fixture'); };
+        await assert.rejects(importCatalog(String(owner._id),password,[{...row,row:3,service:{...row.service,name:'Triệt lông Mép'},package:{...row.package!,name:'Triệt lông Mép · 3 năm'}}]), /import rollback/);
+      } finally { (PackageTemplate as any).create = originalCreate; }
+      assert.equal(await Service.countDocuments(scope),1); assert.equal(await Idempotency.countDocuments(scope),1);
+      const guest=await Customer.create({...scope,name:'Catalog guest',phone:'0987654321'});
+      const who: Actor = {id:String(owner._id),spaId:String(spa._id),name:owner.name,role:'OWNER',cashier:true};
+      const sale=await operate(who,'sellPackage',{customerId:String(guest._id),templateId:String(plan!._id),dueDate:spaDay(),startsOn:'2020-01-01'},randomUUID());
+      const treatment=await Treatment.findById(sale.id);
+      assert.equal(treatment!.startsOn,spaDay()); assert.equal(treatment!.packageType,'TIME'); assert.equal(treatment!.remaining,undefined);
+      const visit=await operate(who,'appointment',{customerId:String(guest._id),serviceId:String(service!._id),staffId:who.id,startAt: spaDay(new Date(Date.now()+86400000))+'T22:00:00+07:00'},randomUUID());
+      assert.equal((await Appointment.findById(visit.id))!.endAt,undefined);
     });
   } finally {
     if (spaId) {

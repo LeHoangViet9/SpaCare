@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import AppointmentAgenda from '../src/components/appointment-agenda';
+const rows = [1,2].map(id=>({_id:String(id),staffId:'staff',customerId:'customer',serviceId:'service',status:'CONFIRMED',startAt:'2026-10-24T22:00:00+07:00'}));
+const html=renderToStaticMarkup(createElement(AppointmentAgenda,{rows,data:{staff:[{_id:'staff',name:'Staff'}],customers:[{_id:'customer',name:'Customer'}],services:[{_id:'service',name:'Service'}]},onCustomer:()=>{},onComplete:()=>{},busy:false}));
+assert.equal((html.match(/class="timeline-appointment"/g)||[]).length,2);
+assert.ok(html.includes('grid-column:27 / span 1;grid-row:1'));
+assert.ok(html.includes('grid-column:27 / span 1;grid-row:2'));
+assert.ok(!html.includes('outside-hours'));
+assert.ok(html.includes('22:00'));

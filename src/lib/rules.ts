@@ -25,6 +25,13 @@ export function allocationResult(balance: number, due: number, amount: number) {
 export function overlaps(start: Date, end: Date, otherStart: Date, otherEnd: Date) {
   return start < otherEnd && end > otherStart;
 }
+export function withinArrivalHours(start: Date): boolean {
+  if (!Number.isFinite(start.getTime())) return false;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(start);
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const seconds = Number(value.hour) * 3600 + Number(value.minute) * 60 + Number(value.second);
+  return seconds >= 9 * 3600 && seconds <= 22 * 3600;
+}
 export function withinSpaHours(start: Date, end: Date): boolean {
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return false;
   const formatter = new Intl.DateTimeFormat('en-CA', {

@@ -7,7 +7,7 @@ const { readStaffProfile } = await tsImport('../src/lib/staff-read.ts', import.m
 
 test('restricted workspace sections reject unauthorized actors before database access', async () => {
   const employee = { id: 'a'.repeat(24), spaId: 'b'.repeat(24), name: 'Test', role: 'STAFF', cashier: false };
-  for (const section of ['services', 'staff', 'audit', 'days', 'reports', 'cashier', 'package_catalog']) {
+  for (const section of ['cash_cards', 'services', 'staff', 'audit', 'days', 'reports', 'cashier', 'package_catalog']) {
     await assert.rejects(readWorkspace(employee, workspaceQuery(new URLSearchParams({ section }))), error => error.status === 403);
   }
   for (const section of ['services', 'staff', 'audit', 'package_catalog']) {

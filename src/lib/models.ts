@@ -140,6 +140,8 @@ export const Invoice = model('Invoice', {
   commission: { ...amount, required: false },
   treatmentUseId: optionalId,
   treatmentId: optionalId,
+  giftCashCardAmount: { ...amount, required: false },
+  cardPaid: { ...amount, required: false },
   kind: { type: String, enum: ['SERVICE', 'PACKAGE', 'SESSION', 'GIFT', 'PRODUCT'] },
   productId: optionalId,
   productName: String,
@@ -158,6 +160,17 @@ export const Invoice = model('Invoice', {
   dueDate: String,
   status: { type: String, enum: ['OPEN', 'PARTIALLY_PAID', 'PAID'], default: 'OPEN' },
 }, [[{ spaId: 1, appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $exists: true } } }], [{ spaId: 1, treatmentUseId: 1 }, { unique: true, partialFilterExpression: { treatmentUseId: { $exists: true } } }]]);
+
+// Immutable sources and redemption ledger; balances change only in operations transactions.
+export const CashCard = model('CashCard', {
+  customerId: id, amount, balance: amount, origin: { type: String, enum: ['PURCHASE', 'GIFT'], required: true },
+  receiptId: optionalId, sourceInvoiceId: optionalId, promotion: String, actorId: id,
+}, [[{ spaId: 1, customerId: 1, createdAt: -1 }],
+  [{ spaId: 1, receiptId: 1 }, { unique: true, partialFilterExpression: { receiptId: { $exists: true } } }],
+  [{ spaId: 1, sourceInvoiceId: 1 }, { unique: true, partialFilterExpression: { sourceInvoiceId: { $exists: true } } }]]);
+export const CashCardUse = model('CashCardUse', {
+  cardId: id, customerId: id, invoiceId: id, amount, balanceBefore: amount, balanceAfter: amount, actorId: id,
+}, [[{ spaId: 1, customerId: 1, createdAt: -1 }], [{ spaId: 1, invoiceId: 1 }], [{ spaId: 1, cardId: 1, createdAt: -1 }]]);
 
 export const Deposit = model('Deposit', {
   customerId: id,
@@ -196,7 +209,7 @@ export const CashEntry = model(
     transferReference: String,
     kind: {
       type: String,
-      enum: ['DEPOSIT', 'PAYMENT', 'INCOME', 'EXPENSE', 'REVERSAL', 'PAYROLL', 'REFUND'],
+      enum: ['DEPOSIT', 'PAYMENT', 'INCOME', 'EXPENSE', 'REVERSAL', 'PAYROLL', 'REFUND', 'CARD_SALE'],
       required: true,
     },
     day: String,
@@ -345,6 +358,7 @@ export const PushDevice = model('PushDevice', {
 }, [[{ endpoint: 1 }, { unique: true }], [{ spaId: 1, userId: 1 }]]);
 
 export const allModels = [
+  CashCard, CashCardUse,
   Notification, PushDevice,
   Spa,
   User,

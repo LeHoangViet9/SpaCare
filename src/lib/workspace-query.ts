@@ -21,7 +21,7 @@ export const sectionCollection: Record<string, string> = {
 const date = z.string().refine(s => !s || /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s).default('');
 export function workspaceQuery(params: URLSearchParams) {
   return z.object({
-    section: z.enum(['overview', 'products', 'product_groups', 'inventory', 'salary', 'commission', 'cashier', 'customers', 'services', 'staff', 'appointments', 'invoices', 'deposits', 'packages', 'package_catalog', 'treatment_uses', 'cash', 'days', 'reports', 'audit']).default('overview'),
+    section: z.enum(['cash_cards', 'overview', 'products', 'product_groups', 'inventory', 'salary', 'commission', 'cashier', 'customers', 'services', 'staff', 'appointments', 'invoices', 'deposits', 'packages', 'package_catalog', 'treatment_uses', 'cash', 'days', 'reports', 'audit']).default('overview'),
     search: z.string().trim().max(100).default(''),
     page: z.coerce.number().int().min(1).max(1_000_000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(10),

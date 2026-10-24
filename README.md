@@ -10,7 +10,7 @@ Cần Node.js 24, npm và Docker Desktop. Giao diện dùng CSS thuần, không 
 Copy-Item .env.example .env.local
 ```
 
-Điền `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD` (ít nhất 12 ký tự) trong `.env.local`. Không dùng thông tin đăng nhập cá nhân ở dịch vụ khác.
+Điền `SEED_OWNER_PHONE` (số điện thoại chủ spa), `SEED_OWNER_PASSWORD` (12–128 ký tự) và tên chủ/spa trong `.env.local`. Email không bắt buộc khi tạo database sạch. Không dùng thông tin đăng nhập cá nhân ở dịch vụ khác.
 
 ```powershell
 npm install
@@ -26,7 +26,9 @@ npm run db:setup
 npm run dev
 ```
 
-Mở http://localhost:3000 và đăng nhập bằng tài khoản đã đặt trong `.env.local`.
+Mở http://localhost:3000 và đăng nhập bằng số điện thoại, mật khẩu đã đặt trong `.env.local`.
+
+`db:setup` chỉ tạo tài khoản ban đầu, không đổi mật khẩu/số điện thoại tài khoản cũ. Với database cũ, giữ nguyên thông tin seed (email cũ vẫn hỗ trợ); không thêm số điện thoại mới vào env để chuyển tài khoản cũ. Nếu không khớp tài khoản hoặc database đã có người dùng, script dừng thay vì tự tạo thêm spa. Script đọc `.env.local` trên máy chạy lệnh; sửa env Vercel không tự chạy setup. Không commit `.env.local`.
 
 Nếu dùng Atlas, thay `MONGODB_URI` bằng URI được Atlas cấp và cấu hình network access. Ứng dụng dùng transaction nhiều document nên cần replica set hoặc Atlas, không dùng MongoDB standalone.
 
@@ -147,3 +149,19 @@ Danh sách đã có phân trang giao diện: desktop mặc định 10 dòng, đi
 - APP_ORIGIN phải là HTTPS origin chính xác của website. Sau thay đổi biến môi trường, redeploy để áp dụng.
 - Xem Vercel Runtime Logs của POST /api/auth/login: DB_CONFIG_MISSING = thiếu URI; DB_CONFIG_INVALID = URI không hợp lệ; DB_AUTH_FAILED = xác thực MongoDB thất bại; DB_DNS_FAILED = tra cứu DNS SRV/TXT thất bại; DB_CONNECTION_FAILED = lỗi kết nối khác, cần kiểm tra host, TLS và Atlas Network Access. Không mở rộng quyền truy cập mạng nếu chưa xác định đúng nguyên nhân.
 - Bản sửa xử lý kết nối không tự khắc phục DNS, tài khoản Atlas hoặc cấu hình mạng bên ngoài. Không gửi URI/mật khẩu trong ảnh/log khi nhờ kiểm tra.
+
+## Nhập danh mục thật
+
+Xem [docs/IMPORT_CATALOG.md](docs/IMPORT_CATALOG.md). Lịch mới chỉ ghi giờ khách đến, không bắt thời lượng dịch vụ.
+
+
+### Local Atlas DNS workaround
+Run `npm run dev:atlas` if local DNS cannot resolve Atlas SRV records. This opt-in command preloads `scripts/local-dns.mjs` in Node/Next workers with public DNS resolvers, then starts Next dev with Webpack. Next loads `.env.local` normally; no URI or database is changed. Do not pass `--env-file` to the Next CLI: it can be propagated into `NODE_OPTIONS`, where Node rejects it. The helper is blocked on Vercel; normal dev/build/start commands are unchanged.
+
+
+### Thẻ tiền mặt khách hàng
+Khách hàng → Hồ sơ / lịch sử → Thẻ tiền mặt để mua thẻ và xem số dư/lịch sử (OWNER/thu ngân). Trong chi tiết hóa đơn dịch vụ lẻ chọn thẻ và xác nhận số tiền trừ/thu thêm. Bán gói ở Thu ngân hoặc form gói có ô Thẻ tiền tặng kèm; nhập 0 nếu không tặng. Không hết hạn, không hoàn/đổi tiền mặt, không dùng mua sản phẩm/gói; chỉ phát hành thẻ mua khi xác nhận thực nhận đủ tiền. Tiền mua thẻ ghi thu một lần; sử dụng không ghi thu lại.
+Chuẩn bị dev/test: `npm run db:cash-cards` thêm 2 collections/indexes thẻ, chỉ cho spacare_dev/spacare_test. Không tự chạy lệnh này vào production; script chặn database khác và Vercel production. Chưa có quy trình triển khai production được duyệt. Không chạy lại db:setup trên database vận hành để thêm tính năng.
+Tests: `npm test`, `npm run typecheck`; integration chỉ spacare_test. `node scripts/test-cash-card-ui.mjs` mở fixture UI cục bộ 3329 với dữ liệu giả, không kết nối DB; chỉ phục vụ kiểm tra giao diện. Khi thử thẻ thật, kiểm tra đủ số dư/thiếu số dư/thu thêm/gửi lặp/sổ chốt cùng Audit và CashEntry. Thẻ tặng đã phát hành chặn sửa/hoàn gói đến khi có workflow xử lý ngoại lệ; không rollback về code không biết CARD_SALE/cardPaid.
+
+Trang quản lý thẻ riêng: Tài chính → Thẻ tiền mặt (/workspace/cash_cards), dành cho OWNER/thu ngân. Tìm theo mã/tên/SĐT, lọc thẻ mua/tặng và số dư; chọn mã để xem lịch sử đúng thẻ. + Tạo thẻ mới dùng form thu đủ tiền. Không thời hạn, không đồng sở hữu/bảo lưu/nạp thêm theo giao diện tham khảo.

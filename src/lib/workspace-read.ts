@@ -104,7 +104,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } }).select(fields.staff).lean(),
   ]);
   const appointments: Row[] = query.section === 'overview'
-    ? await Appointment.find({ ...filters.appointments, status: 'CONFIRMED', endAt: { $gte: new Date() } }).sort({ startAt: 1, _id: 1 }).limit(6).lean()
+    ? await Appointment.find({ ...filters.appointments, status: 'CONFIRMED', startAt: { $gte: new Date() } }).sort({ startAt: 1, _id: 1 }).limit(6).lean()
     : listed('appointments');
   if (auditIds('appointmentId').length || auditIds('replacementAppointmentId').length) {
     const references = await Appointment.find({ ...filters.appointments, _id: { $in: [...auditIds('appointmentId'), ...auditIds('replacementAppointmentId')] } }).lean();

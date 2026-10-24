@@ -69,7 +69,7 @@ export default async function ServiceDetailPage({
             >
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px' }}>
                 <span className="pub-service-tag">{service.category || 'Dịch vụ'}</span>
-                <span className="pub-badge" style={{ margin: 0 }}>⏱ {service.duration} phút trị liệu</span>
+
               </div>
               <h1 style={{ fontSize: '32px', fontWeight: 800, color: 'var(--ink)', margin: '0 0 16px 0' }}>
                 {service.name}
@@ -115,7 +115,7 @@ export default async function ServiceDetailPage({
 
               <section style={{ marginBottom: '36px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--ink)', margin: '0 0 12px 0' }}>
-                  Quy trình thực hiện ({service.duration} phút)
+                  Quy trình thực hiện
                 </h2>
                 <div style={{ display: 'grid', gap: '12px', fontSize: '14px', color: 'var(--ink)' }}>
                   <div style={{ padding: '14px 16px', background: 'var(--paper)', borderRadius: '10px', border: '1px solid var(--line)' }}>
@@ -146,7 +146,7 @@ export default async function ServiceDetailPage({
                 }}
               >
                 <div>
-                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--muted)' }}>Thời lượng: {service.duration} phút</span>
+
                   <span style={{ display: 'block', fontSize: '22px', fontWeight: 800, color: 'var(--green)' }}>
                     {formatVnd(service.price)}
                   </span>

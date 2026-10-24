@@ -30,3 +30,8 @@ export function availableTreatmentFilter(day = treatmentDay()) {
     { $or: [{ packageType: { $ne: 'TIME' }, remaining: { $gt: 0 } }, { packageType: 'TIME', startsOn: { $lte: day }, expiresOn: { $gte: day } }] },
   ] };
 }
+
+// Confirmed for the spa's 36-month hair-removal catalog; other plans retain their agreed start date.
+export function packageStartOnPurchase(p: Plan, category: string | undefined, today: string, requested?: string) {
+  return timedPackage(p) && p.durationMonths === 36 && category?.normalize('NFC').trim().toLocaleLowerCase('vi') === 'triệt lông' ? today : requested;
+}

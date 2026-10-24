@@ -11,7 +11,7 @@ type ServiceItem = {
   _id: string;
   name: string;
   price: number;
-  duration: number;
+  duration?: number;
   category?: string;
 };
 
@@ -77,7 +77,7 @@ export default function BookingForm({
     appointmentId: string;
     serviceName: string;
     startAt: string;
-    duration: number;
+    duration?: number;
   } | null>(null);
 
   const filteredServices = useMemo(() => {
@@ -89,7 +89,7 @@ export default function BookingForm({
   const availableSlots = useMemo(() => {
     if (!selectedService) return [];
     const slots: string[] = [];
-    for (let minute = OPENING_MINUTES; minute + selectedService.duration <= CLOSING_MINUTES; minute += 30) {
+    for (let minute = OPENING_MINUTES; minute <= CLOSING_MINUTES; minute += 30) {
       slots.push(`${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`);
     }
     return slots;
@@ -299,9 +299,6 @@ export default function BookingForm({
                       <span className="pub-service-micro-tag">{svc.category}</span>
                     )}
                   </div>
-                  <div className="pub-booking-service-meta">
-                    <span>⏱ {svc.duration} phút</span>
-                  </div>
                 </div>
 
                 <div className="pub-booking-service-price">
@@ -361,7 +358,7 @@ export default function BookingForm({
 
         {/* Time Slots Grid */}
         <div className="pub-slots-block">
-          <div className="pub-slot-group-header">Giờ hoạt động: 09:00–22:00 · Chọn giờ bắt đầu (mỗi 30 phút)</div>
+          <div className="pub-slot-group-header">Giờ hoạt động: 09:00–22:00 · Chọn giờ khách đến (mỗi 30 phút)</div>
           <div className="pub-slots-grid">
             {availableSlots.map(slot => (
               <button key={slot} type="button" className={`pub-slot-btn ${time === slot ? 'active' : ''}`} onClick={() => setTime(slot)}>
@@ -369,7 +366,7 @@ export default function BookingForm({
               </button>
             ))}
           </div>
-          {!availableSlots.length && <p className="pub-input-hint">Thời lượng dịch vụ này vượt quá khung giờ hoạt động.</p>}
+          {!availableSlots.length && <p className="pub-input-hint">Vui lòng chọn dịch vụ để xem giờ đến.</p>}
         </div>      </section>
 
       {/* Step 3: Thông tin người đặt */}
@@ -457,9 +454,7 @@ export default function BookingForm({
             <span className="pub-footer-price-label">Chi phí thanh toán ước tính:</span>
             <div className="pub-footer-price-val">
               {selectedService ? formatVnd(selectedService.price) : '0 đ'}
-              {selectedService && (
-                <small className="pub-footer-duration-pill">({selectedService.duration} phút)</small>
-              )}
+
             </div>
           </div>
 

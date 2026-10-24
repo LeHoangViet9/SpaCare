@@ -16,7 +16,11 @@ test('database failures are classified without exposing driver credentials', asy
   assert.equal(response.status, 503);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal((await response.json()).code, 'DB_DNS_FAILED');
-  assert.deepEqual(log.mock.calls[0].arguments, ['MongoDB connection failed', { code: 'DB_DNS_FAILED' }]);
+  const record = JSON.parse(log.mock.calls[0].arguments[0]);
+  assert.equal(record.code, 'DB_DNS_FAILED');
+  assert.equal(record.level, 'error');
+  assert.equal(record.requestId, response.headers.get('x-request-id'));
+  assert.ok(!JSON.stringify(record).includes(secret));
 });
 
 test('connection shares in-flight work, retries failures and reconnects after a settled promise', async t => {
@@ -49,4 +53,19 @@ test('connection shares in-flight work, retries failures and reconnects after a 
     if (originalUri === undefined) delete process.env.MONGODB_URI;
     else process.env.MONGODB_URI = originalUri;
   }
+});
+
+test('HTTP errors never log raw secrets and classify expected rejections', async t => {
+  const errors = t.mock.method(console, 'error', () => {});
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const secret = 'mongodb://private-user:private-password@private-host/spacare';
+  const response = failure(new Error(secret));
+  assert.equal(response.status, 500);
+  assert.equal(JSON.parse(errors.mock.calls[0].arguments[0]).code, 'UNEXPECTED_ERROR');
+  assert.ok(!JSON.stringify(errors.mock.calls).includes(secret));
+  assert.ok(!(await response.text()).includes(secret));
+  const duplicate = failure({ code: 11000, message: secret, keyValue: { email: secret } });
+  assert.equal(duplicate.status, 409);
+  assert.equal(JSON.parse(warnings.mock.calls[0].arguments[0]).code, 'DUPLICATE_KEY');
+  assert.ok(!JSON.stringify(warnings.mock.calls).includes(secret));
 });
