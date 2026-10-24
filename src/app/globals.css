@@ -1732,8 +1732,13 @@ label textarea { margin-top: 8px; }
 .cashier-mode-help { margin: 0 0 16px; color: var(--muted); line-height: 1.6; }
 .cashier-modes button { white-space: normal; }
 
-.notification-center { position: fixed; top: 14px; right: 20px; z-index: 60; }
-.app .topbar { padding-right: 200px; }
+.notification-center { position: fixed; top: 0; left: 260px; right: 0; height: 60px; padding: 8px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fcfdf9; border-bottom: 1px solid var(--line); z-index: 60; }
+.has-notification-bar .main { padding-top: 60px; }
+.notification-bar-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+.notification-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; white-space: nowrap; }
+.notification-count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 20px; background: #356454; color: #fff; font-size: 11px; }
+@media (min-width: 701px) and (max-width: 1100px) { .notification-center { left: 205px; } }
+.app .topbar { gap: 16px; }
 .notification-backdrop { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: #0003; z-index: 61; }
 .notification-panel { position: fixed; top: 70px; right: 16px; width: min(390px, calc(100vw - 32px)); max-height: calc(100dvh - 100px); overflow-y: auto; background: white; border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 8px 40px #0002; z-index: 62; }
 .notification-panel .section-head { padding: 0 0 14px; gap: 12px; }
@@ -1746,8 +1751,14 @@ label textarea { margin-top: 8px; }
 .pdf-export small { display: block; margin-top: 8px; line-height: 1.5; }
 @media (max-width: 700px) { .pdf-export .actions button { flex: 1 1 120px; min-height: 44px; } }
 @media (max-width: 700px) {
-  .notification-center { position: relative; top: auto; right: auto; display: flex; justify-content: flex-end; padding: 8px 16px 0; z-index: 60; }
-  .notification-panel { top: 80px; max-height: calc(100dvh - 170px); padding: 16px; }
+  .notification-center { left: 0; right: 0; top: 0; height: calc(60px + env(safe-area-inset-top, 0px)); padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; }
+  .has-notification-bar { padding-top: calc(60px + env(safe-area-inset-top, 0px)); }
+  .has-notification-bar .main { padding-top: 0; }
+  .has-notification-bar .mobile-toolbar { top: calc(60px + env(safe-area-inset-top, 0px)); padding-top: 8px; }
+  .notification-bar-label { font-size: 12px; }
+  .notification-trigger { min-height: 44px; }
+  .notification-panel .section-head { position: sticky; top: -16px; background: #fff; z-index: 1; }
+  .notification-panel { top: calc(68px + env(safe-area-inset-top, 0px)); right: 12px; width: min(390px, calc(100vw - 24px)); max-height: calc(100dvh - 160px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 16px; overscroll-behavior: contain; }
 }
 .compact-date-control { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 0; height: 44px; padding: 0 8px; border: 1px solid #dce3da; border-radius: 8px; background: #fff; color: var(--ink); box-sizing: border-box; }
 .compact-date-value { min-width: 0; font-size: 13px; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }

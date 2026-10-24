@@ -448,7 +448,7 @@ export default function Workspace() {
     if (!canViewPage(node.key, data!.user)) return null;
     return <Link key={node.key} href={workspaceHref(node.key)} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}>{node.title}</Link>;
   }
-  return <div className="app">
+  return <div className={"app" + (owner ? " has-notification-bar" : "")}>
     <header className="mobile-toolbar">
       <div className="mobile-brand-row">
         <button ref={mobileMenuButton} type="button" className="mobile-menu-toggle" aria-label="Mở hoặc đóng menu" title="Menu" aria-expanded={mobileMenuOpen} aria-controls="mobile-menu-panel" onClick={() => setMobileMenuOpen(open => !open)}>☰</button>

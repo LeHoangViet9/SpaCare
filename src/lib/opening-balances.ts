@@ -64,7 +64,7 @@ export async function inspectOpening(owner:any,data:ReturnType<typeof parseOpeni
     if(customer&&c.debt&&invoices.some(v=>String(v.customerId)===String(customer._id)&&v.total>v.paid))errors.push('Khách dòng '+(index+1)+': đã có công nợ, cần đối chiếu.');
     return {...c,customerId:customer?String(customer._id):null,treatments:rows};
   });
-  const report={warnings:['Chưa có tổng buổi và giá mua gốc; không tái tạo lịch sử đã sử dụng hoặc tiền thu.','Chưa có hạn gốc: để trống expiresOn; gói sẽ được dùng theo số buổi còn lại. Cần chủ spa duyệt trước nhập.','Thẻ OPENING chỉ lưu số dư chuyển; amount không phải mệnh giá gốc hoặc tiền mua thẻ.'],spaId:String(owner.spaId),ownerId:String(owner._id),summary:openingSummary(data),customers:resolved,errors:[...new Set(errors)]};
+  const report={warnings:['Chưa có tổng buổi và giá mua gốc; không tái tạo lịch sử đã sử dụng hoặc tiền thu.','Chưa có hạn gốc: để trống expiresOn; gói sẽ được dùng theo số buổi còn lại. Cần chủ spa duyệt trước nhập.','Thẻ OPENING chỉ lưu số dư chuyển; amount không phải mệnh giá gốc hoặc tiền mua thẻ.'],spaId:String(owner.spaId),ownerId:String(owner._id),summary:openingSummary(data),serviceCatalog:services.map(service=>({id:String(service._id),name:service.name,category:service.category||'',active:!!service.active,commission:service.commission||0})),customers:resolved,errors:[...new Set(errors)]};
   return {...report,approval:digest(report)};
 }
 export async function writeOpening(identity:{phone?:string;email?:string;password:string},raw:unknown,mapping:Record<string,string>,approval:string,batch:string){
