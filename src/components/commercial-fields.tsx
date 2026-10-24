@@ -1,5 +1,6 @@
 'use client';
 import { packageLabel, timedPackage, useToken, treatmentAvailable, treatmentDay } from '@/lib/treatment-rules';
+import {serviceGroupNames} from '@/lib/service-groups';
 import SaleParticipants from './sale-participants';
 import { FormFields } from './validated-form';
 import { parseMoney } from '@/lib/currency';
@@ -11,6 +12,7 @@ type Row = Record<string, any>;
 export default function CommercialFields({ action, data, disabled, customerId }: { action: string; data: Row; disabled: boolean; customerId?: string }) {
   const packageSale = action === 'sellPackage';
   const [participantIds,setParticipantIds] = useState<string[]>([data.user?.id || '']);
+  const [category,setCategory]=useState('');
   const [selection, setSelection] = useState('');
   const [total, setTotal] = useState('');
   const [description, setDescription] = useState('');
@@ -22,13 +24,15 @@ export default function CommercialFields({ action, data, disabled, customerId }:
   const treatments = data.treatments.filter((t: Row) => t.customerId === customerId && t.serviceId === selection && treatmentAvailable(t));
   const treatment = treatments.find((t: Row) => t._id === treatmentId);
   const templates = (data.packageTemplates || []).filter((t: Row) => t.active && data.services.some((s: Row) => s._id === t.serviceId && s.active));
-  const options = packageSale ? templates : data.services.filter((s: Row) => s.active);
+  const options = (packageSale ? templates : data.services.filter((s: Row) => s.active)).filter((r:Row)=>!category || (packageSale ? data.services.find((service:Row)=>service._id===r.serviceId)?.category : r.category)===category);
   return <fieldset disabled={disabled} className="commercial-fields">
     <FormFields><legend>{packageSale ? 'Gói bán và quà tặng' : 'Nội dung hóa đơn'}</legend>
+    <label>Nhóm dịch vụ<select value={category} onChange={e=>{setCategory(e.target.value);setSelection('');setTotal('');setDescription('');setTreatmentId('');setSignature({version:1,strokes:[]});}}><option value="">Tất cả nhóm</option>{serviceGroupNames(data.serviceGroups||[],data.services).map(name=><option key={name} value={name}>{name}</option>)}</select></label>
     <label>{packageSale ? 'Gói liệu trình' : 'Dịch vụ'}<select name={packageSale ? 'templateId' : 'serviceId'} required value={selection} onChange={e => {
       setSelection(e.target.value); setTreatmentId(''); setSignature({ version: 1, strokes: [] }); const row = options.find((r: Row) => r._id === e.target.value);
       setTotal(row ? String(row.price) : ''); setDescription(row?.name || '');
-    }}><option value="">Chọn…</option>{options.map((r: Row) => <option key={r._id} value={r._id}>{r.name}{packageSale ? ` · ${packageLabel(r)}` : ''}</option>)}</select></label>
+    }}><option value="">Chọn…</option>{options.map((r: Row) => <option key={r._id} value={r._id}>{r.name}{packageSale ? ` · ${data.services.find((service:Row)=>service._id===r.serviceId)?.name || ''} · ${packageLabel(r)}` : ''}</option>)}</select></label>
+    {!options.length && <p role="status">{packageSale ? 'Chưa có gói mẫu đang bán trong nhóm này. Chủ spa cần tạo dịch vụ, rồi thêm gói tại Danh mục liệu trình.' : 'Chưa có dịch vụ đang hoạt động trong nhóm này.'}</p>}
     {!packageSale && <label>Nội dung<input name="description" maxLength={500} value={description} onChange={e => setDescription(e.target.value)} /></label>}
     {!packageSale && <label>Thanh toán<select name="treatmentId" value={treatment?._id || ''} onChange={e => { setTreatmentId(e.target.value); setSignature({ version: 1, strokes: [] }); }}><option value="">Mua lẻ · thu theo giá nhập</option>{treatments.map((t: Row) => <option key={t._id} value={t._id}>{t.name} · {packageLabel(t)} · 0đ</option>)}</select></label>}
     <label>Giá bán (VNĐ)<MoneyInput name="total" required min={treatment ? 0 : 1} max={1_000_000_000_000} value={treatment ? '0' : total} readOnly={!!treatment} onValueChange={setTotal} /></label>

@@ -165,3 +165,5 @@ Chuẩn bị dev/test: `npm run db:cash-cards` thêm 2 collections/indexes thẻ
 Tests: `npm test`, `npm run typecheck`; integration chỉ spacare_test. `node scripts/test-cash-card-ui.mjs` mở fixture UI cục bộ 3329 với dữ liệu giả, không kết nối DB; chỉ phục vụ kiểm tra giao diện. Khi thử thẻ thật, kiểm tra đủ số dư/thiếu số dư/thu thêm/gửi lặp/sổ chốt cùng Audit và CashEntry. Thẻ tặng đã phát hành chặn sửa/hoàn gói đến khi có workflow xử lý ngoại lệ; không rollback về code không biết CARD_SALE/cardPaid.
 
 Trang quản lý thẻ riêng: Tài chính → Thẻ tiền mặt (/workspace/cash_cards), dành cho OWNER/thu ngân. Tìm theo mã/tên/SĐT, lọc thẻ mua/tặng và số dư; chọn mã để xem lịch sử đúng thẻ. + Tạo thẻ mới dùng form thu đủ tiền. Không thời hạn, không đồng sở hữu/bảo lưu/nạp thêm theo giao diện tham khảo.
+
+Nhóm dịch vụ: tại Danh mục dịch vụ có + Tạo nhóm dịch vụ. Form thêm/sửa chọn nhóm hoặc + Nhập nhóm mới. Danh mục liệu trình → Thêm gói mẫu chọn Dịch vụ có sẵn theo nhóm; cần thêm dịch vụ trong dev trước nếu danh mục trống. Local không tự có dữ liệu live. Chuẩn bị collection/index nhóm mới ở dev/test bằng `npm run db:service-groups`; không chạy setup vào production.

@@ -1886,3 +1886,7 @@ label textarea { margin-top: 8px; }
 .card-manager-empty { text-align:center; padding:35px 12px; color:var(--muted); }
 .card-manager-note { padding:0 20px 16px; font-size:13px; color:var(--muted); }
 @media(max-width:600px) { .card-manager-toolbar { padding:0 12px 12px; } .card-manager-toolbar form { flex-basis:100%; } .card-manager-toolbar>label { flex:1; } .cash-card-manager>.section-head { align-items:flex-start; } .cash-card-manager .section-head p { font-size:13px; } }
+
+.service-selector-field { display:grid; gap:8px; min-width:0; }
+.service-selector-field select,.service-selector-field input { width:100%; min-width:0; }
+.service-selector-field small { color:var(--muted); }

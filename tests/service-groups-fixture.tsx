@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {ServiceGroupField,ServicePickerField} from '../src/components/service-selectors';
+const services=[{_id:'a',name:'Chăm sóc da cơ bản',category:'Chăm sóc da',active:true},{_id:'b',name:'Triệt lông',category:'TRIỆT LÔNG',active:true},{_id:'c',name:'Dịch vụ ngừng',category:'Cũ',active:false}];
+const groups=renderToStaticMarkup(<ServiceGroupField groups={[{name:'Massage'}]} services={services}/>);
+for(const name of ['Massage','Chăm sóc da','TRIỆT LÔNG','+ Nhập nhóm mới'])assert.ok(groups.includes(name));
+assert.ok(groups.includes('name="category"'));assert.ok(groups.includes('Chưa phân nhóm'));
+const picker=renderToStaticMarkup(<ServicePickerField services={services}/>);
+assert.ok(picker.includes('name="serviceId"'));assert.ok(picker.includes('Chăm sóc da cơ bản'));assert.ok(picker.includes('optgroup'));assert.ok(!picker.includes('Dịch vụ ngừng'));
+const edit=renderToStaticMarkup(<ServicePickerField services={services} initial="c"/>);assert.ok(edit.includes('Dịch vụ ngừng'));
+const empty=renderToStaticMarkup(<ServicePickerField services={[]}/>);assert.ok(empty.includes('Chưa có dịch vụ đang hoạt động'));assert.ok(empty.includes('Vào Danh mục dịch vụ'));assert.ok(empty.includes('disabled'));

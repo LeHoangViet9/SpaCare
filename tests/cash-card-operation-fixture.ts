@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
-import { User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
+import { ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
 const actor={id:ownerId,spaId,name:'Owner',role:'OWNER' as const,cashier:false};
@@ -10,10 +10,11 @@ const clone=(v:any)=>JSON.parse(JSON.stringify(v));
 let state:Record<string,any[]>={};
 function match(row:any,filter:any):boolean{return Object.entries(filter).every(([k,v]:any)=>v&&typeof v==='object'&&'$in' in v?v.$in.some((x:any)=>String(x)===String(row[k])):String(row[k])===String(v));}
 function doc(name:string,row:any):any{if(!row)return null;return {...clone(row),toObject(){const {toObject,save,...v}=this;return clone(v);},async save(){const i=state[name].findIndex(v=>String(v._id)===String(this._id));state[name][i]=this.toObject();}};}
-function query(value:any):any{return {session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
+function query(value:any):any{return {distinct:(key:string)=>query([...new Set((value||[]).map((row:any)=>row[key]).filter(Boolean))]),session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
 let failModel='';
-for(const model of [User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
+for(const model of [ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
+  (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
   (model as any).exists=(filter:any)=>query(state[name].find(row=>match(row,filter))||null);
   (model as any).findOneAndUpdate=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
@@ -55,4 +56,9 @@ await call('sellPackage',pack,giftKey);await call('sellPackage',pack,giftKey);
 assert.equal(state.CashCard.length,2);assert.equal(state.CashCard[1].origin,'GIFT');assert.equal(state.CashCard[1].amount,800000);assert.equal(state.CashEntry.length,cashCount);
 const giftBefore=clone(state);failModel='CashCard';await assert.rejects(call('sellPackage',pack),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,giftBefore,'gift creation failure rolls back the package and invoice');
 state.Day[0].status='CLOSED';const closedBefore=clone(state);await assert.rejects(call('redeemCashCard',{cardId:state.CashCard[1]._id,invoiceId:invoice()._id,amount:100000}));assert.equal(state.CashCard[1].balance,closedBefore.CashCard[1].balance);
+const groupKey=randomUUID();const group=await call('serviceGroup',{name:'  Da   mặt  '},groupKey);await call('serviceGroup',{name:'  Da   mặt  '},groupKey);
+assert.equal(state.ServiceGroup.length,1);assert.equal(state.ServiceGroup[0].name,'Da mặt');
+await assert.rejects(call('serviceGroup',{name:'da mặt'}),e=>(e as any).status===409);
+state.Service[0].category='Nhóm cũ';await assert.rejects(call('serviceGroup',{name:' NHÓM CŨ '}),e=>(e as any).status===409);
+const groupsBefore=clone(state);failModel='ServiceGroup';await assert.rejects(call('serviceGroup',{name:'Rollback group'}),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,groupsBefore);
 console.log('Model doubles verified: sale, gift, split payment, retry, concurrent debit and rollback. Not a real MongoDB transaction test.');

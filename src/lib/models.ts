@@ -76,6 +76,8 @@ export const Customer = model(
   [[{ spaId: 1, phone: 1 }]],
 );
 
+export const ServiceGroup = model('ServiceGroup', {name:{type:String,required:true},nameKey:{type:String,required:true},actorId:id}, [[{spaId:1,nameKey:1},{unique:true}]]);
+
 export const Service = model('Service', {
   category: String,
   commission: { ...amount, default: 0 },
@@ -358,6 +360,7 @@ export const PushDevice = model('PushDevice', {
 }, [[{ endpoint: 1 }, { unique: true }], [{ spaId: 1, userId: 1 }]]);
 
 export const allModels = [
+  ServiceGroup,
   CashCard, CashCardUse,
   Notification, PushDevice,
   Spa,

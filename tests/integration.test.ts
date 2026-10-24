@@ -1,3 +1,4 @@
+import { ServiceGroup } from '../src/lib/models';
 import { CashCard, CashCardUse } from '../src/lib/models';
 import { readCashCards } from '../src/lib/cash-card-read';
 import { importCatalog } from '../src/lib/catalog-import';
@@ -70,6 +71,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const c=await op('customer',{name:'Card customer',phone:'0999888777'});
       const svc=await op('service',{name:'Card service',price:400000});
       const scope={spaId:spa._id};
+      const groupKey=randomUUID();
+      await op('serviceGroup',{name:'  Chăm   sóc da  '},groupKey);await op('serviceGroup',{name:'  Chăm   sóc da  '},groupKey);
+      assert.equal(await ServiceGroup.countDocuments(scope),1);
+      await assert.rejects(op('serviceGroup',{name:'CHĂM SÓC DA'}),status(409));
+      await assert.rejects(operate(staffActor,'serviceGroup',{name:'Không được tạo'},randomUUID()),status(403));
       const sale={customerId:c.id,amount:800000,method:'CASH',receivedConfirmation:true};
       const key=randomUUID(); const card=await op('sellCashCard',sale,key); await op('sellCashCard',sale,key);
       assert.equal(await CashCard.countDocuments(scope),1); assert.equal(await CashEntry.countDocuments({...scope,kind:'CARD_SALE'}),1);

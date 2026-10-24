@@ -1,3 +1,4 @@
+import { ServiceGroup } from './models';
 import { availableTreatmentFilter } from './treatment-rules';
 import mongoose from 'mongoose';
 import { readReport } from './report-read';
@@ -96,8 +97,9 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     .filter(id => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id));
   // Catalogs and usable balances support form choices; history is loaded only by page.
   // Independent reads can share a network round trip; no transaction writes here.
-  const [services, packageTemplates, productGroups, products, staff] = await Promise.all([
+  const [services, serviceGroups, packageTemplates, productGroups, products, staff] = await Promise.all([
     Service.find(scope).lean(),
+    user.role==='OWNER' && ['services','package_catalog'].includes(query.section) ? ServiceGroup.find(scope).select('name').sort({name:1}).lean() : [],
     PackageTemplate.find(scope).lean(),
     query.section === 'cashier' && finance ? ProductGroup.find(scope).select('name').lean() : [],
     query.section === 'cashier' && finance ? Product.find({ ...scope, active: true }).select('name sku unit groupId price stock active').lean() : [],
@@ -149,6 +151,6 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     report = await readReport(user, query);
   }
   const paymentInfo = finance || invoices.length ? { bankName: process.env.BANK_NAME || '', accountNumber: process.env.BANK_ACCOUNT_NUMBER || '', accountName: process.env.BANK_ACCOUNT_NAME || '', qrImagePath: /^\/[a-zA-Z0-9_./-]+$/.test(process.env.BANK_QR_IMAGE_PATH || '') && !(process.env.BANK_QR_IMAGE_PATH || '').includes('..') && !(process.env.BANK_QR_IMAGE_PATH || '').startsWith('//') ? process.env.BANK_QR_IMAGE_PATH : '' } : undefined;
-  return { user, today, todayDay, pages, products, productGroups, packageTemplates, customers, services, staff, appointments, invoices, deposits, allocations: listed('allocations'), cash: listed('cash'), treatments: packages, uses: listed('uses'), days: listed('days'), audit: listed('audit'), paymentInfo, report,
+  return { user, today, todayDay, pages, products, productGroups, serviceGroups, packageTemplates, customers, services, staff, appointments, invoices, deposits, allocations: listed('allocations'), cash: listed('cash'), treatments: packages, uses: listed('uses'), days: listed('days'), audit: listed('audit'), paymentInfo, report,
     totals: { debt: debt[0]?.total || 0, credit: credit[0]?.total || 0, inflow: flow.find(f => f._id === 'IN')?.total || 0, outflow: flow.find(f => f._id === 'OUT')?.total || 0, bookings, treatments: treatmentStats[0]?.count || 0, remaining: treatmentStats[0]?.remaining || 0, activeTreatments: treatmentStats[0]?.active || 0, uses: useCount } };
 }

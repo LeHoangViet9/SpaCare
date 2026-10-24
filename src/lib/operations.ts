@@ -1,3 +1,5 @@
+import { ServiceGroup } from './models';
+import { serviceGroupName, serviceGroupKey } from './service-groups';
 import { CashCard, CashCardUse } from './models';
 import { cashCardInputs, cardPayment, ensureCardService } from './cash-card-rules';
 import { timedPackage, treatmentAvailable, useToken, packageSnapshot, packageStartOnPurchase } from './treatment-rules';
@@ -63,6 +65,7 @@ const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
 
 const schemas = {
+  serviceGroup: z.object({name:z.string().transform(serviceGroupName).pipe(z.string().min(1,'Nhập tên nhóm dịch vụ.').max(100))}),
   ...cashCardInputs,
   ...productInputs,
   ...payrollInputs,
@@ -142,6 +145,7 @@ const schemas = {
 export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
+  'serviceGroup',
   'updateInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
@@ -606,6 +610,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(d.active || !await Appointment.exists({ ...scope, staffId: d.id, status: 'CONFIRMED' }).session(session), 'Nhân viên còn lịch hẹn chưa xử lý.', 409);
           target.active = d.active;
           await target.save({ session });
+          break;
+        }
+        case 'serviceGroup': {
+          const d = schemas.serviceGroup.parse(data);
+          const nameKey = serviceGroupKey(d.name);
+          const existing = await ServiceGroup.exists({...scope,nameKey}).session(session);
+          const legacy = await Service.find(scope).distinct('category').session(session);
+          ensure(!existing && !legacy.some(name=>typeof name==='string'&&serviceGroupKey(name)===nameKey), 'Nhóm dịch vụ đã tồn tại. Chọn nhóm có sẵn.',409);
+          target = await create(ServiceGroup,{name:d.name,nameKey,actorId:actor.id});
           break;
         }
         case 'service':
