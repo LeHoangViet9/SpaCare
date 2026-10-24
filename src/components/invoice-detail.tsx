@@ -16,14 +16,14 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
   const [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController(); setData(null); setError('');
-    const url = record.kind === 'invoice' ? `/api/invoices/${record.id}?signaturePage=${page}` : `/api/customers/${record.id}/history?page=${page}&kind=${historyKind}`;
+    const url = record.kind === 'invoice' ? `/api/invoices/${record.id}?signaturePage=${page}` : `/api/customers/${record.id}/history?page=${page}&kind=${historyKind === 'cards' ? 'invoices' : historyKind}`;
     fetch(url, { signal: controller.signal, cache: 'no-store' }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error); return body; }).then(setData).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [record.id, record.kind, page, historyKind, revision]);
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
     {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
-    {record.kind === 'customer' && <div className="profile-tabs" role="group" aria-label="Lịch sử khách hàng">{[['invoices', 'Hóa đơn / chữ ký'], ['appointments', 'Lịch hẹn'], ['treatments', 'Liệu trình']].map(([key, title]) => <button key={key} aria-pressed={historyKind === key} onClick={() => { setHistoryKind(key); setPage(1); }}>{title}</button>)}</div>}
+
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
       <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>
       {record.kind === 'customer' && <>
@@ -32,9 +32,13 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
         {data.customer.notes && <p>Ghi chú: {data.customer.notes}</p>}
         <div className="actions">{onBook && <button onClick={() => onBook(record.id)}>Đặt lịch cho khách</button>}{onSell && <button onClick={() => onSell(record.id)}>Mở thu ngân</button>}</div>
       </>}
-      {record.kind === 'customer' && canManageCards && <CashCards customerId={record.id} onChanged={()=>setRevision(v=>v+1)} />}
+      {record.kind === 'customer' && <>
+        <div className="profile-tabs customer-history-tabs" role="group" aria-label="Nội dung hồ sơ khách hàng">{[['invoices', 'Hóa đơn'], ['appointments', 'Lịch hẹn'], ['treatments', 'Liệu trình'], ...(canManageCards ? [['cards', 'Thẻ tiền mặt']] : [])].map(([key, title]) => <button type="button" key={key} aria-pressed={historyKind === key} onClick={() => { setHistoryKind(key); setPage(1); }}>{title}</button>)}</div>
+        <h3 className="customer-history-title">{({invoices:'Hóa đơn và chữ ký',appointments:'Lịch hẹn của khách',treatments:'Liệu trình đã mua',cards:'Thẻ tiền mặt của khách'} as Record<string,string>)[historyKind]}</h3>
+      </>}
+      {record.kind === 'customer' && historyKind === 'cards' && canManageCards && <CashCards customerId={record.id} onChanged={()=>setRevision(v=>v+1)} />}
       {record.kind === 'invoice' && (!data.invoice.kind || data.invoice.kind === 'SERVICE') && data.invoice.serviceId && !data.invoice.treatmentId && !data.invoice.treatmentUseId && <CashCards customerId={String(data.invoice.customerId)} invoice={data.invoice} onChanged={()=>setRevision(v=>v+1)} />}
-      {record.kind === 'customer' ? <><div className="invoice-history">{data.rows.map((i: Row) => data.kind === 'invoices' ? <button key={i._id} onClick={() => onInvoice(i._id)}><strong>{i.description}</strong><span>{new Date(i.createdAt).toLocaleString('vi-VN')} · {money(i.total)}</span></button> : <article key={i._id}><strong>{data.kind === 'treatments' ? i.name : new Date(i.startAt).toLocaleString('vi-VN')}</strong>{i.serviceName && <p>{i.serviceName}{i.staffName ? ' · ' + i.staffName : ''}</p>}<p>{({ ACTIVE: 'Đang dùng', PAUSED: 'Bảo lưu', COMPLETED: 'Hoàn thành', CONFIRMED: 'Đã đặt', POSTPONED: 'Đã hoãn', CANCELLED: 'Đã hủy' } as Record<string, string>)[i.status] || i.status}{data.kind === 'treatments' ? ` · ${packageLabel(i)}${i.giftOfInvoiceId ? ' · Quà tặng' : ''}` : i.notes ? ' · ' + i.notes : ''}</p></article>)}{!data.total && <p>Chưa có bản ghi trong phạm vi được phép xem.</p>}</div>
+      {record.kind === 'customer' ? historyKind === 'cards' ? null : <><div className="invoice-history">{data.rows.map((i: Row) => data.kind === 'invoices' ? <button key={i._id} onClick={() => onInvoice(i._id)}><strong>{i.description}</strong><span>{new Date(i.createdAt).toLocaleString('vi-VN')} · {money(i.total)}</span></button> : <article key={i._id}><strong>{data.kind === 'treatments' ? i.name : new Date(i.startAt).toLocaleString('vi-VN')}</strong>{i.serviceName && <p>{i.serviceName}{i.staffName ? ' · ' + i.staffName : ''}</p>}<p>{({ ACTIVE: 'Đang dùng', PAUSED: 'Bảo lưu', COMPLETED: 'Hoàn thành', CONFIRMED: 'Đã đặt', POSTPONED: 'Đã hoãn', CANCELLED: 'Đã hủy' } as Record<string, string>)[i.status] || i.status}{data.kind === 'treatments' ? ` · ${packageLabel(i)}${i.giftOfInvoiceId ? ' · Quà tặng' : ''}` : i.notes ? ' · ' + i.notes : ''}</p></article>)}{!data.total && <p>{historyKind === 'appointments' ? 'Khách chưa có lịch hẹn trong phạm vi được xem.' : historyKind === 'treatments' ? 'Khách chưa có liệu trình trong phạm vi được xem.' : 'Khách chưa có hóa đơn trong phạm vi được xem.'}</p>}</div>
         {data.total > 10 && <div className="customer-picker-pages"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</> : <>
         <p>#{data.invoice._id.slice(-6)} · {new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</p>
         <h3>{data.invoice.description}</h3><p>Tổng: <strong>{money(data.invoice.total)}</strong> · Đã trả: {money(data.invoice.paid)} · Còn nợ: {money(data.invoice.total - data.invoice.paid)}</p>

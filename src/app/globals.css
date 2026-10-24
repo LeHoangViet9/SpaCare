@@ -1947,3 +1947,10 @@ label textarea { margin-top: 8px; }
 .card-payment-toggle input[type=checkbox] { width:20px; height:20px; flex-shrink:0; }
 .card-payment-due { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:12px; border-radius:10px; background:#edf7f1; color:#164f38; margin:12px 0; }
 .card-payment-due strong { font-size:22px; font-variant-numeric:tabular-nums; }
+
+/* Customer profile: shared information once, focused content below. */
+.customer-history-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 20px 0 16px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: #f5f7f2; }
+.customer-history-tabs button { min-width: 0; min-height: 44px; padding: 8px 6px; border: 0; border-radius: 8px; background: transparent; white-space: normal; font-size: 13px; }
+.customer-history-tabs button[aria-pressed="true"] { background: #356454; color: #fff; box-shadow: 0 2px 5px #253d3715; }
+.customer-history-title { margin-bottom: 12px; font-size: 17px; }
+@media (max-width: 360px) { .customer-history-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
