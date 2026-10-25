@@ -1,4 +1,4 @@
-import { repriceInvoiceItems } from './invoice-correction';
+import { invoiceDeletionBlock, repriceInvoiceItems } from './invoice-correction';
 import { sequenceInvoiceCode } from './invoice-code';
 import { queueInvoiceNotifications } from './notification-events';
 import { appointmentServiceIds } from './appointment-services';
@@ -109,6 +109,7 @@ const schemas = {
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature, remainingBefore }),
   completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
+  deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
@@ -158,7 +159,7 @@ export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
   'serviceGroup',
-  'updateInvoice', 'cancelInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
+  'updateInvoice', 'cancelInvoice', 'deleteInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
@@ -882,6 +883,26 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           linkedInvoiceId = String(invoice._id);
           break;
         }
+        case 'deleteInvoice': {
+          const d=schemas.deleteInvoice.parse(data);
+          // Read explicitly: the generic mutation getter deliberately rejects canceled invoices.
+          target=await Invoice.findOne({...scope,_id:d.id}).session(session);
+          ensure(target,'Không tìm thấy hóa đơn trong spa này.',404);
+          ensure(target.updatedAt?.toISOString()===d.expectedUpdatedAt,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
+          const block=invoiceDeletionBlock(target);
+          ensure(!block,block,409);
+          for(const model of [Payment,Allocation,CashCardUse,Commission,SaleCommission,SharedSaleCommission,StockMovement]) {
+            ensure(!await model.exists({...scope,invoiceId:target._id}).session(session),'Hóa đơn còn lịch sử giao dịch, kho hoặc hoa hồng; không được xóa vĩnh viễn.',409);
+          }
+          ensure(!await Treatment.exists({...scope,$or:[{invoiceId:target._id},{giftOfInvoiceId:target._id}]}).session(session),'Hóa đơn còn liên kết liệu trình; không được xóa vĩnh viễn.',409);
+          ensure(!await Invoice.exists({...scope,giftOfInvoiceId:target._id}).session(session),'Hóa đơn còn quà tặng liên quan; không được xóa vĩnh viễn.',409);
+          ensure(!await CashCard.exists({...scope,sourceInvoiceId:target._id}).session(session),'Hóa đơn đã phát hành thẻ; không được xóa vĩnh viễn.',409);
+          ensure(!await Day.exists({...scope,day:spaDay(target.createdAt),status:'CLOSED'}).session(session),'Ngày lập hóa đơn đã chốt sổ. Chủ spa cần mở lại trước khi xóa.',409);
+          await ActivityNotification.deleteMany({...scope,kind:'INVOICE_CREATED',invoiceId:target._id},{session});
+          const deleted=await Invoice.deleteOne({...scope,_id:target._id,updatedAt:target.updatedAt,status:'CANCELLED'},{session});
+          ensure(deleted.deletedCount===1,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
+          break;
+        }
         case 'cancelInvoice':
         case 'updateInvoice': {
           const cancelling = op === 'cancelInvoice';
@@ -1295,7 +1316,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       if (op === 'openDay' || op === 'closeDay' || op === 'reopenDay') details.daySnapshot = target.toObject();
       if (op === 'openDay') details.opening = target.opening;
       await create(Audit, { actorId: actor.id, action: op, targetId: target._id, details });
-      const result = { id: String(target._id), message: 'Đã lưu thành công.', ...(linkedInvoiceId ? { invoiceId: linkedInvoiceId } : {}), ...(replacementAppointmentId ? { replacementAppointmentId } : {}), ...(treatmentUseId ? { treatmentUseId } : {}) };
+      const result = { id: String(target._id), message: op === 'deleteInvoice' ? 'Đã xóa vĩnh viễn hóa đơn nhập nhầm.' : 'Đã lưu thành công.', ...(linkedInvoiceId ? { invoiceId: linkedInvoiceId } : {}), ...(replacementAppointmentId ? { replacementAppointmentId } : {}), ...(treatmentUseId ? { treatmentUseId } : {}) };
       await create(Idempotency, { userId: actor.id, key, fingerprint, result });
       return result;
     },

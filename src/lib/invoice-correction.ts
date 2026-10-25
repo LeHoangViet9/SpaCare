@@ -8,3 +8,10 @@ export function repriceInvoiceItems<T extends {total:number}>(items:T[], total:n
   for(let i=0;remainder>0;i++,remainder--) parts[i%parts.length]++;
   return items.map((item,i)=>({...item,total:parts[i]}));
 }
+
+export function invoiceDeletionBlock(invoice:{status?:string;paid?:number;cardPaid?:number;refunded?:number;saleCommissionAccrued?:number;openingBalance?:boolean;performedAt?:unknown;performedBy?:unknown;appointmentId?:unknown;treatmentId?:unknown;treatmentUseId?:unknown;giftOfInvoiceId?:unknown;productId?:unknown;kind?:string}):string {
+  if(invoice.status !== 'CANCELLED') return 'Hủy hóa đơn trước khi xóa vĩnh viễn.';
+  if(invoice.paid || invoice.cardPaid || invoice.refunded || invoice.saleCommissionAccrued) return 'Hóa đơn đã phát sinh thanh toán hoặc hoa hồng, không được xóa vĩnh viễn.';
+  if(invoice.openingBalance || invoice.performedAt || invoice.performedBy || invoice.appointmentId || invoice.treatmentId || invoice.treatmentUseId || invoice.giftOfInvoiceId || invoice.productId || invoice.kind === 'PRODUCT' || invoice.kind === 'SESSION' || invoice.kind === 'GIFT') return 'Hóa đơn có dữ liệu vận hành hoặc chuyển số dư, chỉ được giữ trạng thái hủy.';
+  return '';
+}

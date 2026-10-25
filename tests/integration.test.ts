@@ -25,7 +25,7 @@ import { readPayroll, payrollQuery } from '../src/lib/payroll-read';
 import { workspaceQuery } from '../src/lib/workspace-query';
 import { reservePublicBooking } from '../src/lib/public-booking';
 import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
-import { Notification } from '../src/lib/models';
+import { Notification, ActivityNotification } from '../src/lib/models';
 import { migrateUserIndexes } from '../src/lib/user-indexes';
 
 test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và chốt ngày', async t => {
@@ -235,6 +235,30 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const audit=await Audit.findOne({spaId,action:'cancelInvoice',targetId:invoice!._id});
       assert.equal(audit!.details.before.commissions[0].amount,commission!.amount);
       assert.equal(audit!.details.after.status,'CANCELLED');
+    });
+    await t.test('permanent deletion requires owner and canceled untouched invoice, preserves retry and blocks references',async()=>{
+      const created=await call('invoice',{customerId:customer.id,serviceId:service.id});
+      const original=await Invoice.findById(created.id);
+      const deletion={id:created.id,expectedUpdatedAt:original!.updatedAt.toISOString(),reason:'Nhập nhầm',confirmDelete:true};
+      await assert.rejects(call('deleteInvoice',deletion),/Hủy hóa đơn trước/);
+      await call('cancelInvoice',{id:created.id,expectedUpdatedAt:original!.updatedAt.toISOString(),reason:'Nhập nhầm'});
+      const canceled=await Invoice.findById(created.id);
+      const payload={...deletion,expectedUpdatedAt:canceled!.updatedAt.toISOString()};
+      await assert.rejects(operate(employee,'deleteInvoice',payload,randomUUID()),/Chỉ chủ spa/);
+      await assert.rejects(call('deleteInvoice',{...payload,confirmDelete:false}));
+      await assert.rejects(call('deleteInvoice',{...payload,expectedUpdatedAt:original!.createdAt.toISOString().replace('2026','2020')}),/đã thay đổi/);
+      const foreign=await Invoice.create({spaId:new mongoose.Types.ObjectId(),customerId:customer.id,description:'Foreign',total:0,paid:0,status:'CANCELLED'});
+      extraSpaIds.push(foreign.spaId);
+      await assert.rejects(call('deleteInvoice',{...payload,id:String(foreign._id),expectedUpdatedAt:foreign.updatedAt.toISOString()}),/Không tìm thấy/);
+      const key=randomUUID();await call('deleteInvoice',payload,key);await call('deleteInvoice',payload,key);
+      assert.equal(await Invoice.findById(created.id),null);
+      assert.equal(await Audit.countDocuments({spaId,action:'deleteInvoice',targetId:canceled!._id}),1);
+      assert.equal(await ActivityNotification.countDocuments({spaId,invoiceId:created.id}),0);
+      assert.ok(await Customer.findById(customer.id));
+      const linked=await Invoice.create({spaId,customerId:customer.id,description:'History',total:0,paid:0,status:'CANCELLED'});
+      await Commission.create({spaId,invoiceId:linked._id,staffId:staff._id,customerId:customer.id,amount:0,sourceType:'INVOICE',sourceId:linked._id,earnedAt:new Date(),cancelledAt:new Date()});
+      await assert.rejects(call('deleteInvoice',{...payload,id:String(linked._id),expectedUpdatedAt:linked.updatedAt.toISOString()}),/lịch sử giao dịch/);
+      assert.ok(await Invoice.findById(linked._id));
     });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});

@@ -9,7 +9,7 @@ import { auditActions } from '@/lib/audit-view';
 import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
-export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, canManageCards }: { canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
+export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
@@ -24,6 +24,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
     {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button><button disabled={!onCancel || data.invoice.status === 'CANCELLED'} onClick={()=>onCancel?.(data.invoice)}>Hủy hóa đơn</button></div>}
+    {record.kind === 'invoice' && data && !error && onDelete && data.invoice.status === 'CANCELLED' && <button onClick={()=>onDelete(data.invoice)}>Xóa vĩnh viễn</button>}
     {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
 
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
