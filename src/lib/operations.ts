@@ -120,6 +120,7 @@ const schemas = {
       .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
   }),
   invoice: z.object({
+    additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).max(30).optional(),
     additionalServices:z.array(z.object({serviceId:objectId,total:moneySchema})).max(30).optional(),
     cashCard: invoiceCardInput.optional(),
     staffId: objectId.optional(),
@@ -1100,13 +1101,27 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               earned.amount=money(earned.amount+items.reduce((n,item)=>n+item.commission,0),true);earned.serviceName=target.description;
               await earned.save({session});target.commission=earned.amount;
             }
-            if (d.description && !d.additionalServices?.length) target.description = d.description;
+            if(d.additionalProducts?.length) {
+              ensure(new Set(d.additionalProducts.map(item=>item.productId)).size===d.additionalProducts.length,'Không chọn trùng sản phẩm.');
+              const lines=[];
+              for(const item of d.additionalProducts) {
+                const product=await get(Product,item.productId);ensure(product.active,'Sản phẩm đã ngừng bán.');
+                const before=product.stock;product.stock=stockBalance(before,'OUT',item.quantity);
+                const total=productTotal(item.unitPrice,item.quantity);
+                lines.push({productId:product._id,name:product.name,unit:product.unit,quantity:item.quantity,unitPrice:item.unitPrice,total});
+                await product.save({session});
+                await create(StockMovement,{checkoutInvoiceId:target._id,productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:user.name,direction:'OUT',kind:'SALE',quantity:item.quantity,before,after:product.stock,reason:'Bán thêm cùng buổi liệu trình'});
+              }
+              target.productItems=lines;target.total=money(target.total+lines.reduce((n,line)=>n+line.total,0));target.status=invoiceState(target.total,0);
+              target.description+=' + '+lines.map(line=>line.name).join(' + ');
+            }
+            if (d.description && !d.additionalServices?.length && !d.additionalProducts?.length) target.description = d.description;
             if (d.consultantId) Object.assign(target, await consultant(customer, d.consultantId));
             await target.save({ session });
             break;
           }
           ensure(service.active, 'Dịch vụ không hoạt động.');
-          ensure(!d.additionalServices?.length,'Dịch vụ thêm chỉ dùng khi ghi buổi liệu trình.');
+          ensure(!d.additionalServices?.length && !d.additionalProducts?.length,'Dịch vụ thêm chỉ dùng khi ghi buổi liệu trình.');
           ensure(!d.signature && !d.remainingBefore, 'Chỉ dùng chữ ký xác nhận khi chọn liệu trình.');
           if (d.staffId) {
             const performer = await get(User, d.staffId);

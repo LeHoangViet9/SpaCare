@@ -105,6 +105,7 @@ export const Product = model('Product', {
   minStock: { type: Number, min: 0, max: 1_000_000_000, validate: Number.isSafeInteger, default: 0 },
 }, [[{ spaId: 1, sku: 1 }, { unique: true }], [{ spaId: 1, groupId: 1, active: 1 }]]);
 export const StockMovement = model('StockMovement', {
+  checkoutInvoiceId: optionalId,
   productId: id, productName: String, sku: String, unit: String, actorId: id, actorName: String,
   direction: { type: String, enum: ['IN', 'OUT'], required: true }, kind: { type: String, enum: ['MANUAL', 'SALE'], required: true },
   quantity: { type: Number, min: 1, max: 1_000_000_000, validate: Number.isSafeInteger, required: true },
@@ -142,6 +143,7 @@ export const Invoice = model('Invoice', {
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
+  productItems: {type:[new Schema({productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount},{_id:false,strict:'throw'})],default:undefined},
   serviceItems: { type: [serviceItemSchema], default: undefined },
   openingBalance: Boolean, openingDate: String,
   saleParticipants: [saleParticipantSchema],

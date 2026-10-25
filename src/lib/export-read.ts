@@ -28,6 +28,7 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
       ] },
       { heading: 'Dịch vụ / gói / sản phẩm', columns: ['Nội dung', 'Thành tiền'], widths: [0.72, 0.28], rows: [
         ...(bill.serviceItems?.length ? bill.serviceItems.map((item: { name: string; total: number }) => [item.name, money(item.total)]) : [[bill.description || 'Dịch vụ', money(bill.total)]]),
+        ...(bill.productItems || []).map((item:any)=>[`${item.name} · ${item.quantity} ${item.unit} × ${money(item.unitPrice)}`,money(item.total)]),
         ...data.gifts.map(gift => [`Quà tặng: ${gift.description || 'Gói tặng'}`, money(0)]),
       ] },
       { heading: 'Thanh toán', columns: ['Khoản mục', 'Số tiền'], widths: [0.65, 0.35], rows: [

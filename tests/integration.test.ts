@@ -94,12 +94,17 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const template=await call('packageTemplate',{serviceId:service.id,name:'Mixed visit',price:900000,totalSessions:3});
       const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
       const plan=await Treatment.findOne({spaId,invoiceId:sale.invoiceId});
-      const data={customerId:customer.id,serviceId:service.id,treatmentId:String(plan!._id),staffId:String(staff._id),signature:signed,remainingBefore:3,additionalServices:[{serviceId:service.id,total:60000}]};
+      const product=await Product.create({spaId,name:'Product mixed',sku:randomUUID(),unit:'ml',price:80000,stock:5});
+      const data={additionalProducts:[{productId:String(product._id),quantity:2,unitPrice:80000}],customerId:customer.id,serviceId:service.id,treatmentId:String(plan!._id),staffId:String(staff._id),signature:signed,remainingBefore:3,additionalServices:[{serviceId:service.id,total:60000}]};
       const key=randomUUID();const result=await call('invoice',data,key);await call('invoice',data,key);
-      const invoice=await Invoice.findById(result.invoiceId);assert.equal(invoice!.total,60000);assert.equal(invoice!.kind,'SESSION');assert.equal(invoice!.serviceItems[0].total,0);
+      const invoice=await Invoice.findById(result.invoiceId);assert.equal(invoice!.total,220000);assert.equal(invoice!.kind,'SESSION');assert.equal(invoice!.serviceItems[0].total,0);
       assert.equal((await Treatment.findById(plan!._id))!.remaining,2);
+      assert.equal((await Product.findById(product._id))!.stock,3);
+      assert.equal(await StockMovement.countDocuments({spaId,checkoutInvoiceId:invoice!._id}),1);
       await assert.rejects(call('invoice',{...data,remainingBefore:2,additionalServices:[{serviceId:new mongoose.Types.ObjectId().toString(),total:10}]}));
+      await assert.rejects(call('invoice',{...data,remainingBefore:2,additionalProducts:[{productId:String(product._id),quantity:99,unitPrice:80000}]}));
       assert.equal((await Treatment.findById(plan!._id))!.remaining,2);
+      assert.equal((await Product.findById(product._id))!.stock,3);
     });
     await t.test('unassigned appointments: creation, retry, completion performer and rollback', async () => {
       const tomorrow = new Date(Date.now() + 86400000);
