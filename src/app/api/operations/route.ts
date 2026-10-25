@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     try { body = JSON.parse(raw); } catch { ensure(false, 'JSON không hợp lệ.', 400); }
     // Only record a validated action name; never log the submitted body or idempotency key.
     const result = await operate(user, body?.action, body?.data, request.headers.get('Idempotency-Key') || '');
-    if (['appointment', 'rescheduleAppointment', 'invoice', 'serviceInvoice', 'sellPackage', 'sellProduct', 'completeAppointment', 'completeTreatmentAppointment', 'use'].includes(body.action)) {
+    if (['appointment', 'rescheduleAppointment', 'invoice', 'serviceInvoice', 'sellPackage', 'sellProduct', 'productInvoice', 'checkout', 'completeAppointment', 'completeTreatmentAppointment', 'use'].includes(body.action)) {
       after(async () => { try { await queueAppointmentReminders(new Date(), user.spaId); await dispatchNotifications({ spaId: user.spaId }); } catch { console.error('Notification dispatch deferred'); } });
     }
     context.action = body.action;

@@ -10,7 +10,7 @@ export function repriceInvoiceItems<T extends {total:number}>(items:T[], total:n
 }
 
 export function invoiceDeletionBlock(invoice:{openingBalance?:boolean;treatmentUseId?:unknown;giftOfInvoiceId?:unknown;refunded?:number}):string {
- if(invoice.openingBalance || invoice.treatmentUseId || invoice.giftOfInvoiceId) return 'Chứng từ mở đầu hoặc buổi liệu trình đã ký cần xử lý riêng, không xóa trực tiếp.';
+ if(invoice.openingBalance || invoice.treatmentUseId || invoice.giftOfInvoiceId) return 'Chứng từ mở đầu hoặc buổi liệu trình đã ghi nhận cần xử lý riêng, không xóa trực tiếp.';
  if(invoice.refunded) return 'Hóa đơn đã có hoàn tiền cần đối soát riêng.';
  return '';
 }

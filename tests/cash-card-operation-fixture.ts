@@ -181,7 +181,7 @@ state.Treatment.push({_id:planA,spaId,customerId,invoiceId:purchaseA._id,service
  {_id:planB,spaId,customerId,invoiceId:purchaseB._id,serviceId:secondServiceId,name:'Triệt dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'});
 const selections=(a=5,b=5)=>[{treatmentId:planA,signature:signed,remainingBefore:a},{treatmentId:planB,signature:signed,remainingBefore:b}];
 const multiple={customerId,serviceId,staffId:performerId,treatments:selections()};
-for(const bad of [[selections()[0],selections()[0]], selections(5,4), [selections()[0],{...selections()[1],signature:{version:1,strokes:[]}}]]) {
+for(const bad of [[selections()[0],selections()[0]], selections(5,4), [selections()[0],{...selections()[1],signature:{version:1,strokes:[[[0.2,0.5],[0.4,0.3],[0.9,0.8]]]}}], [selections()[0],{...selections()[1],signature:{version:1,strokes:[]}}]]) {
  const before=clone(state);await assert.rejects(call('invoice',{...multiple,treatments:bad}));assert.deepEqual(state,before);
 }
 state.Treatment.find(row=>row._id===planB).customerId='9'.repeat(24);
@@ -229,3 +229,79 @@ assert.equal(mixedBill.total,260000);assert.equal(mixedBill.serviceItems.length,
 assert.equal(mixedBill.productItems[0].quantity,2);assert.equal(state.Product[0].stock,3);
 assert.equal(state.StockMovement.filter(row=>row.checkoutInvoiceId===mixed.invoiceId).length,1);
 for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,2);
+
+// A checkout may omit the signature entirely; it still records each use and all money atomically.
+const withoutSignature=selections(2,2).map(({signature,...item})=>item);
+const unsignedKey=randomUUID(),unsigned=await call('invoice',{...multiple,treatments:withoutSignature},unsignedKey);
+await call('invoice',{...multiple,treatments:withoutSignature},unsignedKey);
+const unsignedUses=state.TreatmentUse.filter(row=>row.checkoutInvoiceId===unsigned.invoiceId);
+assert.equal(unsignedUses.length,2);assert.ok(unsignedUses.every(row=>row.method==='STAFF_RECORDED' && row.signature===undefined && row.signatureDigest===undefined));
+assert.equal(state.Audit.find(row=>row.targetId===unsigned.invoiceId).details.evidenceRecorded,false);
+for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,1);
+const sharedInput={...multiple,treatments:selections(1,1).map(({signature,...item})=>item),signature:signed};
+snapshot=clone(state);failModel='Audit';await assert.rejects(call('invoice',sharedInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,snapshot);
+const shared=await call('invoice',sharedInput);
+const sharedUses=state.TreatmentUse.filter(row=>row.checkoutInvoiceId===shared.invoiceId);
+assert.equal(sharedUses.length,2);assert.equal(sharedUses.filter(row=>row.signature).length,1);
+assert.equal(sharedUses[0].method,'DRAWN_SIGNATURE');assert.equal(sharedUses[1].method,'INVOICE_SIGNATURE');
+assert.equal(sharedUses[1].confirmationUseId,sharedUses[0]._id);
+assert.equal(JSON.parse(sharedUses[1].snapshot).confirmationUseId,sharedUses[0]._id);
+assert.ok(state.Audit.find(row=>row.targetId===shared.invoiceId).details.signatureDigest);
+for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,0);
+const unsignedPlan='d4'.repeat(12);
+state.Treatment.push({_id:unsignedPlan,spaId,customerId,invoiceId:purchaseA._id,serviceId,name:'Optional direct use',packageType:'SESSIONS',totalSessions:2,remaining:2,status:'ACTIVE'});
+const directKey=randomUUID(),directInput={treatmentId:unsignedPlan,remainingBefore:2};
+const direct=await call('use',directInput,directKey);await call('use',directInput,directKey);
+assert.equal(state.Treatment.find(row=>row._id===unsignedPlan).remaining,1);
+assert.equal(state.TreatmentUse.find(row=>row._id===direct.id).method,'STAFF_RECORDED');
+assert.equal(state.TreatmentUse.find(row=>row._id===direct.id).signature,undefined);
+
+const unsignedVisit='e5'.repeat(12);
+state.Appointment.push({_id:unsignedVisit,spaId,customerId,serviceId,treatmentId:unsignedPlan,staffId:performerId,status:'CONFIRMED',startAt:new Date(Date.now()-60000).toISOString()});
+const unsignedCompletion=await call('completeTreatmentAppointment',{id:unsignedVisit,remainingBefore:1});
+assert.equal(state.Appointment.find(row=>row._id===unsignedVisit).status,'COMPLETED');
+assert.equal(state.Treatment.find(row=>row._id===unsignedPlan).remaining,0);
+assert.equal(state.TreatmentUse.find(row=>row.checkoutInvoiceId===unsignedCompletion.invoiceId).signature,undefined);
+
+// Booking can mix several standalone services and several existing treatments.
+const mixedPlanA='f6'.repeat(12),mixedPlanB='a7'.repeat(12);
+state.Treatment.push({_id:mixedPlanA,spaId,customerId,invoiceId:purchaseA._id,serviceId,name:'Covered A',totalSessions:4,remaining:4,status:'ACTIVE'},
+ {_id:mixedPlanB,spaId,customerId,invoiceId:purchaseB._id,serviceId:secondServiceId,name:'Covered B',totalSessions:4,remaining:4,status:'ACTIVE'});
+const mixedBooking={customerId,serviceId,treatmentIds:[mixedPlanA,mixedPlanB],serviceIds:[serviceId,secondServiceId],staffId:performerId,startAt:arrival};
+const reservedMixed=await call('appointment',mixedBooking);
+const mixedVisit=state.Appointment.find(row=>row._id===reservedMixed.id);
+assert.equal(mixedVisit.requestedServices.length,4);assert.equal(mixedVisit.serviceIds.length,2);
+assert.equal(state.Treatment.find(row=>row._id===mixedPlanA).remaining,4,'booking does not debit');
+mixedVisit.startAt=new Date(Date.now()-60000).toISOString();
+const completion={id:reservedMixed.id,treatments:[{treatmentId:mixedPlanA,remainingBefore:4},{treatmentId:mixedPlanB,remainingBefore:4}]};
+const mixedCompletionKey=randomUUID(),completedMixed=await call('completeTreatmentAppointment',completion,mixedCompletionKey);
+await call('completeTreatmentAppointment',completion,mixedCompletionKey);
+const completedMixedBill=state.Invoice.find(row=>row._id===completedMixed.invoiceId);
+assert.equal(completedMixedBill.serviceItems.length,4);
+assert.equal(completedMixedBill.total,state.Service.find(row=>row._id===serviceId).price+state.Service.find(row=>row._id===secondServiceId).price);
+assert.equal(state.Treatment.find(row=>row._id===mixedPlanA).remaining,3);
+assert.equal(state.Treatment.find(row=>row._id===mixedPlanB).remaining,3);
+snapshot=clone(state);await assert.rejects(call('appointment',{...mixedBooking,serviceIds:[serviceId,serviceId]}));assert.deepEqual(state,snapshot);
+// Atomic checkout: two products on one invoice, and two package sales.
+const secondProductId='b8'.repeat(12),secondTemplateId='c9'.repeat(12);
+state.Product.push({_id:secondProductId,spaId,name:'Second product',sku:'P2',unit:'ml',price:50000,stock:8,active:true});
+state.PackageTemplate.push({...state.PackageTemplate[0],_id:secondTemplateId,name:'Second new package'});
+const cart={customerId,issuedOn:spaDay(),actions:[
+ {action:'productInvoice',data:{items:[{productId:extraProductId,quantity:1,unitPrice:80000},{productId:secondProductId,quantity:2,unitPrice:50000}]}},
+ {action:'sellPackage',data:{templateId,dueDate:spaDay()}},
+ {action:'sellPackage',data:{templateId:secondTemplateId,dueDate:spaDay()}}
+]};
+const cartBefore=clone(state);failModel='Treatment';await assert.rejects(call('checkout',cart),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,cartBefore,'failed package rolls back earlier product invoice and inventory');
+const cartKey=randomUUID(),cartDone=await call('checkout',cart,cartKey);await call('checkout',cart,cartKey);
+assert.equal(cartDone.invoiceIds.length,3);assert.equal(cartDone.total,6180000);
+assert.equal(state.Invoice.find(row=>row._id===cartDone.invoiceIds[0]).productItems.length,2);
+assert.equal(state.Product.find(row=>row._id===extraProductId).stock,2);assert.equal(state.Product.find(row=>row._id===secondProductId).stock,6);
+assert.equal(state.Treatment.filter(row=>cartDone.invoiceIds.includes(row.invoiceId)).length,2);
+assert.equal(state.Idempotency.filter(row=>row.key===cartKey).length,1,'one batch idempotency record');
+snapshot=clone(state);await assert.rejects(call('checkout',{...cart,actions:[cart.actions[1],cart.actions[1]]}),/trùng/);assert.deepEqual(state,snapshot);
+await assert.rejects(call('checkout',{...cart,actions:[cart.actions[0],{...cart.actions[1],data:{...cart.actions[1].data,customerId:'9'.repeat(24)}}]}),/cùng khách/);
+assert.deepEqual(state,snapshot);
+await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'checkout',cart,randomUUID()),error=>(error as any).status===403);
+const mixedServiceProduct=await call('serviceInvoice',{customerId,staffId:performerId,items:[{serviceId,total:100000}],additionalProducts:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
+assert.equal(state.Invoice.find(row=>row._id===mixedServiceProduct.id).total,150000);
+assert.equal(state.Commission.find(row=>row.invoiceId===mixedServiceProduct.id).amount,999,'product has no service commission');

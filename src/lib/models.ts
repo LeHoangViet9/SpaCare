@@ -119,6 +119,7 @@ export const Appointment = model(
   {
     bookingSource: { type: String, enum: ['PUBLIC_WEB'] },
     requestedServices: { type: [requestedServiceSchema], default: undefined },
+    serviceIds:{type:[Schema.Types.ObjectId],default:undefined},
     customerId: id,
     serviceId: id,
     treatmentId: optionalId,
@@ -278,6 +279,7 @@ export const Treatment = model(
 );
 
 export const TreatmentUse = model('TreatmentUse', {
+  confirmationUseId: optionalId,
   checkoutInvoiceId: optionalId,
   appointmentId: optionalId,
   treatmentId: id,

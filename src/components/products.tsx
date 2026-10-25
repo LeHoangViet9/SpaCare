@@ -99,7 +99,7 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
         : section === 'inventory' && history
           ? <article key={r._id}>
               <div><strong>{r.productName} · {r.sku}</strong><p>{r.direction === 'IN' ? 'Nhập' : 'Xuất'} {r.quantity} {r.unit} · {r.before} → {r.after}</p><small>{new Date(r.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} · {r.actorName} · {r.kind === 'SALE' ? 'Bán hàng' : 'Thủ công'}</small><p>{r.reason}</p></div>
-              {r.invoiceId && <button onClick={() => onInvoice(r.invoiceId)}>Hóa đơn #{r.invoiceId.slice(-6)}</button>}
+              {(r.invoiceId || r.checkoutInvoiceId) && <button onClick={() => onInvoice(r.invoiceId || r.checkoutInvoiceId)}>Hóa đơn #{(r.invoiceId || r.checkoutInvoiceId).slice(-6)}</button>}
             </article>
           : <article key={r._id} className="product-card">
               {/* Hình ảnh sản phẩm */}

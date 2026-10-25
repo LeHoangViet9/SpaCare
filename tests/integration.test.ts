@@ -132,18 +132,19 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(invoice!.total,70000);assert.equal(invoice!.treatmentSessions.length,2);assert.equal(invoice!.serviceItems.length,3);
       assert.equal((await Treatment.findById(one._id))!.remaining,4);assert.equal((await Treatment.findById(two._id))!.remaining,4);
       assert.equal(await TreatmentUse.countDocuments({spaId,checkoutInvoiceId:invoice!._id}),2);
+      assert.equal(await TreatmentUse.countDocuments({spaId,checkoutInvoiceId:invoice!._id,signature:{$exists:true}}),1);
       assert.equal(await Commission.countDocuments({spaId,invoiceId:invoice!._id}),1);
       assert.equal((await Commission.findOne({spaId,invoiceId:invoice!._id}))!.amount,40000);
-      const detail=await readInvoice(actor,String(invoice!._id));assert.equal(detail.signatureTotal,2);
+      const detail=await readInvoice(actor,String(invoice!._id));assert.equal(detail.signatureTotal,1);
       const notification=await ActivityNotification.findOne({spaId,invoiceId:invoice!._id});
       assert.ok(notification!.body.includes('Gói gội'));assert.ok(notification!.body.includes('Gói triệt'));assert.ok(notification!.body.includes('70.000'));
       const audit=await Audit.findOne({spaId,targetId:invoice!._id,action:'invoice'});
       assert.equal(audit!.details.treatments[0].signature,undefined);
       const startAt=spaDay(new Date(Date.now()+86400000))+'T10:00:00+07:00';
-      const booking={customerId:customer.id,serviceId:svcA.id,treatmentIds:[String(one._id),String(two._id)],startAt};
+      const booking={customerId:customer.id,serviceId:svcA.id,serviceIds:[svcA.id,svcB.id],treatmentIds:[String(one._id),String(two._id)],startAt};
       await assert.rejects(call('appointment',{...booking,treatmentIds:[String(one._id),String(foreign._id)]}),/đúng khách/);
       const visit=await call('appointment',booking);
-      assert.equal((await Appointment.findById(visit.id))!.requestedServices.length,2);
+      assert.equal((await Appointment.findById(visit.id))!.requestedServices.length,4);
       await call('appointmentStatus',{id:visit.id,status:'POSTPONED',reason:'Hẹn ngày mới'});
       const moved=await call('rescheduleAppointment',{id:visit.id,staffId:String(staff._id),startAt,reason:'Đã chọn giờ'});
       const replacement=await Appointment.findById(moved.replacementAppointmentId);
@@ -152,12 +153,43 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await assert.rejects(call('completeTreatmentAppointment',{id:String(replacement!._id),treatments:[uses(4,4)[0]]}),/đủ từng/);
       await assert.rejects(call('completeTreatmentAppointment',{id:String(replacement!._id),treatments:uses(4,3)}),/Số buổi/);
       assert.equal((await Treatment.findById(one._id))!.remaining,4);
-      const finished=await call('completeTreatmentAppointment',{id:String(replacement!._id),treatments:uses(4,4)});
+      const unsigned=uses(4,4).map(({signature,...item})=>item);
+      const finished=await call('completeTreatmentAppointment',{id:String(replacement!._id),treatments:unsigned});
       await call('completeTreatmentAppointment',{id:String(replacement!._id),treatments:uses(4,4)});
       assert.equal((await Treatment.findById(one._id))!.remaining,3);assert.equal((await Treatment.findById(two._id))!.remaining,3);
       assert.equal(await Invoice.countDocuments({spaId,appointmentId:replacement!._id}),1);
       assert.equal(await TreatmentUse.countDocuments({spaId,checkoutInvoiceId:finished.invoiceId}),2);
-      assert.equal((await Invoice.findById(finished.invoiceId))!.total,0);
+      assert.equal((await Invoice.findById(finished.invoiceId))!.total,400000);
+      assert.equal(await TreatmentUse.countDocuments({spaId,checkoutInvoiceId:finished.invoiceId,signature:{$exists:true}}),0);
+    });
+    await t.test('checkout saves multiple products and packages atomically with one idempotency key',async()=>{
+      const p1=await Product.create({spaId,name:'Cart product A',sku:randomUUID(),unit:'ml',price:80000,stock:5});
+      const p2=await Product.create({spaId,name:'Cart product B',sku:randomUUID(),unit:'ml',price:50000,stock:6});
+      const g1=await call('packageTemplate',{serviceId:service.id,name:'Cart package A',price:600000,totalSessions:4});
+      const g2=await call('packageTemplate',{serviceId:service.id,name:'Cart package B',price:700000,totalSessions:4});
+      const input={customerId:customer.id,actions:[
+        {action:'productInvoice',data:{items:[{productId:String(p1._id),quantity:2,unitPrice:80000},{productId:String(p2._id),quantity:1,unitPrice:50000}]}},
+        {action:'sellPackage',data:{templateId:g1.id,dueDate:spaDay()}},
+        {action:'sellPackage',data:{templateId:g2.id,dueDate:spaDay()}}
+      ]};
+      await PackageTemplate.updateOne({_id:g2.id},{$set:{active:false}});
+      const count=await Invoice.countDocuments({spaId});
+      await assert.rejects(call('checkout',input),/ngừng bán/);
+      assert.equal(await Invoice.countDocuments({spaId}),count);
+      assert.equal((await Product.findById(p1._id))!.stock,5);
+      await PackageTemplate.updateOne({_id:g2.id},{$set:{active:true}});
+      const key=randomUUID(),result=await call('checkout',input,key);await call('checkout',input,key);
+      assert.equal(result.invoiceIds!.length,3);assert.equal(result.total,1510000);
+      assert.equal((await Product.findById(p1._id))!.stock,3);assert.equal((await Product.findById(p2._id))!.stock,5);
+      assert.equal(await Treatment.countDocuments({spaId,invoiceId:{$in:result.invoiceIds}}),2);
+      assert.equal(await StockMovement.countDocuments({spaId,checkoutInvoiceId:result.invoiceIds![0]}),2);
+      await assert.rejects(operate(employee,'checkout',input,randomUUID()),(e:any)=>e.status===403);
+      const card=await CashCard.create({spaId,customerId:customer.id,amount:200000,balance:200000,origin:'OPENING',actorId:actor.id});
+      const bill=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:service.id,total:60000}],additionalProducts:[{productId:String(p1._id),quantity:1,unitPrice:80000}]});
+      await assert.rejects(call('redeemCashCard',{invoiceId:bill.id,cardId:String(card._id),amount:100000}),/dịch vụ lẻ/);
+      const mixed=await Invoice.findById(bill.id);assert.equal(mixed!.total,140000);
+      const mixedEdit={id:bill.id,expectedUpdatedAt:mixed!.updatedAt.toISOString(),description:'Sửa sai',total:140000,reason:'Test'};
+      await assert.rejects(call('updateInvoice',mixedEdit),/đối soát kho/);
     });
     await t.test('unassigned appointments: creation, retry, completion performer and rollback', async () => {
       const tomorrow = new Date(Date.now() + 86400000);

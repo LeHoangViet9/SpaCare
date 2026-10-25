@@ -21,10 +21,10 @@ export async function queueInvoiceNotifications(invoice: any, session: ClientSes
 }
 
 // One reminder per owner/spa/day; shares the financial write guard with closeDay.
-export async function queueClosingReminders(now = new Date()) {
+export async function queueClosingReminders(now = new Date(), spaId?: string) {
   const day = spaDay(now);
   if (now < new Date(day + 'T22:00:00+07:00')) return 0;
-  const owners = await User.find({ active: true, role: 'OWNER' }).select('_id spaId').lean();
+  const owners = await User.find({ ...(spaId ? { spaId } : {}), active: true, role: 'OWNER' }).select('_id spaId').lean();
   const groups = new Map<string, typeof owners>();
   for (const owner of owners) {
     const id = String(owner.spaId);
@@ -45,8 +45,8 @@ export async function queueClosingReminders(now = new Date()) {
         const filter = { spaId, userId: person._id, eventKey: `day-close:${day}` };
         if (await ActivityNotification.exists(filter).session(session)) continue;
         await ActivityNotification.create([{ ...filter, kind: 'DAY_CLOSE', day,
-          title: 'Nhắc chốt sổ ngày',
-          body: `Đã đến 22h. Sổ ngày ${day.split('-').reverse().join('/')} ${closed ? 'chưa được chốt' : 'chưa được mở/chốt'}. Mở SpaCare để kiểm tra và chốt sổ.`,
+          title: 'Nhắc kiểm kê tiền và chốt sổ',
+          body: `Đã đến 22h. Sổ ngày ${day.split('-').reverse().join('/')} ${closed ? 'chưa được chốt' : 'chưa được mở/chốt'}. Kiểm đếm tiền thực tế, đối chiếu thu chi và chốt sổ trên SpaCare.`,
           url: '/workspace/days',
         }], { session });
         created++;

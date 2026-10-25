@@ -1,3 +1,4 @@
+import { readTreatmentSignature } from '@/lib/treatment-signature';
 import { actor } from '@/lib/auth';
 import { TreatmentUse } from '@/lib/models';
 import { failure } from '@/lib/http';
@@ -12,7 +13,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const use = await TreatmentUse.findOne({ _id: id, spaId: user.spaId }).select('+signature').lean();
     ensure(use, 'Không tìm thấy buổi liệu trình.', 404);
     ensure(user.role === 'OWNER' || String(use.actorId) === user.id || String(use.staffId) === user.id, 'Chỉ xem chữ ký buổi mình thực hiện.', 403);
-    return Response.json({ signature: use.signature || null, snapshot: use.snapshot ? JSON.parse(use.snapshot) : null,
+    return Response.json({ signature: await readTreatmentSignature(user,use), snapshot: use.snapshot ? JSON.parse(use.snapshot) : null,
       performedAt: use.performedAt, digest: use.digest }, { headers: { 'Cache-Control': 'no-store, private' } });
   } catch (error) { return failure(error); }
 }

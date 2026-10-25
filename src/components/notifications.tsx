@@ -29,11 +29,13 @@ export default function Notifications() {
   }
   useEffect(() => {
     void refresh();
+    const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
     const timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 30_000);
     if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration('/').then(async registration => {
       setEnabled(!!await registration?.pushManager.getSubscription());
     }).catch(() => {});
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
   useEffect(() => {
     if (!open) return;

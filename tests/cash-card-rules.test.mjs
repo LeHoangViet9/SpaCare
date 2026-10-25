@@ -14,7 +14,7 @@ test('cash card money: 800k less 400k, split payment, insufficient balance and o
 test('cash card cannot pay for packages, gifts, products, sessions or ambiguous linked package invoices',()=>{
   assert.doesNotThrow(()=>ensureCardService({kind:'SERVICE',serviceId:id}));
   assert.doesNotThrow(()=>ensureCardService({serviceId:id}));
-  for(const invoice of [{},...['PACKAGE','GIFT','PRODUCT','SESSION'].map(kind=>({kind,serviceId:id})),{kind:'SERVICE',serviceId:id,treatmentId:id},{kind:'SERVICE',serviceId:id,treatmentUseId:id},{kind:'SERVICE',serviceId:id,productId:id},{kind:'SERVICE',serviceId:id,giftOfInvoiceId:id}])assert.throws(()=>ensureCardService(invoice));
+  for(const invoice of [{kind:'SERVICE',serviceId:id,productItems:[{productId:id,total:100}]},{},...['PACKAGE','GIFT','PRODUCT','SESSION'].map(kind=>({kind,serviceId:id})),{kind:'SERVICE',serviceId:id,treatmentId:id},{kind:'SERVICE',serviceId:id,treatmentUseId:id},{kind:'SERVICE',serviceId:id,productId:id},{kind:'SERVICE',serviceId:id,giftOfInvoiceId:id}])assert.throws(()=>ensureCardService(invoice));
 });
 test('paid card requires explicit receipt confirmation; mixed payment requires confirmation only for cash portion',()=>{
   const sale={customerId:id,amount:800000,method:'CASH',receivedConfirmation:true};

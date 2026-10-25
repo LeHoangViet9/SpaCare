@@ -1,3 +1,4 @@
+import { readTreatmentSignature } from './treatment-signature';
 import { CashCard } from './models';
 import { Appointment, Audit, Customer, Invoice, Treatment, TreatmentUse, User } from './models';
 import { ensure } from './rules';
@@ -33,6 +34,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
       { treatmentId: { $in: packages.map(p => p._id) } },
     ] },
     ...(user.role === 'OWNER' ? [] : [{ $or: [{ actorId: user.id }, { staffId: user.id }] }]),
+    ...(invoice.treatmentUseId ? [{confirmationUseId:{$exists:false}}] : []),
   ] };
   const signatureTotal = await TreatmentUse.countDocuments(signatureFilter);
   const signaturePage = Math.min(requestedSignaturePage, Math.max(1, Math.ceil(signatureTotal / 5)));
@@ -40,9 +42,9 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const events = await Audit.find({ ...scope, $or: [{ targetId: invoice._id }, { 'details.invoiceId': id }, ...(use ? [{ targetId: use._id }, { 'details.treatmentUseId': String(use._id) }] : [])] }).sort({ createdAt: -1 }).select('action actorId createdAt details.amount details.reason details.note').lean();
   return { giftCards, treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
     canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
-    signatures: signatures.map(s => ({ id: s._id, signature: s.signature || null, sessionNumber: s.sessionNumber,
+    signatures: await Promise.all(signatures.map(async s => ({ id: s._id, signature: await readTreatmentSignature(user,s), sessionNumber: s.sessionNumber,
       packageName: invoice.treatmentSessions?.find((item: {treatmentUseId:unknown;name?:string})=>String(item.treatmentUseId)===String(s._id))?.name || packages.find(p => String(p._id) === String(s.treatmentId))?.name,
-      performedAt: s.performedAt })), signaturePage, signatureTotal,
+      performedAt: s.performedAt }))), signaturePage, signatureTotal,
     session: use ? { sessionNumber: use.sessionNumber, performedAt: use.performedAt, staffId: use.staffId } : null,
     events: user.role === 'OWNER' ? events : events.filter(e => String(e.actorId) === user.id) };
 }

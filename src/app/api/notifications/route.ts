@@ -1,4 +1,4 @@
-import { queueAppointmentReminders } from '@/lib/notification-events';
+import { queueAppointmentReminders, queueClosingReminders } from '@/lib/notification-events';
 import { actor, checkOrigin } from '@/lib/auth';
 import { ActivityNotification, Notification, PushDevice } from '@/lib/models';
 import { ensure } from '@/lib/rules';
@@ -18,6 +18,12 @@ async function recipient() {
 export async function GET() {
   try {
     const { scope, role, models } = await recipient();
+    // A visible owner workspace must not depend on the scheduler firing on time.
+    // Queue before reading so this response already contains the reminder.
+    if (role === 'OWNER') {
+      try { await queueClosingReminders(new Date(), scope.spaId); }
+      catch { console.error('Closing reminder check deferred'); }
+    }
     const results = await Promise.all(models.map(async model => {
       const filter = { ...scope, ...(role === 'STAFF' && model === ActivityNotification ? { kind: 'APPOINTMENT_REMINDER' } : {}) };
       const [items, unread] = await Promise.all([

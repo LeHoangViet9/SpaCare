@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa } from '../src/lib/models';
 import { invoiceExport } from '../src/lib/export-read';
+import { readTreatmentSignature } from '../src/lib/treatment-signature';
 import { readInvoice } from '../src/lib/invoice-read';
 import type { Actor } from '../src/lib/auth';
 const id = 'a'.repeat(24), spaId = 'b'.repeat(24), packageId = 'c'.repeat(24), actorId = 'd'.repeat(24);
@@ -17,7 +18,7 @@ mock.method(Customer, 'findOne', () => query({ name: 'Customer', phone: '0329357
 mock.method(Spa, 'findById', () => query({ name: 'SpaCare' }));
 mock.method(Treatment, 'find', () => query([{ _id: packageId, name: 'Package' }]));
 mock.method(TreatmentUse, 'countDocuments', async (filter: any) => { queried = filter; return 7; });
-mock.method(TreatmentUse, 'find', () => query([{ _id: 'use', treatmentId: packageId, signature, sessionNumber: 2, performedAt: new Date() }]));
+mock.method(TreatmentUse, 'find', () => query([{ _id: 'use', treatmentId: packageId, actorId, signature, sessionNumber: 2, performedAt: new Date() }]));
 mock.method(Audit, 'find', () => query([]));
 const owner: Actor = { id: actorId, spaId, name: 'Owner', role: 'OWNER', cashier: true };
 const result = await readInvoice(owner, id, 99);
@@ -38,4 +39,22 @@ invoice.total=0; invoice.paid=0; invoice.refunded=0;
 const free=await invoiceExport(owner,id);
 assert.equal(free.tables[2].rows[0][1].replace(/[^\d]/g,''),'0');
 await assert.rejects(invoiceExport({...owner,role:'CUSTOMER'},id),(e:any)=>e.status===403);
+
+let source:any={_id:'source',actorId,staffId:actorId,signature};
+let sourceFilter:any;
+mock.method(TreatmentUse,'findOne',(filter:any)=>{sourceFilter=filter;return query(source);});
+const shared={actorId,staffId:actorId,customerId:'customer',checkoutInvoiceId:'checkout',confirmationUseId:'source'};
+assert.deepEqual(await readTreatmentSignature(owner,shared),signature);
+assert.deepEqual(sourceFilter,{_id:'source',spaId,customerId:'customer',checkoutInvoiceId:'checkout'});
+assert.equal(await readTreatmentSignature(owner,{actorId}),null,'unsigned record has no fabricated signature');
+await assert.rejects(readTreatmentSignature({...owner,role:'STAFF',id:'unauthorized'},shared),/Chỉ xem/);
+await assert.rejects(readTreatmentSignature(owner,{...shared,checkoutInvoiceId:undefined}),/Thiếu liên kết/);
+source=null;await assert.rejects(readTreatmentSignature(owner,shared),/Không tìm thấy/);
+source={actorId:'another',signature};await assert.rejects(readTreatmentSignature({...owner,role:'STAFF'},shared),/Chỉ xem/);
+
+(invoice as any).kind='PRODUCT';(invoice as any).productItems=[{productId:'p1',name:'Product A',quantity:2,unitPrice:50000,total:100000,unit:'ml'},{productId:'p2',name:'Product B',quantity:1,unitPrice:60000,total:60000,unit:'ml'}];
+const productPdf=await invoiceExport(owner,id);
+assert.equal(productPdf.tables[1].rows.length,2,'product-only invoice must not duplicate its total as an extra line');
+delete (invoice as any).productItems;
+
 mock.restoreAll();
