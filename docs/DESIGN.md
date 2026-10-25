@@ -412,3 +412,6 @@ Thu ngân và form hóa đơn có checkbox Dùng thẻ tiền mặt khi trang th
 
 ## Workspace navigation performance (2026-10-25)
 Technical design: native History API updates the section URL immediately and preserves the mounted workspace shell, including Back/Forward. Initial document routes still validate the session; each data API independently validates the current account, permissions and spa scope. Customer navigation reuses the shell and calls /api/customers directly; its initial workspace response only loads staff choices. No financial data is cached or authorization removed.
+
+
+Performance follow-up (2026-10-25, PROPOSED technical design): salary, commission, products, product_groups, inventory and cash_cards also use lightweight workspace shells because their panels own authenticated APIs. Soft navigation mounts those panels directly. Dashboard finance totals are computed only for overview; treatment-use totals only for treatment_uses. Other response totals default to zero and are not dashboard values. Independent search reference reads run concurrently outside transactions. GET /api/workspace and /api/customers expose Server-Timing auth/data durations without request values or secrets. No cross-request account cache or authorization relaxation.

@@ -96,14 +96,14 @@ const schemas = {
     treatmentId: objectId.optional(),
     customerId: objectId,
     serviceId: objectId,
-    staffId: objectId,
+    staffId: objectId.optional(),
     startAt: date,
     notes: note,
   }),
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
-  completeTreatmentAppointment: z.object({ id: objectId, signature, remainingBefore }),
-  completeAppointment: z.object({ id: objectId, existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
+  completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature, remainingBefore }),
+  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text,
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
@@ -663,8 +663,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const d = schemas.appointment.parse(data);
           await get(Customer, d.customerId);
           const service = await get(Service, d.serviceId);
-          const staff = await get(User, d.staffId);
-          ensure(service.active && staff.active, 'Dịch vụ/nhân viên không hoạt động.');
+          const staff = d.staffId ? await get(User, d.staffId) : null;
+          ensure(service.active && (!staff || (staff.active && ['OWNER', 'STAFF'].includes(staff.role))), 'Dịch vụ/nhân viên không hoạt động.');
           if (d.treatmentId) {
             const treatment = await get(Treatment, d.treatmentId);
             const packageInvoice = await get(Invoice, String(treatment.invoiceId));
@@ -725,6 +725,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(String(treatment.customerId) === String(target.customerId) && String(packageInvoice.serviceId) === String(target.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
           ensure(!await Invoice.exists({ ...scope, appointmentId: target._id }).session(session), 'Lịch đã có hóa đơn dịch vụ lẻ; cần đối chiếu trước.', 409);
           appointmentBefore = target.toObject();
+          if (!target.staffId) {
+            ensure(d.staffId, 'Chọn nhân viên thực hiện trước khi hoàn thành lịch.');
+            const performer = await get(User, d.staffId!);
+            ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Nhân viên thực hiện không hợp lệ hoặc đã ngừng hoạt động.');
+            target.staffId = performer._id;
+          }
+
           const recorded = await recordUse({ treatmentId: String(treatment._id), signature: d.signature, remainingBefore: d.remainingBefore }, String(target._id), String(target.staffId));
           treatmentUseId = String(recorded._id);
           target.status = 'COMPLETED';
@@ -760,6 +767,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             invoice = await create(Invoice, { appointmentId: target._id, customerId: target.customerId, serviceId: target.serviceId, description: d.description || service.name, total: invoiceCharge(service.price, d.total, false), paid: 0, kind: 'SERVICE', commission: service.commission || 0, ...await consultant(customer, d.consultantId), ...(d.dueDate ? { dueDate: d.dueDate } : {}) });
           }
           appointmentBefore = target.toObject();
+          if (!target.staffId) {
+            ensure(d.staffId, 'Chọn nhân viên thực hiện trước khi hoàn thành lịch.');
+            const performer = await get(User, d.staffId!);
+            ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Nhân viên thực hiện không hợp lệ hoặc đã ngừng hoạt động.');
+            target.staffId = performer._id;
+          }
+
           if (target.status === 'CONFIRMED') await accrueCommission(invoice, String(target.staffId), 'APPOINTMENT', String(target._id));
           target.status = 'COMPLETED';
           await target.save({ session });

@@ -17,9 +17,9 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const scope = { spaId: user.spaId };
   const finance = user.role === 'OWNER' || user.cashier;
   const today = spaDay();
-  // Customer history and pagination are served by /api/customers.
-  // Do not read financial balances and operational history for this shell.
-  if (query.section === 'customers') {
+  // These panels own authenticated data APIs. Load only the shared shell;
+  // avoid fetching balances/history before mounting a second data request.
+  if (['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(query.section)) {
     const staff = await User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } })
       .select(user.role === 'OWNER' ? 'name email phone role cashier active' : 'name role cashier active').lean();
     return { user, today, todayDay: null, pages: {} as Record<string, any>, staff,
@@ -47,9 +47,11 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const fields: Record<string, string> = { staff: user.role === 'OWNER' ? 'name email phone role cashier active' : 'name role cashier active', uses: '-snapshot -digest -signatureDigest -evidenceReference' };
   const search = query.search;
   const expression = { $regex: literalPattern(search), $options: 'i' };
-  const customerIds = search ? await Customer.find({ ...scope, $or: [{ name: expression }, { phone: expression }, { notes: expression }] }).distinct('_id') : [];
-  const staffIds = search ? await User.find({ ...scope, name: expression }).distinct('_id') : [];
-  const serviceIds = search ? await Service.find({ ...scope, name: expression }).distinct('_id') : [];
+  const [customerIds, staffIds, serviceIds] = await Promise.all([
+    search ? Customer.find({ ...scope, $or: [{ name: expression }, { phone: expression }, { notes: expression }] }).distinct('_id') : [],
+    search ? User.find({ ...scope, name: expression }).distinct('_id') : [],
+    search ? Service.find({ ...scope, name: expression }).distinct('_id') : [],
+  ]);
   const treatmentIds = search ? await Treatment.find({ ...scope, $or: [{ name: expression }, { customerId: { $in: customerIds } }] }).distinct('_id') : [];
   function searchFilter(collection: string) {
       if (collection === 'days') return {};
@@ -127,14 +129,16 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     const related = await Appointment.find({ ...filters.appointments, $or: [{ rescheduledFromId: { $in: appointments.map(a => a._id) } }, { _id: { $in: appointments.map(a => a.rescheduledFromId).filter(Boolean) } }] }).lean();
     appointments.push(...related.filter(a => !appointments.some(r => String(r._id) === String(a._id))));
   }
-  const invoiceChoices = await Invoice.find({ $and: [filters.invoices, { $or: [
+  const [invoiceChoices, deposits] = await Promise.all([
+    Invoice.find({ $and: [filters.invoices, { $or: [
     { $expr: { $gt: ['$total', '$paid'] } }, { _id: { $in: listed('invoices').map(i => i._id) } },
     { _id: { $in: auditIds('invoiceId') } },
     { appointmentId: { $in: appointments.map(a => a._id) } },
     { appointmentId: { $exists: false }, customerId: { $in: appointments.map(a => a.customerId) } },
-  ] }] }).lean();
+  ] }] }).lean(),
+    Deposit.find({ $and: [filters.deposits, { $or: [{ balance: { $gt: 0 } }, { _id: { $in: [...listed('deposits').map(d => d._id), ...auditIds('depositId')] } }] }] }).lean(),
+  ]);
   const invoices = invoiceChoices.map(i => ({ ...i, status: invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
-  const deposits = await Deposit.find({ $and: [filters.deposits, { $or: [{ balance: { $gt: 0 } }, { _id: { $in: [...listed('deposits').map(d => d._id), ...auditIds('depositId')] } }] }] }).lean();
   const treatments = await Treatment.find({ ...scope, $or: [
     availableTreatmentFilter(), { _id: { $in: listed('treatments').map(t => t._id) } },
     { _id: { $in: auditIds('treatmentId') } },
@@ -150,12 +154,12 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const spaObjectId = new mongoose.Types.ObjectId(user.spaId);
   const aggregateScope = { spaId: spaObjectId };
   const [debt, credit, flow, bookings, treatmentStats, useCount] = await Promise.all([
-    finance ? Invoice.aggregate([{ $match: aggregateScope }, { $group: { _id: null, total: { $sum: { $subtract: ['$total', '$paid'] } } } }]) : [],
-    finance ? Deposit.aggregate([{ $match: aggregateScope }, { $group: { _id: null, total: { $sum: '$balance' } } }]) : [],
-    finance ? CashEntry.aggregate([{ $match: { ...aggregateScope, day: today } }, { $group: { _id: '$direction', total: { $sum: '$amount' } } }]) : [],
-    Appointment.countDocuments({ ...filters.appointments, startAt: { $gte: new Date(today + 'T00:00:00+07:00'), $lt: new Date(new Date(today + 'T00:00:00+07:00').getTime() + 86400_000) }, status: { $in: finance ? ['CONFIRMED', 'COMPLETED'] : ['CONFIRMED'] } }),
-    Treatment.aggregate([{ $match: aggregateScope }, { $group: { _id: null, count: { $sum: 1 }, remaining: { $sum: '$remaining' }, active: { $sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] } } } }]),
-    TreatmentUse.countDocuments(scope),
+    finance && query.section === 'overview' ? Invoice.aggregate([{ $match: aggregateScope }, { $group: { _id: null, total: { $sum: { $subtract: ['$total', '$paid'] } } } }]) : [],
+    finance && query.section === 'overview' ? Deposit.aggregate([{ $match: aggregateScope }, { $group: { _id: null, total: { $sum: '$balance' } } }]) : [],
+    finance && query.section === 'overview' ? CashEntry.aggregate([{ $match: { ...aggregateScope, day: today } }, { $group: { _id: '$direction', total: { $sum: '$amount' } } }]) : [],
+    query.section === 'overview' ? Appointment.countDocuments({ ...filters.appointments, startAt: { $gte: new Date(today + 'T00:00:00+07:00'), $lt: new Date(new Date(today + 'T00:00:00+07:00').getTime() + 86400_000) }, status: { $in: finance && query.section === 'overview' ? ['CONFIRMED', 'COMPLETED'] : ['CONFIRMED'] } }) : 0,
+    query.section === 'treatment_uses' ? Treatment.aggregate([{ $match: aggregateScope }, { $group: { _id: null, count: { $sum: 1 }, remaining: { $sum: '$remaining' }, active: { $sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] } } } }]) : [],
+    query.section === 'treatment_uses' ? TreatmentUse.countDocuments(scope) : 0,
   ]);
   let report: Row = { inflow: 0, outflow: 0, days: [] };
   if (query.section === 'reports') {

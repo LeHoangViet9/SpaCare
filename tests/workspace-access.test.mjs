@@ -41,3 +41,33 @@ test('customer shell reads scoped staff only, without financial or history queri
   assert.deepEqual(result.invoices, []);
   assert.equal(result.user, employee);
 });
+
+
+test('appointment schema permits no performer but rejects malformed performer ids', async () => {
+  const { Appointment } = await tsImport('../src/lib/models.ts', import.meta.url);
+  const visit = new Appointment({ spaId: 'a'.repeat(24), customerId: 'b'.repeat(24), serviceId: 'c'.repeat(24), startAt: new Date() });
+  assert.equal(visit.validateSync(), undefined);
+  visit.staffId = 'invalid';
+  assert.ok(visit.validateSync()?.errors.staffId);
+});
+
+
+test('panels with their own API do not load operational balances or history', async t => {
+  const { User, Day, Invoice, Deposit, Treatment, Customer, Service, PackageTemplate, Appointment, CashEntry, TreatmentUse } = await tsImport('../src/lib/models.ts', import.meta.url);
+  const owner = { id: 'a'.repeat(24), spaId: 'b'.repeat(24), name: 'Test', role: 'OWNER', cashier: true };
+  t.mock.method(User, 'find', filter => {
+    assert.equal(filter.spaId, owner.spaId);
+    return { select: () => ({ lean: async () => [] }) };
+  });
+  for (const model of [Day, Invoice, Deposit, Treatment, Customer, Service, PackageTemplate, Appointment, CashEntry, TreatmentUse]) {
+    for (const method of ['find', 'findOne', 'aggregate', 'countDocuments']) {
+      t.mock.method(model, method, () => { throw new Error('Unnecessary read: ' + model.modelName); });
+    }
+  }
+  for (const section of ['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards']) {
+    const result = await readWorkspace(owner, workspaceQuery(new URLSearchParams({ section })));
+    assert.equal(result.user, owner);
+    assert.deepEqual(result.invoices, []);
+    assert.deepEqual(result.treatments, []);
+  }
+});

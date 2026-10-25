@@ -117,7 +117,7 @@ export const Appointment = model(
     serviceId: id,
     treatmentId: optionalId,
     rescheduledFromId: optionalId,
-    staffId: id,
+    staffId: optionalId,
     startAt: Date,
     endAt: Date,
     status: { type: String, enum: ['CONFIRMED', 'POSTPONED', 'COMPLETED', 'CANCELLED'], default: 'CONFIRMED' },

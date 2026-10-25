@@ -59,6 +59,26 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     assert.equal(filteredDays.todayDay!.status, 'OPEN');
     const customer = await call('customer', { name: 'Khách test', phone: '0900000000' });
     const service = await call('service', { name: 'Dịch vụ test', price: 350000, duration: 60 });
+    await t.test('unassigned appointments: creation, retry, completion performer and rollback', async () => {
+      const tomorrow = new Date(Date.now() + 86400000);
+      const startAt = new Date(tomorrow.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }) + 'T10:00:00+07:00').toISOString();
+      const data = { customerId: customer.id, serviceId: service.id, startAt };
+      const key = randomUUID();
+      const visit = await call('appointment', data, key);
+      assert.equal((await call('appointment', data, key)).id, visit.id);
+      assert.equal((await Appointment.findById(visit.id))!.staffId, undefined);
+      await Appointment.updateOne({ _id: visit.id }, { $set: { startAt: new Date(Date.now() - 60000) } });
+      await assert.rejects(call('completeAppointment', { id: visit.id }));
+      assert.equal((await Appointment.findById(visit.id))!.status, 'CONFIRMED');
+      assert.equal(await Invoice.countDocuments({ spaId, appointmentId: visit.id }), 0);
+      await assert.rejects(operate(employee, 'completeAppointment', { id: visit.id, staffId: String(staff._id) }, randomUUID()), (e: any) => e.status === 403);
+      const doneKey = randomUUID();
+      await call('completeAppointment', { id: visit.id, staffId: String(staff._id) }, doneKey);
+      await call('completeAppointment', { id: visit.id, staffId: String(staff._id) }, doneKey);
+      assert.equal(String((await Appointment.findById(visit.id))!.staffId), String(staff._id));
+      assert.equal((await Appointment.findById(visit.id))!.status, 'COMPLETED');
+      assert.equal(await Invoice.countDocuments({ spaId, appointmentId: visit.id }), 1);
+    });
     await t.test('cash cards: full purchase, gift, service-only split payment, concurrency, permissions and rollback', async () => {
       const status = (code:number) => (error:unknown) => (error as {status?:number}).status === code;
       const spa = await Spa.create({name:'Cash card isolation'}); extraSpaIds.push(spa._id);

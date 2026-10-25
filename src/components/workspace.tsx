@@ -172,7 +172,7 @@ export default function Workspace() {
   }, [requestQuery]);
   useEffect(() => {
     // CustomerList owns its paginated request; keep the existing shell.
-    if (tab === 'customers' && data) return;
+    if (['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(tab) && data) return;
     let current = true;
     const controller = new AbortController();
     const delay = lastLoadedSection.current === tab ? 250 : 0;
@@ -255,12 +255,12 @@ export default function Workspace() {
   const completeWithInvoice = (r: Row) => {
     const candidates = data.invoices.filter((i: Row) => !i.appointmentId && !i.performedAt && i.customerId === r.customerId && i.serviceId === r.serviceId && !data.treatments.some((t: Row) => t.invoiceId === i._id));
     const fields: Field[] = [{ key: 'description', label: 'Nội dung hóa đơn mới', optional:true }, { key: 'total', label: 'Giá hóa đơn mới (VNĐ)', type: 'number', min: 1, max: 1_000_000_000_000 }, { key: 'existingInvoiceId', label: 'Liên kết hóa đơn đã có (nếu có)', optional: true, options: candidates.map((i: Row) => [i._id, '#' + i._id.slice(-6) + ' · ' + vnd(i.total) + ' · ' + label(i.status)]), hint: 'Để trống để tạo hóa đơn mới. Chọn hóa đơn đã lập cho cuộc hẹn này để tránh tính tiền hai lần.' }, { key: 'dueDate', label: 'Hạn trả khi tạo hóa đơn mới', type: 'date', optional: true }];
-    open('Hoàn thành & lập hóa đơn dịch vụ lẻ', 'completeAppointment', finance ? fields : [], { id: r._id, ...(finance ? { description: data.services.find((s: Row) => s._id === r.serviceId)?.name, total: data.services.find((s: Row) => s._id === r.serviceId)?.price } : {}) }, 'Khách: ' + lookup('customers', r.customerId) + ' · Dịch vụ: ' + lookup('services', r.serviceId) + ' · Giá tạo mới hiện tại: ' + vnd(data.services.find((s: Row) => s._id === r.serviceId)?.price) + '. Xác nhận sẽ hoàn thành lịch và tạo hoặc liên kết hóa đơn. Chưa thu tiền, chưa áp cọc. Hủy form sẽ không thay đổi lịch.');
+    open('Hoàn thành & lập hóa đơn dịch vụ lẻ', 'completeAppointment', finance ? [...(!r.staffId ? [{ key: 'staffId', label: 'Nhân viên thực hiện', options: choices('staff', r => r.name) }] : []), ...fields] : [], { id: r._id, ...(finance ? { description: data.services.find((s: Row) => s._id === r.serviceId)?.name, total: data.services.find((s: Row) => s._id === r.serviceId)?.price } : {}) }, 'Khách: ' + lookup('customers', r.customerId) + ' · Dịch vụ: ' + lookup('services', r.serviceId) + ' · Giá tạo mới hiện tại: ' + vnd(data.services.find((s: Row) => s._id === r.serviceId)?.price) + '. Xác nhận sẽ hoàn thành lịch và tạo hoặc liên kết hóa đơn. Chưa thu tiền, chưa áp cọc. Hủy form sẽ không thay đổi lịch.');
   };
   const signSession = (treatment: Row, appointment?: Row) => {
     setError(''); setNotice('');
     setModal({ title: appointment ? 'Hoàn thành ca · khách ký xác nhận' : 'Khách không đặt lịch · ký xác nhận buổi',
-      action: appointment ? 'completeTreatmentAppointment' : 'use', fields: !appointment && finance ? [{ key: 'staffId', label: 'Nhân viên trực tiếp thực hiện', options: choices('staff', r => r.name) }] : [],
+      action: appointment ? 'completeTreatmentAppointment' : 'use', fields: (!appointment || !appointment.staffId) && finance ? [{ key: 'staffId', label: 'Nhân viên trực tiếp thực hiện', options: choices('staff', r => r.name) }] : [],
       defaults: { ...(appointment ? { id: appointment._id } : { treatmentId: treatment._id }), remainingBefore: useToken(treatment) },
       signatureContext: { customer: lookup('customers', treatment.customerId), packageName: treatment.name,
         staff: appointment ? lookup('staff', appointment.staffId) : finance ? 'Chọn nhân viên thực hiện bên dưới' : data.user.name,
@@ -292,7 +292,7 @@ export default function Workspace() {
   const consultantField: Field = { key: 'consultantId', label: 'Nhân viên tư vấn', optional: true, options: choices('staff', r => r.name), hint: 'Để trống khi bán: dùng người tư vấn mặc định của khách.' };
   const customerButton = <button className="primary" onClick={() => open('Thêm khách hàng', 'customer', [{ key: 'name', label: 'Họ và tên' }, { key: 'phone', label: 'Số điện thoại', type: 'tel' }, { key: 'notes', label: 'Ghi chú', optional: true }])}>＋ Thêm khách hàng</button>;
   const packageField: Field = { key: 'treatmentId', label: 'Gói liệu trình (để trống nếu dịch vụ lẻ)', optional: true, options: data.treatments.filter((t: Row) => treatmentAvailable(t) && t.serviceId).map((t: Row) => [t._id, t.name + ' · ' + packageLabel(t)]), optionScopes: Object.fromEntries(data.treatments.map((t: Row) => [t._id, { customerId: t.customerId, serviceId: t.serviceId }])), hint: 'Chọn khách và dịch vụ trước. Một gói phù hợp sẽ được gợi ý; nhiều gói thì chọn đúng gói khách muốn dùng. Để trống nếu muốn mua dịch vụ lẻ.' };
-  const appointmentFields: Field[] = [customerField, serviceField, packageField, { key: 'staffId', label: 'Nhân viên thực hiện', options: choices('staff', r => r.name) }, { key: 'startAt', label: 'Bắt đầu · giờ Việt Nam', type: 'datetime-local' }, { key: 'notes', label: 'Ghi chú', optional: true }];
+  const appointmentFields: Field[] = [customerField, serviceField, packageField, { key: 'staffId', optional: true, label: 'Nhân viên thực hiện', options: choices('staff', r => r.name) }, { key: 'startAt', label: 'Bắt đầu · giờ Việt Nam', type: 'datetime-local' }, { key: 'notes', label: 'Ghi chú', optional: true }];
   const bookCustomer = (id?: string) => { setDetail(null); open('Tạo lịch hẹn', 'appointment', appointmentFields, { ...(id ? { customerId: id } : {}), ...(!finance ? { staffId: data.user.id } : {}) }); };
   const appointmentButton = <button className="primary" onClick={() => bookCustomer()}>＋ Đặt lịch</button>;
   const customerFields: Field[] = [{ key: 'name', label: 'Họ và tên' }, { key: 'phone', label: 'Số điện thoại', type: 'tel' }, { key: 'notes', label: 'Ghi chú', optional: true }, consultantField];
@@ -489,7 +489,7 @@ export default function Workspace() {
         </div>
         {error && !modal && <div className="alert error" role="alert">{error}</div>}
         {notice && <div className="alert success" role="status">{notice}</div>}
-        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} onChange={setFilters} />{viewPending && tab !== 'customers' ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
+        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} onChange={setFilters} />{viewPending && !['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(tab) ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
         <footer>SpaCare · MVP nội bộ <span>Giờ Việt Nam · VNĐ</span></footer>
       </div>
     </main>

@@ -391,3 +391,10 @@ PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng 
 
 
 Workspace performance (2026-10-25): GET /api/workspace?section=customers returns a lightweight shell (user, date, scoped staff choices, empty operational collections). Customer rows and visit history remain in the authenticated, paginated GET /api/customers endpoint. Other section contracts and backend permissions are unchanged.
+
+
+## Optional appointment performer (2026-10-25)
+CONFIRMED user request: appointment creation permits omitted staffId (unassigned); a supplied staffId must reference active OWNER/STAFF in the authenticated spa. Appointment.staffId is optional. CompleteAppointment and completeTreatmentAppointment accept optional staffId to assign an unassigned visit before recording performance, commission or signed treatment use, in the existing transaction with idempotency and audit. Existing assigned visits retain their performer. PROPOSED technical handling: unassigned visits remain visible/manageable to owner/cashier under existing scope; ordinary staff scope is unchanged. Rescheduling still requires an assigned performer.
+
+
+Performance follow-up (2026-10-25, PROPOSED technical design): salary, commission, products, product_groups, inventory and cash_cards also use lightweight workspace shells because their panels own authenticated APIs. Soft navigation mounts those panels directly. Dashboard finance totals are computed only for overview; treatment-use totals only for treatment_uses. Other response totals default to zero and are not dashboard values. Independent search reference reads run concurrently outside transactions. GET /api/workspace and /api/customers expose Server-Timing auth/data durations without request values or secrets. No cross-request account cache or authorization relaxation.
