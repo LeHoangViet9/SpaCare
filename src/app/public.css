@@ -1362,7 +1362,9 @@
 @media (max-width: 768px) {
   .pub-mobile-bottom-bar {
     box-sizing: border-box;
-    bottom: 0;
+    bottom: var(--public-nav-bottom, 0px);
+    transform: translateZ(0);
+    isolation: isolate;
     background: #fff;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
