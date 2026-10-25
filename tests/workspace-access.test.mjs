@@ -71,3 +71,28 @@ test('panels with their own API do not load operational balances or history', as
     assert.deepEqual(result.treatments, []);
   }
 });
+
+
+test('parallel customer reads preserve last-page fallback and authenticated scope', async t => {
+  const { Customer } = await tsImport('../src/lib/models.ts', import.meta.url);
+  const { findCustomerPage } = await tsImport('../src/lib/customer-search.ts', import.meta.url);
+  const spaId = 'b'.repeat(24);
+  const offsets = [];
+  t.mock.method(Customer, 'countDocuments', filter => { assert.equal(filter.spaId, spaId); return Promise.resolve(12); });
+  t.mock.method(Customer, 'find', filter => {
+    assert.equal(filter.spaId, spaId);
+    let offset;
+    const cursor = { select: () => cursor, sort: () => cursor, skip: n => { offset = n; offsets.push(n); return cursor; }, limit: () => cursor,
+      lean: async () => offset === 10 ? [{ _id: 'c'.repeat(24), name: 'Last page' }] : [] };
+    return cursor;
+  });
+  const result = await findCustomerPage(spaId, { page: 99, pageSize: 10, search: '' });
+  assert.equal(result.page, 2);
+  assert.equal(result.total, 12);
+  assert.equal(result.customers.length, 1);
+  assert.deepEqual(offsets, [980, 10]);
+  offsets.length = 0;
+  const valid = await findCustomerPage(spaId, { page: 2, pageSize: 10, search: '' });
+  assert.equal(valid.customers.length, 1);
+  assert.deepEqual(offsets, [10]);
+});

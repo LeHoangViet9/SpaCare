@@ -415,3 +415,10 @@ Technical design: native History API updates the section URL immediately and pre
 
 
 Performance follow-up (2026-10-25, PROPOSED technical design): salary, commission, products, product_groups, inventory and cash_cards also use lightweight workspace shells because their panels own authenticated APIs. Soft navigation mounts those panels directly. Dashboard finance totals are computed only for overview; treatment-use totals only for treatment_uses. Other response totals default to zero and are not dashboard values. Independent search reference reads run concurrently outside transactions. GET /api/workspace and /api/customers expose Server-Timing auth/data durations without request values or secrets. No cross-request account cache or authorization relaxation.
+
+
+Measured production follow-up (2026-10-25): authenticated read samples: customers 1316ms (auth 412.5ms, data 619.9ms), invoices 2795ms (auth 422.7ms, data 1888.1ms), appointments 5401ms (auth 2148.2ms, data 2955.4ms). Single samples, not an SLA. Response routing reported hkg1::iad1; Atlas region is unverified. PROPOSED technical optimization: read page/catalogs concurrently; read package invoice metadata/customer references concurrently; customer count/rows concurrently with last-page fallback retained. Reads only; backend account/spa checks and transaction writes unchanged. Re-measure after deployment; select compute region after verifying database region.
+
+
+## Deployment region (2026-10-25)
+User-provided Atlas screenshot confirms AWS Hong Kong (ap-east-1). Measured production Function routing was iad1 (USA). PROPOSED technical configuration: vercel.json selects hkg1 (Hong Kong) to colocate Functions with Atlas. Requires a new Vercel deployment. Verify actual Function region and auth/data Server-Timing after deploy; do not infer performance improvement before measuring. This does not migrate the database or modify operational records.

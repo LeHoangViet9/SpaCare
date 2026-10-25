@@ -103,21 +103,25 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   }
   const pages: Record<string, any> = {};
   const collection = sectionCollection[query.section];
-  if (collection) pages[collection] = await page(collection);
-  if (query.section === 'deposits') pages.allocations = await page('allocations', query.allocationPage);
   const listed = (key: string): Row[] => pages[key]?.rows || [];
   const auditIds = (key: string) => listed('audit').flatMap(a => [a.details?.[key], a.details?.before?.[key], a.details?.after?.[key]])
     .filter(id => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id));
   // Catalogs and usable balances support form choices; history is loaded only by page.
   // Independent reads can share a network round trip; no transaction writes here.
-  const [services, serviceGroups, packageTemplates, productGroups, products, staff] = await Promise.all([
+  const [primaryPage, allocationPage, [services, serviceGroups, packageTemplates, productGroups, products, staff]] = await Promise.all([
+    collection ? page(collection) : undefined,
+    query.section === 'deposits' ? page('allocations', query.allocationPage) : undefined,
+    Promise.all([
     Service.find(scope).lean(),
     user.role==='OWNER' && ['services','package_catalog'].includes(query.section) ? ServiceGroup.find(scope).select('name').sort({name:1}).lean() : [],
     PackageTemplate.find(scope).lean(),
     query.section === 'cashier' && finance ? ProductGroup.find(scope).select('name').lean() : [],
     query.section === 'cashier' && finance ? Product.find({ ...scope, active: true }).select('name sku unit groupId price stock active').lean() : [],
     User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } }).select(fields.staff).lean(),
+    ]),
   ]);
+  if (collection) pages[collection] = primaryPage;
+  if (allocationPage) pages.allocations = allocationPage;
   const appointments: Row[] = query.section === 'overview'
     ? await Appointment.find({ ...filters.appointments, status: 'CONFIRMED', startAt: { $gte: new Date() } }).sort({ startAt: 1, _id: 1 }).limit(6).lean()
     : listed('appointments');
@@ -145,10 +149,12 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     { _id: { $in: [...appointments.map(a => a.treatmentId), ...listed('uses').map(u => u.treatmentId)].filter(Boolean) } },
     { invoiceId: { $in: invoices.map(i => i._id) } },
   ] }).lean();
-  const packageInvoices = await Invoice.find({ ...scope, _id: { $in: treatments.map(t => t.invoiceId) } }).select('_id serviceId dueDate total paid').lean();
+  const customerRefs = [...appointments, ...invoices, ...deposits, ...treatments, ...listed('cash'), ...listed('uses')].map(r => r.customerId).filter(Boolean);
+  const [packageInvoices, customers] = await Promise.all([
+    Invoice.find({ ...scope, _id: { $in: treatments.map(t => t.invoiceId) } }).select('_id serviceId dueDate total paid').lean(),
+    Customer.find({ ...scope, _id: { $in: [...customerRefs, ...listed('customers').map(c => c._id), ...auditIds('customerId'), ...(query.customer ? [query.customer] : [])] } }).lean(),
+  ]);
   const packages = treatments.map(t => { const bill = packageInvoices.find(i => String(i._id) === String(t.invoiceId)); return { ...t, serviceId: t.serviceId || bill?.serviceId, paymentDueDate: bill?.dueDate, paymentOverdue: !!bill?.dueDate && bill.dueDate < today && bill.paid < bill.total }; });
-  const customerRefs = [...appointments, ...invoices, ...deposits, ...packages, ...listed('cash'), ...listed('uses')].map(r => r.customerId).filter(Boolean);
-  const customers = await Customer.find({ ...scope, _id: { $in: [...customerRefs, ...listed('customers').map(c => c._id), ...auditIds('customerId'), ...(query.customer ? [query.customer] : [])] } }).lean();
   if (pages.invoices) pages.invoices.rows = listed('invoices').map(i => ({ ...i, status: invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
   if (pages.treatments) pages.treatments.rows = listed('treatments').map(t => packages.find(p => String(p._id) === String(t._id)) || t);
   const spaObjectId = new mongoose.Types.ObjectId(user.spaId);

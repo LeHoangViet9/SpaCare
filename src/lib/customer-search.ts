@@ -5,10 +5,12 @@ import { customerFilter, customerQuery } from './customer-query';
 
 export async function findCustomerPage(spaId: string, query: ReturnType<typeof customerQuery>, user?: Actor) {
   const filter = customerFilter(spaId, query.search, query.id);
-  const total = await Customer.countDocuments(filter);
-  const page = Math.min(query.page, Math.max(1, Math.ceil(total / query.pageSize)));
-  const customers = await Customer.find(filter).select('name phone notes consultantId createdAt updatedAt')
+  const readRows = (page: number) => Customer.find(filter).select('name phone notes consultantId createdAt updatedAt')
     .sort({ createdAt: -1, _id: -1 }).skip((page - 1) * query.pageSize).limit(query.pageSize).lean();
+  const [total, requestedRows] = await Promise.all([Customer.countDocuments(filter), readRows(query.page)]);
+  const page = Math.min(query.page, Math.max(1, Math.ceil(total / query.pageSize)));
+  // Preserve last-page clamping when a filter/delete makes the requested page disappear.
+  const customers = page === query.page ? requestedRows : await readRows(page);
   if (!user || user.spaId !== spaId) return { customers, total, page, pageSize: query.pageSize };
   const now = new Date();
   const scope = { spaId: new mongoose.Types.ObjectId(spaId), customerId: { $in: customers.map(c => c._id) },
