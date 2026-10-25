@@ -1954,3 +1954,11 @@ label textarea { margin-top: 8px; }
 .customer-history-tabs button[aria-pressed="true"] { background: #356454; color: #fff; box-shadow: 0 2px 5px #253d3715; }
 .customer-history-title { margin-bottom: 12px; font-size: 17px; }
 @media (max-width: 360px) { .customer-history-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+
+/* Identify opening imports independently of their payment status. */
+.invoice-import-badge { display: inline-flex; align-self: flex-start; width: fit-content; padding: 4px 9px; border: 1px solid #b9cce8; border-radius: 6px; background: #e8f0ff; color: #244979; font-size: 12px; font-weight: 700; line-height: 1.4; }
+.responsive-table tbody tr:has([data-invoice-origin="opening"]) { background: #f1f6ff; }
+.responsive-table tbody tr:has([data-invoice-origin="opening"]) > td { background: #f1f6ff; }
+.responsive-table tbody tr:has([data-invoice-origin="opening"]) > td:first-child { box-shadow: inset 3px 0 #6385b7; }
+.invoice-import-note { padding: 12px 14px; border: 1px solid #c7d7ee; border-left: 3px solid #6385b7; border-radius: 8px; background: #f1f6ff; color: #244979; line-height: 1.6; }
