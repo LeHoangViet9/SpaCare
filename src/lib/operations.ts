@@ -151,7 +151,7 @@ const schemas = {
   extendTreatmentHold: z.object({ id: objectId, holdUntil: dateOnly, reason: text }),
   resumeTreatment: z.object({ id: objectId, reason: text, expiresOn: dateOnly.optional() }),
   openDay: z.object({ day: dateOnly, opening: zeroMoney }),
-  closeDay: z.object({ day: dateOnly, counted: zeroMoney, note }),
+  closeDay: z.object({ day: dateOnly, counted: zeroMoney, note, expectedPreview:z.number().int().optional() }),
   reopenDay: z.object({ day: dateOnly, reason: text }),
 };
 
@@ -1271,7 +1271,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             entries
               .filter(e => e.method === method)
               .reduce((s, e) => s + (e.direction === 'IN' ? e.amount : -e.amount), 0);
-          target.expected = target.opening + net('CASH');
+          const expected=target.opening + net('CASH');
+          ensure(d.expectedPreview===undefined || d.expectedPreview===expected,'Thu chi đã thay đổi từ lúc xem trước. Tải lại và đối chiếu trước khi chốt.',409);
+          target.expected = expected;
           target.bankNet = net('BANK_TRANSFER');
           target.counted = d.counted;
           target.difference = d.counted - target.expected;

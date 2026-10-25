@@ -9,3 +9,13 @@ assert.ok(html.includes('grid-column:27 / span 1;grid-row:1'));
 assert.ok(html.includes('grid-column:27 / span 1;grid-row:2'));
 assert.ok(!html.includes('outside-hours'));
 assert.ok(html.includes('22:00'));
+
+assert.ok(html.includes('agenda-mobile-day'));
+assert.equal((html.match(/class="agenda-mobile-visit"/g)||[]).length,2);
+assert.ok(html.includes('Lịch theo giờ ngày'));
+assert.ok(!html.includes('agenda-mobile-complete'));
+const ownerHtml=renderToStaticMarkup(createElement(AppointmentAgenda,{rows:[{...rows[0],staffId:undefined}],data:{user:{id:'owner',role:'OWNER'},staff:[],customers:[{_id:'customer',name:'Khách test',phone:'0912345678'}],services:[{_id:'service',name:'Dịch vụ dài'}]},onCustomer:()=>{},onComplete:()=>{},busy:true}));
+assert.ok(ownerHtml.includes('Chưa phân công'));
+assert.ok(ownerHtml.includes('href="tel:0912345678"'));
+assert.ok(ownerHtml.includes('agenda-mobile-complete'));
+assert.ok(ownerHtml.includes('disabled=""'));

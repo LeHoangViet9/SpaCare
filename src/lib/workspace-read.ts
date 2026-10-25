@@ -121,6 +121,20 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     ]),
   ]);
   if (collection) pages[collection] = primaryPage;
+  if(finance && pages.days) {
+    const openDays=listed('days').filter(day=>day.status==='OPEN');
+    const flows=openDays.length ? await CashEntry.aggregate([
+      {$match:{spaId:new mongoose.Types.ObjectId(user.spaId),day:{$in:openDays.map(day=>day.day)}}},
+      {$group:{_id:{day:'$day',method:'$method',direction:'$direction'},amount:{$sum:'$amount'}}},
+    ]) : [];
+    pages.days.rows=listed('days').map(day=>{
+      if(day.status!=='OPEN') return day;
+      const sum=(method:string,direction:string)=>flows.filter(row=>row._id.day===day.day && row._id.method===method && row._id.direction===direction).reduce((n,row)=>n+row.amount,0);
+      const cashIn=sum('CASH','IN'),cashOut=sum('CASH','OUT');
+      return {...day,liveExpected:day.opening+cashIn-cashOut,cashIn,cashOut,liveBankNet:sum('BANK_TRANSFER','IN')-sum('BANK_TRANSFER','OUT')};
+    });
+  }
+
   if (allocationPage) pages.allocations = allocationPage;
   const appointments: Row[] = query.section === 'overview'
     ? await Appointment.find({ ...filters.appointments, status: 'CONFIRMED', startAt: { $gte: new Date() } }).sort({ startAt: 1, _id: 1 }).limit(6).lean()

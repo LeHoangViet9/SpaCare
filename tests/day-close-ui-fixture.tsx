@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {FormModal} from '../src/components/workspace';
+const html=renderToStaticMarkup(<FormModal spec={{title:'Chốt sổ',action:'closeDay',fields:[{key:'counted',label:'Đã đếm',type:'number',min:0},{key:'note',label:'Ghi chú',optional:true}],defaults:{day:'2026-10-25',opening:100000,cashIn:500000,cashOut:200000,expectedPreview:400000}}} catalogs={{}} busy={false} error="" onClose={()=>{}} onSubmit={()=>{}}/>);
+assert.equal((html.match(/name="counted"/g)||[]).length,1);
+assert.ok(html.includes('400.000 đ'));
+assert.ok(html.includes('Nhập số tiền đã đếm để xem chênh lệch.'));
+assert.ok(html.includes('Xác nhận chốt sổ'));
+assert.ok(!html.includes('Khớp sổ'));

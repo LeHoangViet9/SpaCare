@@ -29,7 +29,25 @@ export default function AppointmentAgenda({ rows, data, onCustomer, onComplete, 
     {[...groups].map(([day, visits]) => {
       const staffIds = [...new Set(visits.map(row => row.staffId))];
       return <section key={day}>
-      <h3>{day}</h3><p className="timeline-note">Giờ khách đến; chiều rộng ô không biểu thị thời gian thực hiện.</p>
+      <h3>{day}</h3>
+      <div className="agenda-mobile-day" aria-label={`Lịch theo giờ ngày ${day}`}>
+        <p className="agenda-mobile-count">{visits.length} lịch trong trang này · Theo giờ khách đến</p>
+        {visits.map(row=>{
+          const clock=new Date(row.startAt).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit'});
+          const phone=lookup('customers',row.customerId,'phone');
+          const outside=localMinutes(row.startAt)<OPEN_MINUTES || localMinutes(row.startAt)>CLOSE_MINUTES;
+          return <article className={`agenda-mobile-visit${outside ? ' outside-hours' : ''}`} key={row._id}>
+            <div className="agenda-mobile-visit-head"><time dateTime={row.startAt}>{clock}</time><span className={`badge ${row.status.toLowerCase()}`}>{statuses[row.status] || row.status}</span></div>
+            <button className="text-button agenda-mobile-customer" onClick={()=>onCustomer(row.customerId)}>{lookup('customers',row.customerId)}</button>
+            {phone !== '-' && <a className="agenda-mobile-phone" href={`tel:${phone}`}>{phone}</a>}
+            <p className="agenda-mobile-service">{appointmentServiceName(row,lookup('services',row.serviceId))}</p>
+            <p className="agenda-mobile-staff">Nhân viên: <strong>{row.staffId ? lookup('staff',row.staffId) : 'Chưa phân công'}</strong></p>
+            {outside && <small>Ngoài giờ hoạt động 09:00–22:00</small>}
+            {row.status==='CONFIRMED' && (data.user?.role==='OWNER' || data.user?.cashier || row.staffId===data.user?.id) && <button className="agenda-mobile-complete" disabled={busy} onClick={()=>onComplete(row)}>{row.treatmentId ? 'Hoàn thành & ghi buổi' : 'Hoàn thành & lập hóa đơn'}</button>}
+          </article>;
+        })}
+      </div>
+      <p className="timeline-note agenda-desktop-note">Giờ khách đến; chiều rộng ô không biểu thị thời gian thực hiện.</p>
       <div className="appointment-timeline-scroll" role="region" aria-label={`Lịch hẹn ngày ${day}`} tabIndex={0}>
         <div className="appointment-timeline">
           <div className="timeline-corner">Nhân viên</div>
