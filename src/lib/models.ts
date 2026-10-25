@@ -139,6 +139,7 @@ const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, requ
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
   serviceItems: { type: [serviceItemSchema], default: undefined },
   openingBalance: Boolean, openingDate: String,
@@ -171,7 +172,7 @@ export const Invoice = model('Invoice', {
   total: amount,
   paid: { ...amount, default: 0 },
   dueDate: String,
-  status: { type: String, enum: ['OPEN', 'PARTIALLY_PAID', 'PAID'], default: 'OPEN' },
+  status: { type: String, enum: ['OPEN', 'PARTIALLY_PAID', 'PAID', 'CANCELLED'], default: 'OPEN' },
 }, [[{ spaId: 1, code: 1 }, { unique: true, partialFilterExpression: { code: { $exists: true } } }], [{ spaId: 1, appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $exists: true } } }], [{ spaId: 1, treatmentUseId: 1 }, { unique: true, partialFilterExpression: { treatmentUseId: { $exists: true } } }]]);
 
 // Immutable sources and redemption ledger; balances change only in operations transactions.
@@ -258,7 +259,7 @@ export const Treatment = model(
     durationMonths: Number, startsOn: String, usedSessions: { type: Number, min: 0 },
     totalSessions: Number,
     remaining: Number,
-    status: { type: String, enum: ['ACTIVE', 'PAUSED', 'COMPLETED'], default: 'ACTIVE' },
+    status: { type: String, enum: ['ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED'], default: 'ACTIVE' },
     holdUntil: String,
     holdReason: String,
     heldAt: Date,

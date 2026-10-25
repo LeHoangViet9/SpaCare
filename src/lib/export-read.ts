@@ -14,10 +14,10 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
   const data = await readInvoice(user, id);
   const bill = data.invoice;
   return {
-    filename: `${invoiceCode(bill)}.pdf`, title: bill.openingBalance ? 'CHỨNG TỪ CHUYỂN SỐ DƯ' : 'HÓA ĐƠN BÁN HÀNG',
+    filename: `${invoiceCode(bill)}.pdf`, title: bill.status === 'CANCELLED' ? 'HÓA ĐƠN ĐÃ HỦY' : bill.openingBalance ? 'CHỨNG TỪ CHUYỂN SỐ DƯ' : 'HÓA ĐƠN BÁN HÀNG',
     subtitle: 'Thanh Thư Spa',
     receipt: { name: 'Thanh Thư Spa', address: 'CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên', phone: '0329 357 116', cashier: bill.creatorName || 'Chưa ghi nhận' },
-    notes: [...(bill.openingBalance ? [bill.kind === 'PACKAGE' ? 'Liệu trình đã trả đủ trước chuyển đổi. Chưa có giá mua gốc; 0đ là không thu thêm, không phải gói tặng.' : 'Công nợ chuyển từ sổ cũ, không phải lần bán hoặc xuất kho mới.'] : []), 'Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.',
+    notes: [...(bill.status === 'CANCELLED' ? [`Đã hủy, không tính công nợ. Giá trị trước hủy: ${money(bill.cancelledTotal)}. Lý do: ${bill.cancelReason || '-'}`] : []), ...(bill.openingBalance ? [bill.kind === 'PACKAGE' ? 'Liệu trình đã trả đủ trước chuyển đổi. Chưa có giá mua gốc; 0đ là không thu thêm, không phải gói tặng.' : 'Công nợ chuyển từ sổ cũ, không phải lần bán hoặc xuất kho mới.'] : []), 'Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.',
       'Số tiền phản ánh dữ liệu tại thời điểm xuất. Hóa đơn còn nợ không phải xác nhận đã thanh toán.'],
     tables: [
       { columns: ['Thông tin', 'Chi tiết'], widths: [0.28, 0.72], rows: [

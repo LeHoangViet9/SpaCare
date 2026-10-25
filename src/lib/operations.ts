@@ -108,6 +108,7 @@ const schemas = {
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature, remainingBefore }),
   completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
+  cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text,
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
@@ -156,7 +157,7 @@ export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
   'serviceGroup',
-  'updateInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
+  'updateInvoice', 'cancelInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
@@ -235,6 +236,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const get = async (model: mongoose.Model<any>, id: string) => {
         const doc = await model.findOne({ ...scope, _id: id }).session(session);
         ensure(doc, 'Không tìm thấy dữ liệu trong spa này.', 404);
+        if(model === Invoice) ensure(doc.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể phát sinh thao tác mới.',409);
         return doc;
       };
       const today = spaDay();
@@ -879,9 +881,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           linkedInvoiceId = String(invoice._id);
           break;
         }
+        case 'cancelInvoice':
         case 'updateInvoice': {
-          const d = schemas.updateInvoice.parse(data);
+          const cancelling = op === 'cancelInvoice';
+          const d = cancelling ? {...schemas.cancelInvoice.parse(data), description:'', total:0, dueDate:undefined, packageName:undefined, packageType:undefined, totalSessions:undefined, durationMonths:undefined, startsOn:undefined} : schemas.updateInvoice.parse(data);
           target = await get(Invoice,d.id);
+          ensure(target.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể sửa hoặc hủy lại.',409);
           ensure(!target.openingBalance,'Không sửa chứng từ chuyển số dư bằng luồng sửa hóa đơn bán mới.',409);
           ensure(target.updatedAt?.toISOString() === d.expectedUpdatedAt, 'Hóa đơn đã thay đổi. Tải lại trước khi sửa.',409);
           ensure((!target.kind || ['SERVICE','PACKAGE'].includes(target.kind)) && !target.performedAt && !target.treatmentUseId && !target.appointmentId && !target.giftOfInvoiceId, 'Hóa đơn đã thực hiện hoặc có liên kết vận hành, không thể sửa.',409);
@@ -906,6 +911,26 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           if(d.dueDate) dayBounds(d.dueDate);
           appointmentBefore=target.toObject();
           const plan=plans.find(p=>String(p.invoiceId)===String(target._id));
+          if(cancelling) {
+            appointmentBefore!.family=family.map(invoice=>invoice.toObject());
+            appointmentBefore!.treatments=plans.map(plan=>plan.toObject());
+            for(const invoice of family) {
+              invoice.cancelledTotal=invoice.total;
+              invoice.total=0;
+              invoice.status='CANCELLED';
+              invoice.cancelledAt=new Date();
+              invoice.cancelledBy=actor.id;
+              invoice.cancelReason=d.reason;
+              await invoice.save({session});
+            }
+            for(const plan of plans) {
+              plan.status='CANCELLED';
+              await plan.save({session});
+            }
+            target=family.find(invoice=>String(invoice._id)===String(target._id))!;
+            linkedInvoiceId=String(target._id);
+            break;
+          }
           if(target.kind==='PACKAGE') {
             ensure(plan && d.packageName && d.packageType,'Cần nhập đầy đủ thông tin liệu trình.');
             ensure(d.packageType==='TIME' ? !!d.durationMonths && !!d.startsOn && d.totalSessions===undefined : !!d.totalSessions && d.durationMonths===undefined && !d.startsOn,'Chọn số buổi hoặc thời gian, không nhập cả hai.');

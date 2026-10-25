@@ -38,7 +38,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const signatures = await TreatmentUse.find(signatureFilter).select('+signature').sort({ performedAt: -1, _id: -1 }).skip((signaturePage - 1) * 5).limit(5).lean();
   const events = await Audit.find({ ...scope, $or: [{ targetId: invoice._id }, { 'details.invoiceId': id }, ...(use ? [{ targetId: use._id }, { 'details.treatmentUseId': String(use._id) }] : [])] }).sort({ createdAt: -1 }).select('action actorId createdAt details.amount details.reason details.note').lean();
   return { giftCards, treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
-    canCompleteService: !!((user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
+    canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
     signatures: signatures.map(s => ({ id: s._id, signature: s.signature || null, sessionNumber: s.sessionNumber,
       packageName: packages.find(p => String(p._id) === String(s.treatmentId))?.name,
       performedAt: s.performedAt })), signaturePage, signatureTotal,

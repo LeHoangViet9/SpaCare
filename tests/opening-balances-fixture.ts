@@ -1,3 +1,4 @@
+import { confirmedHairRemovalName } from '../src/lib/hair-removal-import';
 import { hashPassword } from '../src/lib/password';
 import { parseOpening, inspectOpening, writeOpening, openingSummary, checkOpeningTarget } from '../src/lib/opening-balances';
 import { packageLabel, nextSessionNumber } from '../src/lib/treatment-rules';
@@ -75,3 +76,41 @@ assert.equal(state.Customer.find(c=>c.name==='Blank phone two').phone,undefined)
 const blankTreatment=state.Treatment.find(t=>t.customerId===blank._id);assert.match(blankTreatment.name,/Kèm mặt nạ/);assert.match(blankTreatment.name,/Buổi được tặng/);
 assert.ok((await inspectOpening(state.User[0],blankPhones)).errors.some(e=>e.includes('thiếu SĐT')));
 console.log('Opening balances: validation, same-spa matching, historical settlement, replay, stale approval, conflict and full rollback verified with model doubles.');
+
+const timeRaw={...raw,customers:[{name:'Time opening customer',phone:'0900000099',sourceStartDate:'2024-02-29',treatments:[{serviceName:'Service',packageType:'TIME',durationMonths:36,historicalPaymentStatus:'FULLY_PAID',createNewReceipt:false}]}]};
+const timeInput=parseOpening(timeRaw);
+assert.equal(openingSummary(timeInput).remainingSessions,0);
+assert.throws(()=>parseOpening({...timeRaw,customers:[{...timeRaw.customers[0],treatments:[{...timeRaw.customers[0].treatments[0],remaining:10}]}]}));
+const timeReport=await inspectOpening(state.User[0],timeInput);
+assert.deepEqual(timeReport.errors,[]);
+const timeBefore=clone(state);failModel='Treatment';
+await assert.rejects(writeOpening(identity,timeInput,{},timeReport.approval,'fixture-time-opening-batch'),/INJECTED_LEDGER_FAILURE/);
+failModel='';assert.deepEqual(state,timeBefore);
+await writeOpening(identity,timeInput,{},timeReport.approval,'fixture-time-opening-batch');
+await writeOpening(identity,timeInput,{},timeReport.approval,'fixture-time-opening-batch');
+const timeCustomer=state.Customer.find(c=>c.phone==='0900000099');
+const timeTreatments=state.Treatment.filter(t=>t.customerId===timeCustomer._id);
+assert.equal(timeTreatments.length,1);assert.equal(timeTreatments[0].packageType,'TIME');
+assert.equal(timeTreatments[0].expiresOn,'2027-02-28');assert.equal(timeTreatments[0].durationMonths,36);
+assert.equal(timeTreatments[0].remaining,undefined);assert.equal(state.Payment.length,0);assert.equal(state.CashEntry.length,0);
+
+// Owner-confirmed aliases reuse the existing customer, without weakening name checks.
+for(const [phone,source,existing] of [
+ ['0366575893','H\u01b0\u01a1ng Lan Kim Lan','H\u01b0\u01a1ng Lan KL'],
+ ['0973425688','Ch\u1ecb Ng\u1ea7n X3','C Ng\u1ea7n x3'],
+ ['0399319594','Ho\u00e0i Thu V\u0103n \u0110\u1ee9c','Ho\u00e0i Thu'],
+]){
+ assert.equal(confirmedHairRemovalName(source,phone),existing);
+ assert.equal(confirmedHairRemovalName(source,'0900000088'),source);
+ assert.equal(confirmedHairRemovalName('Unknown customer',phone),'Unknown customer');
+ state.Customer.push({_id:new mongoose.Types.ObjectId().toString(),spaId,name:existing,phone});
+ const aliasInput=parseOpening({...timeRaw,customers:[{...timeRaw.customers[0],phone,name:confirmedHairRemovalName(source,phone)}]});
+ const aliasReport=await inspectOpening(state.User[0],aliasInput);
+ assert.deepEqual(aliasReport.errors,[]);
+ assert.ok(aliasReport.customers[0].customerId);
+ const beforeCustomers=state.Customer.length;
+ await writeOpening(identity,aliasInput,{},aliasReport.approval,'fixture-alias-'+phone);
+ assert.equal(state.Customer.length,beforeCustomers,'no duplicate customer for confirmed alias');
+ const badInput=parseOpening({...timeRaw,customers:[{...timeRaw.customers[0],phone,name:'Unknown customer'}]});
+ assert.ok((await inspectOpening(state.User[0],badInput)).errors.length,'unconfirmed name still blocks import');
+}

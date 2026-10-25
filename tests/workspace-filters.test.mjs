@@ -30,3 +30,10 @@ test('date presets handle month and year boundaries', () => {
   assert.deepEqual(datePreset('week', '2026-12-29'), { from: '2026-12-29', to: '2027-01-04' });
   assert.deepEqual(datePreset('month', '2028-02-29'), { from: '2028-02-01', to: '2028-02-29' });
 });
+
+ test('cancelled invoices have a separate filter and never appear as paid', () => {
+  const cancelled = listFilter('invoices', query('invoices', {status:'CANCELLED'}), '2026-10-25');
+  assert.ok(cancelled.$and.some(c => c.status === 'CANCELLED'));
+  const paid = listFilter('invoices', query('invoices', {status:'PAID'}), '2026-10-25');
+  assert.ok(paid.$and.some(c => c.status?.$ne === 'CANCELLED'));
+});

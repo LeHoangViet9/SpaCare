@@ -6,7 +6,8 @@ export function listFilter(collection: string, q: ListFilters, today: string): R
       const debt = { $expr: { $gt: ['$total', '$paid'] } };
       if (q.status === 'DEBT') clauses.push(debt);
       if (q.status === 'OVERDUE') clauses.push(debt, { dueDate: { $gt: '', $lt: today } });
-      if (q.status === 'PAID') clauses.push({ $expr: { $gte: ['$paid', '$total'] } });
+      if (q.status === 'PAID') clauses.push({ $expr: { $gte: ['$paid', '$total'] } }, { status: { $ne: 'CANCELLED' } });
+      if (q.status === 'CANCELLED') clauses.push({ status: 'CANCELLED' });
       if (q.status === 'UNPAID') clauses.push({ total: { $gt: 0 }, paid: 0 });
       if (q.status === 'PARTIALLY_PAID') clauses.push(debt, { paid: { $gt: 0 } });
       if (['SESSION', 'GIFT'].includes(q.status)) clauses.push({ kind: q.status });

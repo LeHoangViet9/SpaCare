@@ -2,7 +2,7 @@ import { z } from 'zod';
 type Choice = [string, string];
 export const statusChoices: Record<string, Choice[]> = {
   appointments: [['CONFIRMED', 'Đã đặt'], ['POSTPONED', 'Đang hoãn'], ['COMPLETED', 'Hoàn thành'], ['CANCELLED', 'Đã hủy']],
-  invoices: [['DEBT', 'Còn nợ'], ['OVERDUE', 'Nợ quá hạn'], ['UNPAID', 'Chưa trả'], ['PARTIALLY_PAID', 'Trả một phần'], ['PAID', 'Đã thanh toán'], ['SESSION', 'Buổi liệu trình 0đ'], ['GIFT', 'Quà tặng']],
+  invoices: [['DEBT', 'Còn nợ'], ['OVERDUE', 'Nợ quá hạn'], ['UNPAID', 'Chưa trả'], ['PARTIALLY_PAID', 'Trả một phần'], ['PAID', 'Đã thanh toán'], ['CANCELLED', 'Đã hủy'], ['SESSION', 'Buổi liệu trình 0đ'], ['GIFT', 'Quà tặng']],
   deposits: [['AVAILABLE', 'Còn số dư'], ['EXHAUSTED', 'Đã dùng hết']],
   packages: [['ACTIVE', 'Đang dùng'], ['PAUSED', 'Bảo lưu'], ['COMPLETED', 'Đã hết buổi'], ['GIFT', 'Gói được tặng']],
   services: [['ACTIVE', 'Đang hoạt động'], ['INACTIVE', 'Đã ngừng']],

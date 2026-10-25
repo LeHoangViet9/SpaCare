@@ -179,6 +179,35 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await CashEntry.countDocuments(scope),0);
       await assert.rejects(operate(a,'updateInvoice',{id:result.created.invoices[0],expectedUpdatedAt:(await Invoice.findById(result.created.invoices[0]))!.updatedAt.toISOString(),description:'Bad edit',total:100,reason:'Test'},randomUUID()));
     });
+    await t.test('cancel unpaid invoices: owner, replay, zero debt, retained history and blocked mutations', async()=>{
+      const created=await call('invoice',{customerId:customer.id,serviceId:service.id});
+      const invoice=await Invoice.findById(created.id);
+      const payload={id:created.id,expectedUpdatedAt:invoice!.updatedAt.toISOString(),reason:'Nhập trùng hóa đơn'};
+      await assert.rejects(operate(employee,'cancelInvoice',payload,randomUUID()),/Chỉ chủ spa/);
+      await assert.rejects(call('cancelInvoice',{...payload,expectedUpdatedAt:'2000-01-01T00:00:00Z'}),/đã thay đổi/);
+      const key=randomUUID();await call('cancelInvoice',payload,key);await call('cancelInvoice',payload,key);
+      const cancelled=await Invoice.findById(created.id);
+      assert.equal(cancelled!.status,'CANCELLED');assert.equal(cancelled!.total-cancelled!.paid,0);
+      assert.equal(cancelled!.cancelledTotal,invoice!.total);assert.equal(cancelled!.cancelReason,payload.reason);
+      assert.equal(await Audit.countDocuments({spaId,action:'cancelInvoice',targetId:invoice!._id}),1);
+      await assert.rejects(call('payment',{invoiceId:created.id,amount:1,method:'CASH',receivedConfirmation:true}),/đã hủy/);
+      await assert.rejects(call('completeInvoiceService',{id:created.id,staffId:String(staff._id)}),/đã hủy/);
+      await assert.rejects(call('cancelInvoice',payload),/đã hủy/);
+      const paid=await call('invoice',{customerId:customer.id,serviceId:service.id});
+      await call('payment',{invoiceId:paid.id,amount:1,method:'CASH',receivedConfirmation:true});
+      const fresh=await Invoice.findById(paid.id);
+      await assert.rejects(call('cancelInvoice',{...payload,id:paid.id,expectedUpdatedAt:fresh!.updatedAt.toISOString()}),/giao dịch/);
+      assert.equal((await Invoice.findById(paid.id))!.total,fresh!.total);
+      const template=await call('packageTemplate',{serviceId:service.id,name:'Gói hủy test',totalSessions:3,price:500000});
+      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[{templateId:template.id}],promotion:'Quà test'});
+      const purchase=await Invoice.findById(sale.invoiceId);
+      await call('cancelInvoice',{id:sale.invoiceId,expectedUpdatedAt:purchase!.updatedAt.toISOString(),reason:'Bán nhầm gói'});
+      const family=await Invoice.find({spaId,$or:[{_id:sale.invoiceId},{giftOfInvoiceId:sale.invoiceId}]});
+      assert.equal(family.length,2);assert.ok(family.every(i=>i.status==='CANCELLED' && i.total===0));
+      const plans=await Treatment.find({spaId,invoiceId:{$in:family.map(i=>i._id)}});
+      assert.equal(plans.length,2);assert.ok(plans.every(p=>p.status==='CANCELLED'));
+
+    });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});
       const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
