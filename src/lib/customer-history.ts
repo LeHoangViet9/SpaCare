@@ -20,7 +20,7 @@ export async function readCustomerHistory(user: Actor, id: string, kind: 'invoic
   const services = await Service.find({ ...scope, _id: { $in: rows.map(r => r.serviceId).filter(Boolean) } }).select('name').lean();
   const people = await User.find({ ...scope, _id: { $in: [...rows.map(r => r.staffId), customer.consultantId].filter(Boolean) } }).select('name').lean();
   const invoiceMatch = (Invoice.find(invoiceFilter) as any).cast(Invoice);
-  const balances = await Invoice.aggregate([{ $match: invoiceMatch }, { $group: { _id: null, count: { $sum: 1 }, debt: { $sum: { $subtract: ['$total', '$paid'] } } } }]);
+  const balances = await Invoice.aggregate([{ $match: {...invoiceMatch,status:{$ne:'CANCELLED'}} }, { $group: { _id: null, count: { $sum: 1 }, debt: { $sum: { $subtract: ['$total', '$paid'] } } } }]);
   const canSeeCredit = user.role === 'OWNER' || user.cashier || !!balances[0]?.count;
   const credit = canSeeCredit ? await Deposit.aggregate([{ $match: (Deposit.find({ ...scope, customerId: id }) as any).cast(Deposit) }, { $group: { _id: null, balance: { $sum: '$balance' } } }]) : [];
   const appointments = await Appointment.countDocuments(appointmentsFilter);

@@ -208,6 +208,34 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(plans.length,2);assert.ok(plans.every(p=>p.status==='CANCELLED'));
 
     });
+    await t.test('owner corrects performed unpaid services; cancellation removes unapproved commission and blocks cashier', async()=>{
+      const created=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:service.id,total:300000}]});
+      const invoice=await Invoice.findById(created.id);
+      const edit={id:created.id,expectedUpdatedAt:invoice!.updatedAt.toISOString(),description:'Sửa giá nhập nhầm',total:250000,reason:'Nhập sai giá'};
+      await assert.rejects(operate({...employee,cashier:true},'updateInvoice',edit,randomUUID()),/Chỉ chủ spa/);
+      await call('updateInvoice',edit);
+      const fresh=await Invoice.findById(created.id);
+      assert.equal(fresh!.total,250000);assert.equal(fresh!.serviceItems[0].total,250000);
+      assert.equal(String(fresh!.performedBy),String(staff._id));
+      const replacement=await call('service',{name:'Dịch vụ sửa tự động',price:180000,commission:17000});
+      await call('updateInvoice',{...edit,expectedUpdatedAt:fresh!.updatedAt.toISOString(),total:180000,items:[{serviceId:replacement.id,total:180000}]});
+      const changed=await Invoice.findById(created.id);
+      assert.equal(String(changed!.serviceId),replacement.id);
+      assert.equal(changed!.serviceItems[0].total,180000);
+      assert.equal((await Commission.findOne({spaId,invoiceId:created.id}))!.amount,17000);
+      const commission=await Commission.findOne({spaId,invoiceId:created.id});
+      const cancel={id:created.id,expectedUpdatedAt:changed!.updatedAt.toISOString(),reason:'Hóa đơn trùng'};
+      await assert.rejects(operate({...employee,cashier:true},'cancelInvoice',cancel,randomUUID()),/Chỉ chủ spa/);
+      const key=randomUUID();await call('cancelInvoice',cancel,key);await call('cancelInvoice',cancel,key);
+      assert.equal((await Invoice.findById(created.id))!.status,'CANCELLED');
+      assert.equal((await Commission.findById(commission!._id))!.amount,0);
+      assert.ok((await Commission.findById(commission!._id))!.cancelledAt);
+      const customerView=await readCustomerHistory(actor,customer.id,'invoices',1);
+      assert.ok(customerView.rows.some(row=>String(row._id)===created.id && row.status==='CANCELLED'));
+      const audit=await Audit.findOne({spaId,action:'cancelInvoice',targetId:invoice!._id});
+      assert.equal(audit!.details.before.commissions[0].amount,commission!.amount);
+      assert.equal(audit!.details.after.status,'CANCELLED');
+    });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});
       const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});

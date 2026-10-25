@@ -19,7 +19,7 @@ export function salaryStaffScope(scope: Record<string, any>, staffIds: string[])
   return { ...scope, staffId: { $in: staffIds.filter(id => !scope.staffId || String(scope.staffId) === id) } };
 }
 export function commissionPipeline(filter: Record<string, unknown>): any[] {
-  const match = (Commission.find(filter) as any).cast(Commission);
+  const match = (Commission.find({...filter,cancelledAt:{$exists:false}}) as any).cast(Commission);
   return [{$match:match}, {$addFields:{category:{$ifNull:['$category','SERVICE']}}},
     {$unionWith:{coll:SaleCommission.collection.name,pipeline:[{$match:match}]}},
     {$unionWith:{coll:SharedSaleCommission.collection.name,pipeline:[{$match:match}]}}];

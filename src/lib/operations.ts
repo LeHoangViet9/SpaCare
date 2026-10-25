@@ -1,3 +1,4 @@
+import { repriceInvoiceItems } from './invoice-correction';
 import { sequenceInvoiceCode } from './invoice-code';
 import { queueInvoiceNotifications } from './notification-events';
 import { appointmentServiceIds } from './appointment-services';
@@ -109,7 +110,7 @@ const schemas = {
   completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature, remainingBefore }),
   completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
-  updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text,
+  updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
@@ -330,7 +331,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       };
       const pendingCommissions = async (staffId: string, month: string) => {
         const filter = {...scope,staffId,payrollId:{$exists:false},earnedAt:{$lt:monthBounds(month).end}};
-        const service = await Commission.find(filter).sort({earnedAt:1,_id:1}).session(session);
+        const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         const shared = await SharedSaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         return [...service,...sale,...shared];
@@ -884,21 +885,25 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'cancelInvoice':
         case 'updateInvoice': {
           const cancelling = op === 'cancelInvoice';
-          const d = cancelling ? {...schemas.cancelInvoice.parse(data), description:'', total:0, dueDate:undefined, packageName:undefined, packageType:undefined, totalSessions:undefined, durationMonths:undefined, startsOn:undefined} : schemas.updateInvoice.parse(data);
+          const d = cancelling ? {...schemas.cancelInvoice.parse(data), description:'', total:0, items:undefined, dueDate:undefined, packageName:undefined, packageType:undefined, totalSessions:undefined, durationMonths:undefined, startsOn:undefined} : schemas.updateInvoice.parse(data);
           target = await get(Invoice,d.id);
           ensure(target.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể sửa hoặc hủy lại.',409);
           ensure(!target.openingBalance,'Không sửa chứng từ chuyển số dư bằng luồng sửa hóa đơn bán mới.',409);
           ensure(target.updatedAt?.toISOString() === d.expectedUpdatedAt, 'Hóa đơn đã thay đổi. Tải lại trước khi sửa.',409);
-          ensure((!target.kind || ['SERVICE','PACKAGE'].includes(target.kind)) && !target.performedAt && !target.treatmentUseId && !target.appointmentId && !target.giftOfInvoiceId, 'Hóa đơn đã thực hiện hoặc có liên kết vận hành, không thể sửa.',409);
+          const serviceCorrection = !target.kind || target.kind === 'SERVICE';
+          ensure((serviceCorrection || target.kind === 'PACKAGE') && (serviceCorrection || (!target.performedAt && !target.appointmentId)) && !target.treatmentUseId && !target.treatmentId && !target.giftOfInvoiceId, 'Hóa đơn đã thực hiện hoặc có liên kết vận hành, không thể sửa.',409);
           ensure(!await CashCard.exists({ ...scope, sourceInvoiceId: target._id }).session(session), 'Hóa đơn đã phát hành thẻ tặng, không thể sửa.', 409);
           const family = await Invoice.find({...scope,$or:[{_id:target._id},{giftOfInvoiceId:target._id}]}).session(session);
           const ids=family.map(i=>i._id);
           for(const invoice of family) {
-            ensure(!invoice.paid && !invoice.refunded && !invoice.performedAt && !invoice.saleCommissionAccrued,'Hóa đơn đã phát sinh giao dịch, không thể sửa.',409);
+            ensure(!invoice.paid && !invoice.refunded && (serviceCorrection || !invoice.performedAt) && !invoice.saleCommissionAccrued,'Hóa đơn đã phát sinh giao dịch, không thể sửa.',409);
           }
-          for(const model of [Payment,Allocation,CashCardUse,Commission,SaleCommission,SharedSaleCommission]) {
+          for(const model of [Payment,Allocation,CashCardUse,SaleCommission,SharedSaleCommission]) {
             ensure(!await model.exists({...scope,invoiceId:{$in:ids}}).session(session),'Hóa đơn đã có lịch sử giao dịch hoặc hoa hồng, không thể sửa.',409);
           }
+          const serviceCommissions = await Commission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          ensure(serviceCorrection || !serviceCommissions.length, 'Hóa đơn đã có hoa hồng, không thể sửa trực tiếp.',409);
+          if(cancelling) ensure(serviceCommissions.every(c=>!c.payrollId), 'Hoa hồng đã thuộc bảng lương duyệt/đã chi. Cần xử lý bảng lương trước khi hủy hóa đơn.',409);
           const plans=await Treatment.find({...scope,invoiceId:{$in:ids}}).session(session);
           ensure(target.kind==='PACKAGE' || !plans.length,'Hóa đơn có liệu trình cũ cần đối soát riêng, không thể sửa trực tiếp.',409);
           for(const plan of plans) {
@@ -912,6 +917,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           appointmentBefore=target.toObject();
           const plan=plans.find(p=>String(p.invoiceId)===String(target._id));
           if(cancelling) {
+            appointmentBefore!.commissions=serviceCommissions.map(c=>c.toObject());
+            for(const commission of serviceCommissions) {
+              commission.amount=0;
+              commission.cancelledAt=new Date();
+              await commission.save({session});
+            }
             appointmentBefore!.family=family.map(invoice=>invoice.toObject());
             appointmentBefore!.treatments=plans.map(plan=>plan.toObject());
             for(const invoice of family) {
@@ -941,7 +952,36 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             Object.assign(plan!,snapshot,{name:d.packageName});
             await plan!.save({session});
           } else ensure(!d.packageType && !d.packageName && d.totalSessions===undefined && d.durationMonths===undefined && !d.startsOn,'Hóa đơn dịch vụ không có thông tin gói.');
-          target.description=d.description; target.total=d.total; target.dueDate=d.dueDate; target.status=invoiceState(d.total,0);
+          if(serviceCorrection) {
+            ensure(d.total > 0, 'Giá dịch vụ phải lớn hơn 0; dùng Hủy hóa đơn nếu nhập nhầm.');
+            if(target.serviceItems?.length) target.serviceItems=repriceInvoiceItems(target.serviceItems.map((item:any)=>item.toObject()),d.total);
+          }
+          if(d.items) {
+            ensure(serviceCorrection, 'Chỉ sửa danh sách dịch vụ của hóa đơn dịch vụ lẻ.');
+            ensure(new Set(d.items.map(item=>item.serviceId)).size === d.items.length, 'Không chọn trùng dịch vụ.');
+            const items=[];
+            for(const item of d.items) {
+              const service=await get(Service,item.serviceId);
+              ensure(service.active && item.total > 0,'Dịch vụ phải đang hoạt động và có giá lớn hơn 0.');
+              // Keep the original fixed rate when the service is unchanged.
+              const previous=target.serviceItems?.find((old:any)=>String(old.serviceId)===item.serviceId);
+              const rate=previous?.commission ?? (String(target.serviceId)===item.serviceId ? target.commission : undefined) ?? service.commission ?? 0;
+              items.push({serviceId:service._id,name:service.name,total:item.total,commission:rate});
+            }
+            ensure(money(items.reduce((n,item)=>n+item.total,0))===d.total,'Tổng giá từng dịch vụ không khớp hóa đơn.');
+            const amount=money(items.reduce((n,item)=>n+item.commission,0),true);
+            for(const commission of serviceCommissions) {
+              ensure(!commission.payrollId || commission.amount===amount,'Hoa hồng đã chốt lương; không đổi dịch vụ làm thay đổi hoa hồng.',409);
+              if(!commission.payrollId) {
+                appointmentBefore!.commissions=serviceCommissions.map(c=>c.toObject());
+                commission.amount=amount;commission.serviceName=items.map(item=>item.name).join(' + ');
+                commission.serviceId=items.length===1 ? items[0].serviceId : undefined;
+                await commission.save({session});
+              }
+            }
+            target.serviceItems=items;target.serviceId=items.length===1 ? items[0].serviceId : undefined;target.commission=amount;
+          }
+          target.description=d.items && d.description===target.description ? target.serviceItems.map((item:any)=>item.name).join(' + ') : d.description; target.total=d.total; target.dueDate=d.dueDate; target.status=invoiceState(d.total,0);
           await target.save({session});
           linkedInvoiceId=String(target._id);
           break;
@@ -1235,6 +1275,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       if (appointmentBefore) {
         details.before = appointmentBefore;
         details.after = target.toObject();
+        if(op === 'updateInvoice' || op === 'cancelInvoice') details.commissionsAfter = await Commission.find({...scope,invoiceId:target._id}).session(session).lean();
         if(op === 'updateInvoice') details.treatmentAfter = await Treatment.findOne({...scope,invoiceId:target._id}).session(session).lean();
       }
       if (financialBefore) {

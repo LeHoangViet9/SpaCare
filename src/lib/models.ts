@@ -289,6 +289,7 @@ export const TreatmentUse = model('TreatmentUse', {
 }, [[{ spaId: 1, appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $exists: true } } }]]);
 
 export const Commission = model('Commission', {
+  cancelledAt: Date,
   staffId: id, staffName: String, serviceId: optionalId, serviceName: String, customerId: id,
   invoiceId: id, category: { type: String, enum: ['SERVICE', 'PACKAGE_SALE'], default: 'SERVICE' },
   sourceType: { type: String, enum: ['APPOINTMENT', 'TREATMENT_USE', 'INVOICE', 'PACKAGE_PAYMENT', 'PACKAGE_ADJUSTMENT'], required: true },
