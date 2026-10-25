@@ -160,7 +160,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const treatments = await Treatment.find({ ...scope, $or: [
     availableTreatmentFilter(), { _id: { $in: listed('treatments').map(t => t._id) } },
     { _id: { $in: auditIds('treatmentId') } },
-    { _id: { $in: [...appointments.map(a => a.treatmentId), ...listed('uses').map(u => u.treatmentId)].filter(Boolean) } },
+    { _id: { $in: [...appointments.flatMap(a => a.treatmentIds?.length ? a.treatmentIds : [a.treatmentId]), ...listed('uses').map(u => u.treatmentId)].filter(Boolean) } },
     { invoiceId: { $in: invoices.map(i => i._id) } },
   ] }).lean();
   const customerRefs = [...appointments, ...invoices, ...deposits, ...treatments, ...listed('cash'), ...listed('uses')].map(r => r.customerId).filter(Boolean);

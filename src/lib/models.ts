@@ -122,6 +122,7 @@ export const Appointment = model(
     customerId: id,
     serviceId: id,
     treatmentId: optionalId,
+    treatmentIds: {type:[Schema.Types.ObjectId],default:undefined},
     rescheduledFromId: optionalId,
     staffId: optionalId,
     startAt: Date,
@@ -140,6 +141,7 @@ const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, requ
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,strict:'throw'})],default:undefined},
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
@@ -276,6 +278,7 @@ export const Treatment = model(
 );
 
 export const TreatmentUse = model('TreatmentUse', {
+  checkoutInvoiceId: optionalId,
   appointmentId: optionalId,
   treatmentId: id,
   actorId: id,

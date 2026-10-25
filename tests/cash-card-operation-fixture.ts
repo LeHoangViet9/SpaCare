@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
-import { ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
+import { Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
 const actor={id:ownerId,spaId,name:'Owner',role:'OWNER' as const,cashier:false};
@@ -12,7 +12,7 @@ function match(row:any,filter:any):boolean{return Object.entries(filter).every((
 function doc(name:string,row:any):any{if(!row)return null;return {...clone(row),...(name==='Appointment'?{startAt:new Date(row.startAt)}:{}),toObject(){const {toObject,save,...v}=this;return clone(v);},async save(){const i=state[name].findIndex(v=>String(v._id)===String(this._id));state[name][i]=this.toObject();}};}
 function query(value:any):any{return {distinct:(key:string)=>query([...new Set((value||[]).map((row:any)=>row[key]).filter(Boolean))]),session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
 let failModel='';
-for(const model of [ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
+for(const model of [Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
   (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
@@ -171,3 +171,61 @@ assert.equal(new Set(state.Invoice.filter(row=>row.code).map(row=>row.code)).siz
 const sequenceBefore=state.Control[0].invoiceSequence;
 await call('serviceInvoice',bundleInput,bundleKey);
 assert.equal(state.Control[0].invoiceSequence,sequenceBefore,'idempotent retries never allocate another invoice number');
+
+// Multiple owned treatments: each signed/debited once, one combined invoice and commission.
+const signed={version:1,strokes:[[[0.1,0.6],[0.3,0.2],[0.7,0.8]]]};
+const planA='a1'.repeat(12),planB='b2'.repeat(12);
+const purchaseA=invoice(0,'PACKAGE'),purchaseB=invoice(0,'PACKAGE');
+purchaseB.serviceId=secondServiceId;
+state.Treatment.push({_id:planA,spaId,customerId,invoiceId:purchaseA._id,serviceId,name:'Gội dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'},
+ {_id:planB,spaId,customerId,invoiceId:purchaseB._id,serviceId:secondServiceId,name:'Triệt dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'});
+const selections=(a=5,b=5)=>[{treatmentId:planA,signature:signed,remainingBefore:a},{treatmentId:planB,signature:signed,remainingBefore:b}];
+const multiple={customerId,serviceId,staffId:performerId,treatments:selections()};
+for(const bad of [[selections()[0],selections()[0]], selections(5,4), [selections()[0],{...selections()[1],signature:{version:1,strokes:[]}}]]) {
+ const before=clone(state);await assert.rejects(call('invoice',{...multiple,treatments:bad}));assert.deepEqual(state,before);
+}
+state.Treatment.find(row=>row._id===planB).customerId='9'.repeat(24);
+snapshot=clone(state);await assert.rejects(call('invoice',multiple));assert.deepEqual(state,snapshot);
+state.Treatment.find(row=>row._id===planB).customerId=customerId;
+state.Treatment.find(row=>row._id===planB).spaId='9'.repeat(24);
+snapshot=clone(state);await assert.rejects(call('invoice',multiple));assert.deepEqual(state,snapshot);
+state.Treatment.find(row=>row._id===planB).spaId=spaId;
+for(const model of ['Commission','Audit','ActivityNotification']) {
+ const before=clone(state);failModel=model;await assert.rejects(call('invoice',multiple),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,before);
+}
+const combinedKey=randomUUID(),combined=await call('invoice',multiple,combinedKey);await call('invoice',multiple,combinedKey);
+const combinedBill=state.Invoice.find(row=>row._id===combined.invoiceId);
+assert.equal(combinedBill.treatmentSessions.length,2);assert.equal(combinedBill.serviceItems.length,2);
+assert.equal(combinedBill.total,0);assert.equal(state.Commission.find(row=>row.invoiceId===combined.invoiceId).amount,10999);
+assert.equal(state.TreatmentUse.filter(row=>row.checkoutInvoiceId===combined.invoiceId).length,2);
+for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,4);
+const combinedAudit=state.Audit.find(row=>row.targetId===combined.invoiceId);
+assert.equal(combinedAudit.details.treatments.length,2);assert.equal(combinedAudit.details.treatments[0].signature,undefined);
+const combinedNotification=state.ActivityNotification.find(row=>row.invoiceId===combined.invoiceId);
+assert.match(combinedNotification.body,/Gội dùng gói/);assert.match(combinedNotification.body,/Triệt dùng gói/);
+const arrival=spaDay(new Date(Date.now()+86400000))+'T10:00:00+07:00';
+const reserved=await call('appointment',{customerId,serviceId,treatmentIds:[planA,planB],staffId:performerId,startAt:arrival});
+const appointment=state.Appointment.find(row=>row._id===reserved.id);
+assert.equal(appointment.requestedServices.length,2);assert.equal(appointment.treatmentIds.length,2);
+appointment.startAt=new Date(Date.now()-60000).toISOString();
+const beforeIncomplete=clone(state);
+await assert.rejects(call('completeTreatmentAppointment',{id:reserved.id,treatments:[selections(4,4)[0]]}));
+await assert.rejects(call('completeTreatmentAppointment',{id:reserved.id,treatments:selections(4,3)}));
+assert.deepEqual(state,beforeIncomplete);
+const finished=await call('completeTreatmentAppointment',{id:reserved.id,treatments:selections(4,4)});
+await call('completeTreatmentAppointment',{id:reserved.id,treatments:selections(4,4)});
+for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,3);
+assert.equal(state.Invoice.filter(row=>row.appointmentId===reserved.id).length,1);
+assert.equal(state.TreatmentUse.filter(row=>row.checkoutInvoiceId===finished.invoiceId).length,2);
+assert.equal(state.TreatmentUse.filter(row=>row.appointmentId===reserved.id).length,1,'legacy appointment unique index remains unchanged');
+
+const extraProductId='c3'.repeat(12);
+state.Product.push({_id:extraProductId,spaId,name:'Mua thêm',sku:'MIXED',unit:'ml',price:80000,stock:5,active:true});
+const mixedInput={...multiple,treatments:selections(3,3),additionalServices:[{serviceId,total:100000}],additionalProducts:[{productId:extraProductId,quantity:2,unitPrice:80000}]};
+snapshot=clone(state);failModel='StockMovement';await assert.rejects(call('invoice',mixedInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,snapshot);
+const mixedKey=randomUUID(),mixed=await call('invoice',mixedInput,mixedKey);await call('invoice',mixedInput,mixedKey);
+const mixedBill=state.Invoice.find(row=>row._id===mixed.invoiceId);
+assert.equal(mixedBill.total,260000);assert.equal(mixedBill.serviceItems.length,3);assert.equal(mixedBill.treatmentSessions.length,2);
+assert.equal(mixedBill.productItems[0].quantity,2);assert.equal(state.Product[0].stock,3);
+assert.equal(state.StockMovement.filter(row=>row.checkoutInvoiceId===mixed.invoiceId).length,1);
+for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,2);

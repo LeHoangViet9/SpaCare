@@ -6,8 +6,8 @@ import type { Actor } from './auth';
 export async function invoiceScope(user: Actor) {
   const scope = { spaId: user.spaId };
   if (user.role === 'OWNER' || user.cashier) return scope;
-  const visits = await Appointment.find({ ...scope, staffId: user.id, status: { $in: ['CONFIRMED', 'COMPLETED'] } }).select('_id treatmentId').lean();
-  const packages = await Treatment.find({ ...scope, _id: { $in: visits.map(v => v.treatmentId).filter(Boolean) } }).select('invoiceId').lean();
+  const visits = await Appointment.find({ ...scope, staffId: user.id, status: { $in: ['CONFIRMED', 'COMPLETED'] } }).select('_id treatmentId treatmentIds').lean();
+  const packages = await Treatment.find({ ...scope, _id: { $in: visits.flatMap(v => v.treatmentIds?.length ? v.treatmentIds : [v.treatmentId]).filter(Boolean) } }).select('invoiceId').lean();
   const uses = await TreatmentUse.find({ ...scope, $or: [{ actorId: user.id }, { staffId: user.id }] }).select('_id').lean();
   return { ...scope, $or: [{ appointmentId: { $in: visits.map(v => v._id) } }, { _id: { $in: packages.map(p => p.invoiceId) } }, { treatmentUseId: { $in: uses.map(u => u._id) } }] };
 }
@@ -27,6 +27,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const performer = invoice.performedBy ? await User.findOne({ ...scope, _id: invoice.performedBy }).select('name').lean() : null;
   const signatureFilter = { ...scope, $and: [
     { $or: [
+      {checkoutInvoiceId:invoice._id},
       ...(invoice.treatmentUseId ? [{ _id: invoice.treatmentUseId }] : []),
       ...(invoice.appointmentId ? [{ appointmentId: invoice.appointmentId }] : []),
       { treatmentId: { $in: packages.map(p => p._id) } },
@@ -40,7 +41,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   return { giftCards, treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
     canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
     signatures: signatures.map(s => ({ id: s._id, signature: s.signature || null, sessionNumber: s.sessionNumber,
-      packageName: packages.find(p => String(p._id) === String(s.treatmentId))?.name,
+      packageName: invoice.treatmentSessions?.find((item: {treatmentUseId:unknown;name?:string})=>String(item.treatmentUseId)===String(s._id))?.name || packages.find(p => String(p._id) === String(s.treatmentId))?.name,
       performedAt: s.performedAt })), signaturePage, signatureTotal,
     session: use ? { sessionNumber: use.sessionNumber, performedAt: use.performedAt, staffId: use.staffId } : null,
     events: user.role === 'OWNER' ? events : events.filter(e => String(e.actorId) === user.id) };
