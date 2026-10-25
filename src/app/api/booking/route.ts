@@ -1,3 +1,4 @@
+import { queueAppointmentReminders } from '@/lib/notification-events';
 import { connect } from '@/lib/db';
 import { checkOrigin, maybeActor } from '@/lib/auth';
 import { reservePublicBooking } from '@/lib/public-booking';
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
     after(async () => {
       try {
         const appointment = await Appointment.findById(result.appointmentId).select('spaId');
-        if (appointment) await dispatchNotifications({ spaId: String(appointment.spaId) });
+        if (appointment) { await queueAppointmentReminders(new Date(), String(appointment.spaId)); await dispatchNotifications({ spaId: String(appointment.spaId) }); }
       } catch { console.error('Notification dispatch deferred'); }
     });
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });

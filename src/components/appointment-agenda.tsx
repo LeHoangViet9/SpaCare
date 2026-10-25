@@ -1,3 +1,4 @@
+import { appointmentServiceName } from '@/lib/appointment-services';
 type Row = Record<string, any>;
 const statuses: Record<string, string> = { CONFIRMED: 'Đã đặt', POSTPONED: 'Đang hoãn', COMPLETED: 'Hoàn thành', CANCELLED: 'Đã hủy' };
 const OPEN_MINUTES = 9 * 60;
@@ -52,12 +53,12 @@ export default function AppointmentAgenda({ rows, data, onCustomer, onComplete, 
                   if (lane === -1) lane = laneEnds.length;
                   laneEnds[lane] = startSlot + span;
                   const clock = new Date(row.startAt).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
-                  return <article key={row._id} className={`timeline-appointment${outside ? ' outside-hours' : ''}`} style={{ gridColumn: `${gridStart} / span ${span}`, gridRow: lane + 1 }} title={`${clock} · ${lookup('customers', row.customerId)} · ${lookup('services', row.serviceId)}`}>
+                  return <article key={row._id} className={`timeline-appointment${outside ? ' outside-hours' : ''}`} style={{ gridColumn: `${gridStart} / span ${span}`, gridRow: lane + 1 }} title={`${clock} · ${lookup('customers', row.customerId)} · ${appointmentServiceName(row, lookup('services', row.serviceId))}`}>
                     <div className="timeline-appointment-content">
                       <button className="text-button" onClick={() => onCustomer(row.customerId)}>{clock} · {lookup('customers', row.customerId)}</button>
                       <span>{lookup('customers', row.customerId, 'phone')}</span>
-                      <span>{lookup('services', row.serviceId)} · {statuses[row.status]}</span>
-                      {row.status === 'CONFIRMED' && <button className="timeline-complete" disabled={busy} onClick={() => onComplete(row)}>Hoàn thành</button>}
+                      <span>{appointmentServiceName(row, lookup('services', row.serviceId))} · {statuses[row.status]}</span>
+                      {row.status === 'CONFIRMED' && (data.user?.role === 'OWNER' || data.user?.cashier || row.staffId === data.user?.id) && <button className="timeline-complete" disabled={busy} onClick={() => onComplete(row)}>Hoàn thành</button>}
                     </div>
                   </article>;
                 })}

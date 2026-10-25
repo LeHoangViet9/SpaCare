@@ -66,7 +66,7 @@ export const LoginAttempt =
     }),
   );
 
-export const Control = model('Control', { revision: { type: Number, default: 0 } }, [
+export const Control = model('Control', { revision: { type: Number, default: 0 }, invoiceSequence: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger } }, [
   [{ spaId: 1 }, { unique: true }],
 ]);
 
@@ -97,6 +97,7 @@ export const PackageTemplate = model('PackageTemplate', {
 
 export const ProductGroup = model('ProductGroup', { name: { type: String, required: true }, nameKey: { type: String, required: true } }, [[{ spaId: 1, nameKey: 1 }, { unique: true }]]);
 export const Product = model('Product', {
+  origin: String, manufacturedOn: String, expiresOn: String,
   name: { type: String, required: true }, sku: { type: String, required: true }, unit: { type: String, required: true },
   sizeMl: { type: Number, min: 1, max: 100_000, validate: Number.isSafeInteger, required: false },
   groupId: optionalId, price: amount, stock: { type: Number, min: 0, max: 1_000_000_000, validate: Number.isSafeInteger, default: 0 }, active: { type: Boolean, default: true },
@@ -110,9 +111,13 @@ export const StockMovement = model('StockMovement', {
   before: Number, after: Number, reason: String, invoiceId: optionalId,
 }, [[{ spaId: 1, productId: 1, createdAt: -1 }], [{ spaId: 1, invoiceId: 1 }, { unique: true, partialFilterExpression: { invoiceId: { $exists: true } } }]]);
 
+const requestedServiceSchema = new Schema({ serviceId: id, name: { type: String, required: true } },
+  { _id: false, versionKey: false, strict: 'throw' });
 export const Appointment = model(
   'Appointment',
   {
+    bookingSource: { type: String, enum: ['PUBLIC_WEB'] },
+    requestedServices: { type: [requestedServiceSchema], default: undefined },
     customerId: id,
     serviceId: id,
     treatmentId: optionalId,
@@ -130,7 +135,12 @@ export const Appointment = model(
 const saleParticipantSchema = new Schema({ staffId: id, staffName: { type: String, required: true } },
   { _id: false, versionKey: false, strict: 'throw' });
 
+const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, required: true }, total: amount, commission: amount },
+  { _id: false, versionKey: false, strict: 'throw' });
+
 export const Invoice = model('Invoice', {
+  code: { type: String, match: /^HD[0-9]+$/ },
+  serviceItems: { type: [serviceItemSchema], default: undefined },
   openingBalance: Boolean, openingDate: String,
   saleParticipants: [saleParticipantSchema],
   sellerId: optionalId, sellerName: String, saleCommissionVersion: Number, saleCommissionAccrued: Number, refunded: { type: Number, default: 0 },
@@ -162,7 +172,7 @@ export const Invoice = model('Invoice', {
   paid: { ...amount, default: 0 },
   dueDate: String,
   status: { type: String, enum: ['OPEN', 'PARTIALLY_PAID', 'PAID'], default: 'OPEN' },
-}, [[{ spaId: 1, appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $exists: true } } }], [{ spaId: 1, treatmentUseId: 1 }, { unique: true, partialFilterExpression: { treatmentUseId: { $exists: true } } }]]);
+}, [[{ spaId: 1, code: 1 }, { unique: true, partialFilterExpression: { code: { $exists: true } } }], [{ spaId: 1, appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $exists: true } } }], [{ spaId: 1, treatmentUseId: 1 }, { unique: true, partialFilterExpression: { treatmentUseId: { $exists: true } } }]]);
 
 // Immutable sources and redemption ledger; balances change only in operations transactions.
 export const CashCard = model('CashCard', {
@@ -278,7 +288,7 @@ export const TreatmentUse = model('TreatmentUse', {
 }, [[{ spaId: 1, appointmentId: 1 }, { unique: true, partialFilterExpression: { appointmentId: { $exists: true } } }]]);
 
 export const Commission = model('Commission', {
-  staffId: id, staffName: String, serviceId: id, serviceName: String, customerId: id,
+  staffId: id, staffName: String, serviceId: optionalId, serviceName: String, customerId: id,
   invoiceId: id, category: { type: String, enum: ['SERVICE', 'PACKAGE_SALE'], default: 'SERVICE' },
   sourceType: { type: String, enum: ['APPOINTMENT', 'TREATMENT_USE', 'INVOICE', 'PACKAGE_PAYMENT', 'PACKAGE_ADJUSTMENT'], required: true },
   sourceId: id, amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
@@ -357,6 +367,16 @@ export const Notification = model('Notification', {
 }, [[{ spaId: 1, userId: 1, appointmentId: 1 }, { unique: true }],
   [{ spaId: 1, userId: 1, createdAt: -1 }], [{ pushState: 1, nextAttemptAt: 1 }]]);
 
+// General events use their own outbox, preserving legacy booking notification indexes.
+export const ActivityNotification = model('ActivityNotification', {
+  userId: id, eventKey: { type: String, required: true },
+  kind: { type: String, enum: ['INVOICE_CREATED', 'DAY_CLOSE', 'APPOINTMENT_REMINDER'], required: true },
+  invoiceId: optionalId, appointmentId: optionalId, appointmentStartAt: Date, day: String, title: String, body: String, url: String, readAt: Date,
+  pushState: { type: String, enum: ['PENDING', 'SENT'], default: 'PENDING' },
+  nextAttemptAt: { type: Date, default: Date.now }, attempts: { type: Number, default: 0 },
+}, [[{ spaId: 1, userId: 1, eventKey: 1 }, { unique: true }],
+  [{ spaId: 1, userId: 1, createdAt: -1 }], [{ pushState: 1, nextAttemptAt: 1 }]]);
+
 export const PushDevice = model('PushDevice', {
   userId: id, endpoint: { type: String, required: true },
   keys: { p256dh: String, auth: String },
@@ -365,7 +385,7 @@ export const PushDevice = model('PushDevice', {
 export const allModels = [
   ServiceGroup,
   CashCard, CashCardUse,
-  Notification, PushDevice,
+  Notification, ActivityNotification, PushDevice,
   Spa,
   User,
   Session,

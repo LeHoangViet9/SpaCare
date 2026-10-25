@@ -35,7 +35,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const filters: Record<string, Row> = {
     packageTemplates: scope,
     customers: scope, services: scope, staff: { ...scope, role: { $in: ['OWNER', 'STAFF'] } }, treatments: scope, uses: scope,
-    appointments: { ...scope, ...(finance ? {} : { staffId: user.id }) },
+    appointments: { ...scope, ...(finance ? {} : { $or: [{ staffId: user.id }, { bookingSource: 'PUBLIC_WEB' }] }) },
     invoices: finance ? scope : assignedQuery,
     deposits: finance ? scope : { ...scope, customerId: { $in: assignedBills.map(i => i.customerId) } },
     allocations: finance ? scope : { ...scope, invoiceId: { $in: assignedBills.map(i => i._id) } },
@@ -59,7 +59,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     const textFields: Record<string, string[]> = {
       packageTemplates: ['name'],
       customers: ['name', 'phone', 'notes'], services: ['name'], staff: ['name', ...(user.role === 'OWNER' ? ['email', 'phone'] : [])],
-      appointments: ['notes', 'changeReason', 'status'], invoices: ['description', 'status', 'dueDate'], deposits: ['note'],
+      appointments: ['notes', 'changeReason', 'status'], invoices: ['code', 'description', 'status', 'dueDate'], deposits: ['note'],
       allocations: ['reason'], cash: ['note', 'transferReference', 'kind', 'method', 'day'], treatments: ['name', 'status'],
       uses: ['reason', 'method'], days: ['day', 'status', 'note'], audit: ['action', 'targetId', 'details.reason', 'details.note', 'details.name', 'details.description', 'details.before.name', 'details.after.name'],
     };
@@ -69,7 +69,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     if (/^[a-f\d]{6,23}$/i.test(search)) clauses.push({ $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: literalPattern(search), options: 'i' } } });
     if (/^[a-f\d]{24}$/i.test(search)) clauses.push({ _id: search }, ...(collection === 'audit' ? [{ targetId: search }] : []));
     if (['appointments', 'invoices', 'deposits', 'treatments', 'cash'].includes(collection)) clauses.push({ customerId: { $in: customerIds } });
-    if (collection === 'appointments') clauses.push({ staffId: { $in: staffIds } }, { serviceId: { $in: serviceIds } });
+    if (collection === 'appointments') clauses.push({ staffId: { $in: staffIds } }, { serviceId: { $in: serviceIds } }, { 'requestedServices.serviceId': { $in: serviceIds } }, { 'requestedServices.name': expression });
     if (collection === 'uses') clauses.push({ treatmentId: { $in: treatmentIds } }, { actorId: { $in: staffIds } });
     if (collection === 'uses') {
       const methods: Record<string, string> = { DRAWN_SIGNATURE: 'Khách ký trên màn hình', SIGNATURE_REFERENCE: 'Tham chiếu phiếu ký', ALTERNATIVE: 'Xác nhận thay thế' };

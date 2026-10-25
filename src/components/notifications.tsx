@@ -57,7 +57,7 @@ export default function Notifications() {
       const response = await fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'subscribe', subscription: subscription.toJSON() }) });
       if (!response.ok) { await subscription.unsubscribe(); throw new Error('Chưa lưu được thiết bị nhận thông báo.'); }
-      setEnabled(true); setMessage('Đã bật nhận lịch đặt mới trên thiết bị này.');
+      setEnabled(true); setMessage('Đã bật nhận thông báo trên thiết bị này.');
     } catch (error) { setMessage((error as Error).message); }
     finally { setBusy(false); }
   }

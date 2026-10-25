@@ -37,12 +37,13 @@ export function vapidAuthorization(endpoint: string, config: Vapid) {
   const signature = sign('sha256', Buffer.from(unsigned), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   return `vapid t=${unsigned}.${signature}, k=${config.publicKey}`;
 }
-export async function sendPush(subscription: Subscription, payload: string, config: Vapid) {
+export async function sendPush(subscription: Subscription, payload: string, config: Vapid, ttl = 3600) {
+  if (!Number.isSafeInteger(ttl) || ttl < 1 || ttl > 86400) throw new Error('Invalid push TTL');
   if (!allowedPushEndpoint(subscription.endpoint)) throw new Error('Unsupported push endpoint');
   const encrypted = encryptPush(subscription, payload);
   const response = await fetch(subscription.endpoint, { method: 'POST', redirect: 'error',
     signal: AbortSignal.timeout(8000), headers: { Authorization: vapidAuthorization(subscription.endpoint, config),
-      TTL: '3600', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream' },
+      TTL: String(ttl), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream' },
     body: new Uint8Array(encrypted) });
   if (!response.ok) throw Object.assign(new Error('Push delivery failed'), { statusCode: response.status });
   await response.body?.cancel();

@@ -1,3 +1,4 @@
+import { appointmentServiceName } from './appointment-services';
 import { availableTreatmentFilter } from './treatment-rules';
 import { Appointment, Customer, Deposit, Invoice, Service, Treatment, User } from './models';
 import { invoiceScope } from './invoice-read';
@@ -26,7 +27,7 @@ export async function readCustomerHistory(user: Actor, id: string, kind: 'invoic
   const activePackages = await Treatment.countDocuments({ ...treatmentFilter, ...availableTreatmentFilter() });
   const lastVisit = await Appointment.findOne({ ...appointmentsFilter, status: 'COMPLETED' }).sort({ startAt: -1 }).select('startAt').lean();
   return { customer: { ...customer, consultantName: people.find(p => String(p._id) === String(customer.consultantId))?.name },
-    rows: rows.map(r => ({ ...r, serviceName: services.find(s => String(s._id) === String(r.serviceId))?.name,
+    rows: rows.map(r => ({ ...r, serviceName: appointmentServiceName(r, services.find(s => String(s._id) === String(r.serviceId))?.name || '-'),
       staffName: people.find(p => String(p._id) === String(r.staffId))?.name })), kind, total, page,
     summary: { invoices: balances[0]?.count || 0, debt: balances[0]?.debt || 0, credit: canSeeCredit ? credit[0]?.balance || 0 : null, appointments, activePackages, lastVisit: lastVisit?.startAt || null } };
 }

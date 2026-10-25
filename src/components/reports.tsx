@@ -1,4 +1,5 @@
 'use client';
+import { invoiceCode } from '@/lib/invoice-code';
 import CompactDateInput from './compact-date-input';
 import { formatCurrency } from '@/lib/currency';
 import Link from 'next/link';
@@ -49,7 +50,7 @@ export default function Reports({ report, today, period, onPeriod, pending, owne
       <div className="report-stats"><Stat title="Số hóa đơn" value={display(summary.count, false)} /><Stat title="Giá trị hóa đơn" value={display(summary.total)} /><Stat title="Đã thanh toán" value={display(summary.paid)} /><Stat title="Còn nợ" value={display(summary.debt)} /><Stat title="Đã hoàn tiền" value={display(summary.refunded)} /></div>
       <p className="inline-note">Lọc theo ngày tạo hóa đơn. Đã thanh toán gồm tiền trả trực tiếp và cọc đã phân bổ, tính đến hiện tại trước trừ hoàn tiền. Khoản hoàn hiển thị riêng và đã ghi vào thực chi. Giá trị hóa đơn chưa phải doanh thu kế toán.</p>
       <section className="panel"><div className="section-head"><h3>Theo loại hóa đơn</h3></div><Grid headers={['Loại', 'Số hóa đơn', 'Giá trị', 'Đã thanh toán']} rows={(r.kinds || []).map((k: Row) => [kinds[k._id] || k._id, k.count, money(k.total), money(k.paid)])} /></section>
-      <section className="panel"><div className="section-head"><h3>Chi tiết hóa đơn</h3><span>{r.total || 0} hóa đơn</span></div><Grid headers={['Mã hóa đơn', 'Ngày tạo', 'Khách hàng', 'Nội dung', 'Tổng tiền', 'Đã thanh toán', 'Còn nợ']} rows={(r.invoices || []).map((i: Row) => [<button className="text-button" key="invoice" onClick={() => onInvoice(i._id)}>#{i._id.slice(-6)}</button>, new Date(i.createdAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }), i.customerName, i.description, money(i.total), money(i.paid), money(i.total - i.paid)])} />
+      <section className="panel"><div className="section-head"><h3>Chi tiết hóa đơn</h3><span>{r.total || 0} hóa đơn</span></div><Grid headers={['Mã hóa đơn', 'Ngày tạo', 'Khách hàng', 'Nội dung', 'Tổng tiền', 'Đã thanh toán', 'Còn nợ']} rows={(r.invoices || []).map((i: Row) => [<button className="text-button" key="invoice" onClick={() => onInvoice(i._id)}>{invoiceCode(i)}</button>, new Date(i.createdAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }), i.customerName, i.description, money(i.total), money(i.paid), money(i.total - i.paid)])} />
         <div className="report-pagination"><button disabled={pending || (r.page || 1) <= 1} onClick={() => onPage(r.page - 1)}>Trước</button><span>Trang {r.page || 1} / {Math.max(1, Math.ceil((r.total || 0) / (r.pageSize || 10)))}</span><button disabled={pending || (r.page || 1) * (r.pageSize || 10) >= (r.total || 0)} onClick={() => onPage(r.page + 1)}>Sau</button></div></section>
     </>}
     {activeTab === 'staff' && <>

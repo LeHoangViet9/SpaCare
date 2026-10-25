@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
-import { Notification, PushDevice } from '../src/lib/models';
+import { ActivityNotification, Notification, PushDevice } from '../src/lib/models';
 
 try {
   await connect();
-  for (const model of [Notification, PushDevice]) {
+  for (const model of [Notification, ActivityNotification, PushDevice]) {
     await model.createCollection();
     await model.createIndexes();
   }

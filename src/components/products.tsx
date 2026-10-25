@@ -31,10 +31,13 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
     { key: 'sizeMl', label: 'Dung tích (ml)', type: 'number', min: 1, max: 100000, hint: 'Nhập dung tích của một sản phẩm, ví dụ 250 ml.' },
     { key: 'price', label: 'Giá bán (VNĐ)', type: 'number', min: 1, max: 1_000_000_000_000 },
     { key: 'minStock', optional:true, label: 'Mức tồn tối thiểu (cảnh báo)', type: 'number', min: 0, max: 1_000_000_000, hint: 'Khi tồn kho ≤ mức này, sản phẩm hiển thị cảnh báo "Tồn thấp". Để 0 nếu không cần cảnh báo.' },
+    { key: 'origin', label: 'Xuất xứ', optional: true, hint: 'Quốc gia hoặc nơi sản xuất ghi trên sản phẩm.' },
+    { key: 'manufacturedOn', label: 'Ngày sản xuất', type: 'date', optional: true },
+    { key: 'expiresOn', label: 'Hạn sử dụng', type: 'date', optional: true },
     { key: 'description', label: 'Mô tả sản phẩm', optional: true, hint: 'Thành phần, công dụng, hướng dẫn sử dụng…' },
     { key: 'imageUrl', label: 'Ảnh sản phẩm', type: 'product-image', optional: true },
   ];
-  const edit = (r?: Row) => onOpen(r ? 'Sửa sản phẩm' : 'Thêm sản phẩm', r ? 'updateProduct' : 'product', fields, r ? { ...r, id: r._id, groupId: r.groupId || '', description: r.description || '', imageUrl: r.imageUrl || '', minStock: r.minStock ?? 0, sizeMl: r.sizeMl ?? '' } : { groupId: '', minStock: 0 }, 'Số lượng tồn được ghi qua Nhập kho / Xuất kho, không sửa trực tiếp trong danh mục.');
+  const edit = (r?: Row) => onOpen(r ? 'Sửa sản phẩm' : 'Thêm sản phẩm', r ? 'updateProduct' : 'product', fields, r ? { ...r, id: r._id, groupId: r.groupId || '', description: r.description || '', imageUrl: r.imageUrl || '', minStock: r.minStock ?? 0, sizeMl: r.sizeMl ?? '', origin: r.origin || '', manufacturedOn: r.manufacturedOn || '', expiresOn: r.expiresOn || '' } : { groupId: '', minStock: 0 }, 'Số lượng tồn được ghi qua Nhập kho / Xuất kho, không sửa trực tiếp trong danh mục.');
   const editGroup = (r?: Row) => onOpen(r ? 'Sửa nhóm sản phẩm' : 'Thêm nhóm sản phẩm', r ? 'updateProductGroup' : 'productGroup', [{ key: 'name', label: 'Tên nhóm sản phẩm' }], r ? { id: r._id, name: r.name } : {});
   function movement(direction: 'IN' | 'OUT', r?: Row) {
     const title = direction === 'IN' ? 'Nhập kho' : 'Xuất kho';
@@ -113,6 +116,11 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
                   </div>
                 </div>
                 {/* Mô tả sản phẩm (có thể thu gọn) */}
+                {(r.origin || r.manufacturedOn || r.expiresOn) && <dl className="product-origin-dates">
+                  {r.origin && <div><dt>Xuất xứ</dt><dd>{r.origin}</dd></div>}
+                  {r.manufacturedOn && <div><dt>Ngày sản xuất</dt><dd><time dateTime={r.manufacturedOn}>{r.manufacturedOn.split('-').reverse().join('/')}</time></dd></div>}
+                  {r.expiresOn && <div><dt>Hạn sử dụng</dt><dd><time dateTime={r.expiresOn}>{r.expiresOn.split('-').reverse().join('/')}</time></dd></div>}
+                </dl>}
                 {r.description && <div className="product-description">
                   <p className={expandedId === r._id ? '' : 'product-desc-clamp'}>{r.description}</p>
                   {r.description.length > 120 && <button className="link-btn" onClick={() => setExpandedId(expandedId === r._id ? null : r._id)}>{expandedId === r._id ? 'Thu gọn' : 'Xem thêm'}</button>}

@@ -1,3 +1,6 @@
+import { sequenceInvoiceCode } from './invoice-code';
+import { queueInvoiceNotifications } from './notification-events';
+import { appointmentServiceIds } from './appointment-services';
 import { ServiceGroup } from './models';
 import { serviceGroupName, serviceGroupKey } from './service-groups';
 import { CashCard, CashCardUse } from './models';
@@ -18,6 +21,7 @@ import { hashPassword } from './password';
 import { connect } from './db';
 import {
   User,
+  ActivityNotification,
   Control,
   Customer,
   Service,
@@ -107,6 +111,11 @@ const schemas = {
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text,
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
+  serviceInvoice: z.object({
+    customerId: objectId, staffId: objectId, dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
+    items: z.array(z.object({ serviceId: objectId, total: moneySchema.optional() })).min(1).max(30)
+      .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
+  }),
   invoice: z.object({
     cashCard: invoiceCardInput.optional(),
     staffId: objectId.optional(),
@@ -159,6 +168,7 @@ const ownerActions = new Set<Operation>([
   'reopenDay',
 ]);
 const cashierActions = new Set<Operation>([
+  'serviceInvoice',
   'sellCashCard',
   'sellProduct',
   'completeInvoiceService',
@@ -212,8 +222,16 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         );
         return previous.result;
       }
-      const create = async (model: mongoose.Model<any>, values: Record<string, unknown>) =>
-        (await model.create([{ ...scope, ...(model === Invoice ? { createdBy: actor.id, creatorName: user.name } : {}), ...values }], { session }))[0];
+      const create = async (model: mongoose.Model<any>, values: Record<string, unknown>) => {
+        if (model === Invoice) {
+          const counter = await Control.findOneAndUpdate(scope, { $inc: { invoiceSequence: 1 } }, { session, returnDocument: 'after' });
+          ensure(counter, 'Spa chưa sẵn sàng cấp mã hóa đơn.', 503);
+          values = { ...values, code: sequenceInvoiceCode(counter.invoiceSequence) };
+        }
+        const record = (await model.create([{ ...scope, ...(model === Invoice ? { createdBy: actor.id, creatorName: user.name } : {}), ...values }], { session }))[0];
+        if (model === Invoice) await queueInvoiceNotifications(record, session);
+        return record;
+      };
       const get = async (model: mongoose.Model<any>, id: string) => {
         const doc = await model.findOne({ ...scope, _id: id }).session(session);
         ensure(doc, 'Không tìm thấy dữ liệu trong spa này.', 404);
@@ -281,7 +299,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       };
       const accrueCommission = async (invoice: any, staffId: string, sourceType: string, sourceId: string, earnedAt = new Date()) => {
         const staff = await get(User, staffId);
-        const service = await get(Service, String(invoice.serviceId));
+        const service = invoice.serviceItems?.length ? { _id: invoice.serviceId, name: invoice.serviceItems.map((item: { name: string }) => item.name).join(' + '), commission: invoice.commission } : await get(Service, String(invoice.serviceId));
         const existing = await Commission.findOne({ ...scope, sourceType, sourceId }).session(session);
         if (existing) return existing;
         const commission = await create(Commission, { staffId, staffName: staff.name, serviceId: service._id, serviceName: service.name,
@@ -402,7 +420,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ensure(image, 'Ảnh sản phẩm không thuộc spa này.', 400);
           }
           if (d.sku) ensure(!await Product.exists({ ...scope, sku: d.sku, ...(existingId ? { _id: { $ne: existingId } } : {}) }).session(session), 'Mã sản phẩm đã tồn tại.', 409);
-          const values = { name: d.name, ...(d.sku ? { sku: d.sku } : {}), sizeMl: d.sizeMl, price: d.price, groupId: d.groupId || undefined, description: d.description || undefined, imageUrl: (d.imageUrl && d.imageUrl.trim()) ? d.imageUrl.trim() : undefined, minStock: d.minStock ?? 0 };
+          const values = { origin: d.origin || undefined, manufacturedOn: d.manufacturedOn || undefined, expiresOn: d.expiresOn || undefined, name: d.name, ...(d.sku ? { sku: d.sku } : {}), sizeMl: d.sizeMl, price: d.price, groupId: d.groupId || undefined, description: d.description || undefined, imageUrl: (d.imageUrl && d.imageUrl.trim()) ? d.imageUrl.trim() : undefined, minStock: d.minStock ?? 0 };
           if (existingId) { target = await get(Product, existingId); Object.assign(target, values); await target.save({ session }); }
           else target = await create(Product, { ...values, sku: d.sku || 'SP-' + new mongoose.Types.ObjectId().toHexString().toUpperCase(), unit: 'Sản phẩm' });
           break;
@@ -752,6 +770,22 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           let invoice = existing;
           if (existing && d.existingInvoiceId)
             ensure(String(existing._id) === d.existingInvoiceId, 'Lịch đã liên kết hóa đơn khác.', 409);
+          const requestedIds = appointmentServiceIds(target);
+          if (requestedIds.length > 1 && !invoice) {
+            ensure(!d.existingInvoiceId, 'Lịch nhiều dịch vụ cần lập hóa đơn đủ các dịch vụ.');
+            const serviceItems = [];
+            for (const id of requestedIds) {
+              const service = await get(Service, id);
+              ensure(service.active, 'Dịch vụ đã ngừng cung cấp.');
+              serviceItems.push({ serviceId: service._id, name: service.name, total: invoiceCharge(service.price, undefined, false), commission: service.commission || 0 });
+            }
+            const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0));
+            ensure(d.total === undefined || d.total === total, 'Giá dịch vụ đã thay đổi. Tải lại lịch để kiểm tra.', 409);
+            invoice = await create(Invoice, { appointmentId: target._id, customerId: target.customerId,
+              kind: 'SERVICE', serviceItems, description: serviceItems.map(item => item.name).join(' + '), total, paid: 0,
+              commission: money(serviceItems.reduce((sum, item) => sum + item.commission, 0), true),
+              ...(d.dueDate ? { dueDate: d.dueDate } : {}) });
+          }
           if (!invoice && d.existingInvoiceId) {
             invoice = await get(Invoice, d.existingInvoiceId);
             ensure(String(invoice.customerId) === String(target.customerId) && String(invoice.serviceId) === String(target.serviceId), 'Hóa đơn phải đúng khách và dịch vụ của lịch.');
@@ -797,7 +831,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           // Keep the postponed record, its original time, and all references intact.
           if (target.status === 'POSTPONED') {
             const replacement = await create(Appointment, {
-              customerId: target.customerId, serviceId: target.serviceId,
+              customerId: target.customerId, serviceId: target.serviceId, requestedServices: target.requestedServices, bookingSource: target.bookingSource,
               ...(target.treatmentId ? { treatmentId: target.treatmentId } : {}),
               staffId: d.staffId, startAt, notes: target.notes,
               changeReason: d.reason, rescheduledFromId: target._id,
@@ -885,6 +919,35 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           target.description=d.description; target.total=d.total; target.dueDate=d.dueDate; target.status=invoiceState(d.total,0);
           await target.save({session});
           linkedInvoiceId=String(target._id);
+          break;
+        }
+        case 'serviceInvoice': {
+          const d = schemas.serviceInvoice.parse(data);
+          await get(Customer, d.customerId);
+          const performer = await get(User, d.staffId);
+          ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Nhân viên thực hiện không hợp lệ hoặc đã ngừng hoạt động.');
+          if (d.dueDate) dayBounds(d.dueDate);
+          const serviceItems = [];
+          // Sequential reads/writes inside this transaction preserve rollback and session semantics.
+          for (const item of d.items) {
+            const service = await get(Service, item.serviceId);
+            ensure(service.active, 'Dịch vụ đã ngừng hoạt động.');
+            const total = invoiceCharge(service.price, item.total, false);
+            ensure(total > 0, 'Giá dịch vụ lẻ phải lớn hơn 0.');
+            serviceItems.push({ serviceId: service._id, name: service.name, total, commission: service.commission || 0 });
+          }
+          const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0));
+          const commission = money(serviceItems.reduce((sum, item) => sum + item.commission, 0), true);
+          target = await create(Invoice, { customerId: d.customerId, kind: 'SERVICE', serviceItems,
+            ...(serviceItems.length === 1 ? { serviceId: serviceItems[0].serviceId } : {}),
+            description: serviceItems.map(item => item.name).join(' + '), total, paid: 0, commission,
+            ...(d.dueDate ? { dueDate: d.dueDate } : {}), performedBy: performer._id, performedAt: new Date() });
+          await create(Commission, { staffId: performer._id, staffName: performer.name,
+            ...(serviceItems.length === 1 ? { serviceId: serviceItems[0].serviceId } : {}),
+            serviceName: target.description, customerId: target.customerId, invoiceId: target._id,
+            sourceType: 'INVOICE', sourceId: String(target._id), amount: commission, earnedAt: target.performedAt });
+          if (d.cashCard) await redeemCard({ ...d.cashCard, invoiceId: String(target._id) });
+          linkedInvoiceId = String(target._id);
           break;
         }
         case 'invoice': {
@@ -1131,6 +1194,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           target.closedBy = actor.id;
           target.closedAt = new Date();
           await target.save({ session });
+          await ActivityNotification.updateMany({ ...scope, kind: 'DAY_CLOSE', day: d.day, readAt: null }, { $set: { readAt: new Date(), pushState: 'SENT' } }, { session });
           break;
         }
         case 'reopenDay': {

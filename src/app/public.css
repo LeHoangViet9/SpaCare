@@ -380,7 +380,7 @@
 }
 
 .pub-bottom-cta-item {
-  top: -12px;
+  top: 0;
 }
 
 .pub-bottom-cta-circle {
@@ -1353,4 +1353,22 @@
   .public-products-grid { grid-template-columns: minmax(0, 1fr); }
   .public-product-search > div { flex-wrap: wrap; }
   .public-product-search .pub-btn { width: 100%; }
+}
+
+.pub-booking-service-item .pub-service-checkbox { width:20px; height:20px; flex:0 0 20px; margin:0; accent-color:var(--pub-green); }
+.pub-booking-section-sub { overflow-wrap:anywhere; }
+
+/* Keep mobile navigation flush with the viewport, including the safe area. */
+@media (max-width: 768px) {
+  .pub-mobile-bottom-bar {
+    box-sizing: border-box;
+    bottom: 0;
+    background: #fff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    align-items: stretch;
+  }
+  .pub-bottom-item { justify-content: center; }
+  .pub-bottom-cta-circle { width: 28px; height: 28px; border-radius: 8px; box-shadow: none; }
+  .pub-bottom-cta-circle svg { width: 20px; height: 20px; }
 }

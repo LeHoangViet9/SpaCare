@@ -26,7 +26,7 @@ export async function readReport(user: Actor, query: ReturnType<typeof workspace
     user.role === 'OWNER' ? User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } }).select('name email role active cashier').sort({ name: 1, _id: 1 }).lean() : [],
   ]);
   const page = Math.min(query.page, Math.max(1, Math.ceil(invoiceCount / query.pageSize)));
-  const invoices: Row[] = await Invoice.find(dated('createdAt')).select('customerId description kind total paid createdAt consultantName').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * query.pageSize).limit(query.pageSize).lean();
+  const invoices: Row[] = await Invoice.find(dated('createdAt')).select('code customerId description kind total paid createdAt consultantName').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * query.pageSize).limit(query.pageSize).lean();
   const customers = await Customer.find({ ...scope, _id: { $in: invoices.map(i => i.customerId) } }).select('name phone').lean();
   let employees: Row[] = [];
   if (user.role === 'OWNER') {

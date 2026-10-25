@@ -1,3 +1,4 @@
+import { invoiceCode } from './invoice-code';
 import type { Actor } from './auth';
 import type { ExportDocument } from './export-document';
 import { readInvoice } from './invoice-read';
@@ -13,20 +14,20 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
   const data = await readInvoice(user, id);
   const bill = data.invoice;
   return {
-    filename: `Hoa-don-${id}.pdf`, title: bill.openingBalance ? 'CHỨNG TỪ CHUYỂN SỐ DƯ' : 'HÓA ĐƠN BÁN HÀNG',
+    filename: `${invoiceCode(bill)}.pdf`, title: bill.openingBalance ? 'CHỨNG TỪ CHUYỂN SỐ DƯ' : 'HÓA ĐƠN BÁN HÀNG',
     subtitle: 'Thanh Thư Spa',
     receipt: { name: 'Thanh Thư Spa', address: 'CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên', phone: '0329 357 116', cashier: bill.creatorName || 'Chưa ghi nhận' },
     notes: [...(bill.openingBalance ? [bill.kind === 'PACKAGE' ? 'Liệu trình đã trả đủ trước chuyển đổi. Chưa có giá mua gốc; 0đ là không thu thêm, không phải gói tặng.' : 'Công nợ chuyển từ sổ cũ, không phải lần bán hoặc xuất kho mới.'] : []), 'Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.',
       'Số tiền phản ánh dữ liệu tại thời điểm xuất. Hóa đơn còn nợ không phải xác nhận đã thanh toán.'],
     tables: [
       { columns: ['Thông tin', 'Chi tiết'], widths: [0.28, 0.72], rows: [
-        ['Mã hóa đơn', id], ['Ngày tạo', date(bill.createdAt)],
+        ['Mã hóa đơn', invoiceCode(bill)], ['Ngày tạo', date(bill.createdAt)],
         ['Khách hàng', data.customer?.name || '-'], ['Số điện thoại', data.customer?.phone || '-'],
         ['Người lập', bill.creatorName || 'Chưa ghi nhận'],
         ...(bill.kind === 'PACKAGE' ? [['Tư vấn bán gói', bill.saleParticipants?.length ? bill.saleParticipants.map((p:{staffName:string})=>p.staffName).join(', ') : bill.sellerName || 'Chưa ghi nhận']] : []),
       ] },
       { heading: 'Dịch vụ / gói / sản phẩm', columns: ['Nội dung', 'Thành tiền'], widths: [0.72, 0.28], rows: [
-        [bill.description || 'Dịch vụ', money(bill.total)],
+        ...(bill.serviceItems?.length ? bill.serviceItems.map((item: { name: string; total: number }) => [item.name, money(item.total)]) : [[bill.description || 'Dịch vụ', money(bill.total)]]),
         ...data.gifts.map(gift => [`Quà tặng: ${gift.description || 'Gói tặng'}`, money(0)]),
       ] },
       { heading: 'Thanh toán', columns: ['Khoản mục', 'Số tiền'], widths: [0.65, 0.35], rows: [

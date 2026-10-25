@@ -1,6 +1,7 @@
 import { formatCurrency } from './currency';
 type Row = Record<string, any>;
 export const auditActions: Record<string, string> = {
+  serviceInvoice: 'Lập hóa đơn nhiều dịch vụ lẻ',
   importOpeningBalances:'Nhập quyền lợi và công nợ từ sổ cũ',
   updateInvoice:'Sửa hóa đơn chưa giao dịch',
   recordStaffLeave:'Ghi / sửa nghỉ phép',reviewStaffLeave:'Duyệt / từ chối nghỉ',recordWorkday:'Ghi ngày công',setSalaryPolicy:'Cài chính sách lương',refundPackage:'Ghi nhận hoàn tiền gói theo ngoại lệ',
@@ -10,6 +11,7 @@ export const auditActions: Record<string, string> = {
   customer: 'Thêm khách hàng', updateCustomer: 'Sửa khách hàng', serviceGroup: 'Tạo nhóm dịch vụ', service: 'Thêm dịch vụ', updateService: 'Sửa dịch vụ', serviceStatus: 'Đổi trạng thái dịch vụ', user: 'Thêm nhân viên', updateUser: 'Sửa nhân viên', userStatus: 'Đổi trạng thái nhân viên', appointment: 'Đặt lịch hẹn', appointmentStatus: 'Đổi trạng thái lịch hẹn', completeAppointment: 'Hoàn thành lịch dịch vụ lẻ', completeTreatmentAppointment: 'Hoàn thành lịch liệu trình', rescheduleAppointment: 'Dời / xếp lại lịch hẹn', invoice: 'Tạo hóa đơn', sellCashCard: 'Bán thẻ tiền', redeemCashCard: 'Dùng thẻ tiền', sellPackage: 'Bán gói liệu trình', deposit: 'Nhận tiền cọc', allocate: 'Phân bổ tiền cọc', reverseAllocation: 'Đảo phân bổ cọc do sai sót', payment: 'Thu tiền hóa đơn', cash: 'Ghi thu / chi', reverseCash: 'Đảo khoản thu / chi do sai sót', treatment: 'Tạo liệu trình', use: 'Ghi nhận buổi liệu trình', pauseTreatment: 'Bảo lưu liệu trình', extendTreatmentHold: 'Gia hạn bảo lưu', resumeTreatment: 'Mở lại liệu trình', openDay: 'Mở sổ ngày', closeDay: 'Chốt sổ ngày', reopenDay: 'Mở lại sổ ngày',
 };
 const fields: Record<string, string> = {
+  origin: 'Xuất xứ', manufacturedOn: 'Ngày sản xuất',
   productId: 'Sản phẩm', sku: 'Mã sản phẩm', unit: 'Đơn vị', quantity: 'Số lượng', unitPrice: 'Đơn giá', groupId: 'Nhóm sản phẩm',
   commission: 'Hoa hồng / lần',
   month: 'Tháng lương', baseSalary: 'Lương cơ bản', commissionTotal: 'Tổng hoa hồng', commissionCount: 'Số ca / buổi', carryoverCount: 'Khoản từ tháng trước', bonus: 'Thưởng / phụ cấp', deductions: 'Khấu trừ', expectedTotal: 'Số tiền xác nhận',

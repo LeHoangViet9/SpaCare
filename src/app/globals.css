@@ -1962,3 +1962,37 @@ label textarea { margin-top: 8px; }
 .responsive-table tbody tr:has([data-invoice-origin="opening"]) > td { background: #f1f6ff; }
 .responsive-table tbody tr:has([data-invoice-origin="opening"]) > td:first-child { box-shadow: inset 3px 0 #6385b7; }
 .invoice-import-note { padding: 12px 14px; border: 1px solid #c7d7ee; border-left: 3px solid #6385b7; border-radius: 8px; background: #f1f6ff; color: #244979; line-height: 1.6; }
+
+.cashier-service-line { padding:12px; margin:10px 0; border:1px solid var(--line); border-radius:10px; background:var(--paper); min-width:0; }
+.cashier-service-line .section-head { align-items:flex-start; gap:12px; }
+.cashier-service-line strong { overflow-wrap:anywhere; }
+.invoice-service-lines p { display:flex; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px solid var(--line); }
+.invoice-service-lines strong { white-space:nowrap; }
+
+.product-origin-dates { display:grid; gap:6px; margin:12px 0; font-size:14px; }
+.product-origin-dates > div { display:flex; flex-wrap:wrap; gap:4px 12px; }
+.product-origin-dates dt { color:var(--muted); min-width:112px; }
+.product-origin-dates dd { margin:0; overflow-wrap:anywhere; }
+
+.invoice-list-emphasis .responsive-table th { font-weight:700; color:var(--ink); }
+.invoice-list-emphasis .responsive-table td::before { font-weight:700; }
+.invoice-list-emphasis .invoice-service-name,
+.invoice-list-emphasis .invoice-money { font-weight:700; color:var(--ink); }
+.invoice-list-emphasis .invoice-status .badge { font-weight:700; }
+.invoice-code { font-weight:700; color:var(--green); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.invoice-list-emphasis [data-label="Thanh toán"] strong { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+
+.invoice-detail-money strong { font-weight:700; font-variant-numeric:tabular-nums; }
+
+/* Invoice amounts need room for Vietnamese labels and readable digits. */
+.invoice-list-emphasis .responsive-table { font-family: Arial, Helvetica, sans-serif; }
+.invoice-list-emphasis .invoice-payment { gap: 8px; width: 100%; }
+.invoice-payment-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; width: 100%; line-height: 1.6; }
+.invoice-payment-line > span { font-size: 14px; font-weight: 400; color: #43564e; }
+.invoice-payment-line > strong { font-size: 15px; font-weight: 700; color: #253d37; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .invoice-list-emphasis .responsive-table td { font-size: 15px; line-height: 1.6; }
+  .invoice-list-emphasis .responsive-table td::before { font-size: 14px; }
+  .invoice-list-emphasis .cell-stack small { font-size: 13px; }
+  .invoice-list-emphasis .invoice-status .badge { font-size: 13px; }
+}

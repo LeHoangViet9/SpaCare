@@ -1,5 +1,6 @@
+import { queueAppointmentReminders } from '@/lib/notification-events';
 import { actor, checkOrigin } from '@/lib/auth';
-import { Notification, PushDevice } from '@/lib/models';
+import { ActivityNotification, Notification, PushDevice } from '@/lib/models';
 import { ensure } from '@/lib/rules';
 import { failure } from '@/lib/http';
 import { pushInput } from '@/lib/push-validation';
@@ -9,38 +10,42 @@ import { after } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
-async function owner() {
+async function recipient() {
   const user = await actor();
-  ensure(user.role === 'OWNER', 'Chỉ chủ spa được nhận thông báo này.', 403);
-  return { spaId: user.spaId, userId: user.id };
+  ensure(['OWNER', 'STAFF'].includes(user.role), 'Không có quyền xem thông báo.', 403);
+  return { scope: { spaId: user.spaId, userId: user.id }, role: user.role, models: [Notification, ActivityNotification] };
 }
 export async function GET() {
   try {
-    const scope = await owner();
-    const items = await Notification.find(scope).sort({ createdAt: -1 }).limit(30)
-      .select('title body url readAt createdAt').lean();
-    const unread = await Notification.countDocuments({ ...scope, readAt: null });
-    after(async () => { try { await dispatchNotifications(scope); } catch { console.error('Notification dispatch deferred'); } });
-    return Response.json({ items, unread, publicKey: pushConfig()?.publicKey || null },
-      { headers: { 'Cache-Control': 'no-store, private' } });
+    const { scope, role, models } = await recipient();
+    const results = await Promise.all(models.map(async model => {
+      const filter = { ...scope, ...(role === 'STAFF' && model === ActivityNotification ? { kind: 'APPOINTMENT_REMINDER' } : {}) };
+      const [items, unread] = await Promise.all([
+        model.find(filter).sort({ createdAt: -1 }).limit(30).select('title body url readAt createdAt').lean(),
+        model.countDocuments({ ...filter, readAt: null }),
+      ]);
+      return { items, unread };
+    }));
+    const items = results.flatMap(result => result.items).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 30);
+    const unread = results.reduce((sum, result) => sum + result.unread, 0);
+    after(async () => { try { await queueAppointmentReminders(new Date(), scope.spaId); await dispatchNotifications(scope); } catch { console.error('Notification dispatch deferred'); } });
+    return Response.json({ items, unread, publicKey: pushConfig()?.publicKey || null }, { headers: { 'Cache-Control': 'no-store, private' } });
   } catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    const scope = await owner();
+    const { scope, role, models } = await recipient();
     const body = await request.json();
     if (body.action === 'readAll') {
-      await Notification.updateMany({ ...scope, readAt: null }, { readAt: new Date() });
+      for (const model of models) await model.updateMany({ ...scope, ...(role === 'STAFF' && model === ActivityNotification ? { kind: 'APPOINTMENT_REMINDER' } : {}), readAt: null }, { readAt: new Date() });
     } else if (body.action === 'read') {
       ensure(typeof body.id === 'string' && /^[a-f\d]{24}$/i.test(body.id), 'Thông báo không hợp lệ.');
-      await Notification.updateOne({ ...scope, _id: body.id, readAt: null }, { readAt: new Date() });
+      for (const model of models) await model.updateOne({ ...scope, ...(role === 'STAFF' && model === ActivityNotification ? { kind: 'APPOINTMENT_REMINDER' } : {}), _id: body.id, readAt: null }, { readAt: new Date() });
     } else if (body.action === 'subscribe') {
       ensure(pushConfig(), 'Chưa cấu hình thông báo đẩy trên máy chủ.', 503);
       const subscription = pushInput.parse(body.subscription);
-      // A shared browser changes ownership only after explicit permission from its signed-in owner.
-      await PushDevice.findOneAndUpdate({ endpoint: subscription.endpoint },
-        { $set: { ...scope, ...subscription } }, { upsert: true, runValidators: true });
+      await PushDevice.findOneAndUpdate({ endpoint: subscription.endpoint }, { $set: { ...scope, ...subscription } }, { upsert: true, runValidators: true });
     } else if (body.action === 'unsubscribe') {
       ensure(typeof body.endpoint === 'string', 'Thiết bị không hợp lệ.');
       await PushDevice.deleteOne({ ...scope, endpoint: body.endpoint });

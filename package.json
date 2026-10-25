@@ -27,7 +27,8 @@
     "test:ui": "playwright test --config=playwright.config.mjs",
     "db:import-catalog": "tsx --env-file=.env.local scripts/import-catalog.ts",
     "db:opening:preview": "tsx scripts/import-opening-balances.ts",
-    "db:opening:live": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-opening-balances.ts"
+    "db:opening:live": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-opening-balances.ts",
+    "db:invoice-codes": "tsx --env-file=.env.local scripts/setup-invoice-codes.ts"
   },
   "dependencies": {
     "next": "^16.0.0",

@@ -16,6 +16,6 @@ export function cardPayment(balance: number, due: number, used: number, addition
   return { balance: balance - used, settled: used + additional };
 }
 export function ensureCardService(invoice: Record<string, any>) {
-  ensure((!invoice.kind || invoice.kind === 'SERVICE') && invoice.serviceId && !invoice.productId && !invoice.treatmentId && !invoice.treatmentUseId && !invoice.giftOfInvoiceId,
+  ensure((!invoice.kind || invoice.kind === 'SERVICE') && (invoice.serviceId || (invoice.serviceItems?.length && invoice.serviceItems.every((item: Record<string, any>) => item.serviceId && item.total > 0))) && !invoice.productId && !invoice.treatmentId && !invoice.treatmentUseId && !invoice.giftOfInvoiceId,
     'Thẻ tiền chỉ dùng cho dịch vụ lẻ, không dùng cho sản phẩm hoặc gói liệu trình.', 409);
 }

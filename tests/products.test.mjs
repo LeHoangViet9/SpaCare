@@ -39,3 +39,20 @@ test('product creation no longer requires SKU and stock receipts require only pr
  const movement=productInputs.stockMovement.parse({productId:'a'.repeat(24),direction:'IN',quantity:3});assert.equal(movement.reason,'');
  for(const quantity of [0,-1,0.5])assert.equal(productInputs.stockMovement.safeParse({...movement,quantity}).success,false);
 });
+
+
+test('product origin and dates accept optional legacy metadata and reject invalid calendars/order', () => {
+ const base={name:'Serum',sizeMl:50,price:100000};
+ const parsed=productInputs.product.parse({...base,origin:'  Korea  ',manufacturedOn:'2024-02-29',expiresOn:'2026-10-25'});
+ assert.equal(parsed.origin,'Korea');assert.equal(parsed.manufacturedOn,'2024-02-29');assert.equal(parsed.expiresOn,'2026-10-25');
+ for(const schema of [productInputs.product,productInputs.updateProduct]) {
+  const input={...base,id:'a'.repeat(24)};
+  assert.equal(schema.safeParse(input).success,true);
+  assert.equal(schema.safeParse({...input,origin:'',manufacturedOn:'',expiresOn:''}).success,true);
+  assert.equal(schema.safeParse({...input,manufacturedOn:'2026-10-25',expiresOn:'2026-10-25'}).success,true);
+  assert.equal(schema.safeParse({...input,expiresOn:'2026-10-25'}).success,true);
+  for(const manufacturedOn of ['2025-02-29','2026-04-31','25/10/2026','2026-2-01']) assert.equal(schema.safeParse({...input,manufacturedOn}).success,false);
+  assert.equal(schema.safeParse({...input,manufacturedOn:'2026-10-25',expiresOn:'2026-10-24'}).success,false);
+  assert.equal(schema.safeParse({...input,origin:'a'.repeat(201)}).success,false);
+ }
+});

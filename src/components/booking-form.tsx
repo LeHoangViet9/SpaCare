@@ -3,8 +3,7 @@ import { formatCurrency } from '@/lib/currency';
 import ValidatedForm from '@/components/validated-form';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { Actor } from '@/lib/auth';
 
 type ServiceItem = {
@@ -19,9 +18,6 @@ function formatVnd(amount: number): string {
   return formatCurrency(amount);
 }
 
-const OPENING_MINUTES = 9 * 60;
-const CLOSING_MINUTES = 22 * 60;
-
 export default function BookingForm({
   services,
   user,
@@ -31,8 +27,6 @@ export default function BookingForm({
   user: Actor | null;
   initialServiceId?: string;
 }) {
-  const router = useRouter();
-
   // Categories
   const categories = useMemo(() => {
     return Array.from(new Set(services.map(s => s.category).filter(Boolean) as string[]));
@@ -41,11 +35,13 @@ export default function BookingForm({
   const [activeCategory, setActiveCategory] = useState<string>('');
 
   // Selected Service
-  const [selectedServiceId, setSelectedServiceId] = useState<string>(
-    initialServiceId && services.some(s => s._id === initialServiceId)
-      ? initialServiceId
-      : services[0]?._id || ''
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(
+    initialServiceId && services.some(s => s._id === initialServiceId) ? [initialServiceId] : services[0] ? [services[0]._id] : []
   );
+  function toggleService(id: string) {
+    setSelectedServiceIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : previous.length < 30 ? [...previous, id] : previous);
+    setError('');
+  }
 
   // Quick Days Generation (today + next 6 days)
   const quickDays = useMemo(() => {
@@ -54,8 +50,9 @@ export default function BookingForm({
     const now = new Date();
     for (let i = 0; i < 7; i++) {
       const d = new Date(now.getTime() + i * 24 * 3600_000);
-      const iso = d.toISOString().slice(0, 10);
-      const label = i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : `${dayNames[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}`;
+      const iso = d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const calendar = new Date(iso + 'T00:00:00Z');
+      const label = i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : `${dayNames[calendar.getUTCDay()]}, ${calendar.getUTCDate()}/${calendar.getUTCMonth() + 1}`;
       list.push({ iso, label, isToday: i === 0 });
     }
     return list;
@@ -85,25 +82,15 @@ export default function BookingForm({
     return services.filter(s => s.category === activeCategory);
   }, [services, activeCategory]);
 
-  const selectedService = services.find(s => s._id === selectedServiceId);
-  const availableSlots = useMemo(() => {
-    if (!selectedService) return [];
-    const slots: string[] = [];
-    for (let minute = OPENING_MINUTES; minute <= CLOSING_MINUTES; minute += 30) {
-      slots.push(`${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`);
-    }
-    return slots;
-  }, [selectedService]);
-  useEffect(() => {
-    if (!availableSlots.includes(time)) setTime(availableSlots[0] || '');
-  }, [availableSlots, time]);
+  const selectedServices = services.filter(s => selectedServiceIds.includes(s._id));
+  const estimatedTotal = selectedServices.reduce((sum, service) => sum + service.price, 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
 
-    if (!selectedServiceId) {
-      setError('Vui lòng chọn một liệu trình dịch vụ.');
+    if (!selectedServiceIds.length) {
+      setError('Vui lòng chọn ít nhất một dịch vụ.');
       return;
     }
     if (!date || !time) {
@@ -127,7 +114,7 @@ export default function BookingForm({
 
     setBusy(true);
     try {
-      const body = JSON.stringify({ serviceId: selectedServiceId, startAt: startDateTime.toISOString(),
+      const body = JSON.stringify({ serviceIds: selectedServiceIds, startAt: startDateTime.toISOString(),
         name: name.trim(), phone: phone.trim(), notes: notes.trim() });
       if (bookingRequest.current?.body !== body) bookingRequest.current = { body, key: crypto.randomUUID() };
       const res = await fetch('/api/booking', {
@@ -177,13 +164,13 @@ export default function BookingForm({
             <div className="pub-success-item">
               <span className="pub-success-item-label">Khung giờ hẹn:</span>
               <strong className="pub-success-item-val">
-                {appointmentDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                {appointmentDate.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' })}
               </strong>
             </div>
             <div className="pub-success-item">
               <span className="pub-success-item-label">Ngày:</span>
               <strong className="pub-success-item-val">
-                {appointmentDate.toLocaleDateString('vi-VN')}
+                {appointmentDate.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
               </strong>
             </div>
           </div>
@@ -243,7 +230,7 @@ export default function BookingForm({
             Chọn liệu trình trị liệu
           </h3>
           <span className="pub-booking-section-sub">
-            {selectedService ? `Đã chọn: ${selectedService.name}` : 'Vui lòng chọn 1 liệu trình'}
+            {selectedServices.length ? `Đã chọn ${selectedServices.length} dịch vụ: ${selectedServices.map(service => service.name).join(', ')}` : 'Chọn một hoặc nhiều dịch vụ'}
           </span>
         </div>
 
@@ -273,24 +260,10 @@ export default function BookingForm({
         {/* Services List */}
         <div className="pub-booking-service-list">
           {filteredServices.map(svc => {
-            const isSelected = selectedServiceId === svc._id;
+            const isSelected = selectedServiceIds.includes(svc._id);
             return (
-              <div
-                key={svc._id}
-                className={`pub-booking-service-item ${isSelected ? 'selected' : ''}`}
-                onClick={() => setSelectedServiceId(svc._id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => {
-                  if (e.key === ' ' || e.key === 'Enter') {
-                    e.preventDefault();
-                    setSelectedServiceId(svc._id);
-                  }
-                }}
-              >
-                <div className="pub-service-radio-custom">
-                  {isSelected && <span className="pub-service-radio-dot" />}
-                </div>
+              <label key={svc._id} className={`pub-booking-service-item ${isSelected ? 'selected' : ''}`}>
+                <input type="checkbox" className="pub-service-checkbox" name="serviceIds" value={svc._id} checked={isSelected} disabled={busy || (!isSelected && selectedServiceIds.length >= 30)} onChange={() => toggleService(svc._id)} />
 
                 <div className="pub-booking-service-info">
                   <div className="pub-booking-service-row">
@@ -304,7 +277,7 @@ export default function BookingForm({
                 <div className="pub-booking-service-price">
                   {formatVnd(svc.price)}
                 </div>
-              </div>
+              </label>
             );
           })}
         </div>
@@ -349,25 +322,21 @@ export default function BookingForm({
             <input
               type="date"
               value={date}
-              min={new Date().toISOString().slice(0, 10)}
+              min={quickDays[0]?.iso}
+              required
               onChange={e => setDate(e.target.value)}
               className="pub-date-input"
             />
           </label>
         </div>
 
-        {/* Time Slots Grid */}
         <div className="pub-slots-block">
-          <div className="pub-slot-group-header">Giờ hoạt động: 09:00–22:00 · Chọn giờ khách đến (mỗi 30 phút)</div>
-          <div className="pub-slots-grid">
-            {availableSlots.map(slot => (
-              <button key={slot} type="button" className={`pub-slot-btn ${time === slot ? 'active' : ''}`} onClick={() => setTime(slot)}>
-                {slot}
-              </button>
-            ))}
-          </div>
-          {!availableSlots.length && <p className="pub-input-hint">Vui lòng chọn dịch vụ để xem giờ đến.</p>}
-        </div>      </section>
+          <label className="pub-custom-date-label"><span>Giờ khách đến (giờ Việt Nam)</span>
+            <input type="time" name="arrivalTime" className="pub-date-input" min="09:00" max="22:00" step={60} required value={time} disabled={busy} onChange={event => setTime(event.target.value)} />
+          </label>
+          <p className="pub-input-hint">Chọn giờ và phút bất kỳ từ 09:00 đến 22:00, ví dụ 09:15 hoặc 14:40.</p>
+        </div>
+      </section>
 
       {/* Step 3: Thông tin người đặt */}
       <section className="pub-booking-section">
@@ -388,7 +357,7 @@ export default function BookingForm({
               <p>Đăng nhập để tự động lưu buổi trị liệu vào hồ sơ khách hàng của bạn.</p>
             </div>
             <Link
-              href={`/login?returnTo=/booking?serviceId=${selectedServiceId}`}
+              href={`/login?returnTo=/booking?serviceId=${selectedServiceIds[0] || ''}`}
               className="pub-btn pub-btn-secondary pub-btn-sm"
             >
               Đăng nhập ngay →
@@ -453,7 +422,7 @@ export default function BookingForm({
           <div className="pub-footer-price-info">
             <span className="pub-footer-price-label">Chi phí thanh toán ước tính:</span>
             <div className="pub-footer-price-val">
-              {selectedService ? formatVnd(selectedService.price) : '0 đ'}
+              {formatVnd(estimatedTotal)}
 
             </div>
           </div>

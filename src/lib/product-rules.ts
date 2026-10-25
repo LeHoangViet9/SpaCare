@@ -3,9 +3,16 @@ const id = z.string().regex(/^[a-f\d]{24}$/i);
 const name = z.string().trim().min(1).max(200);
 const quantity = z.number().int().min(1).max(1_000_000_000);
 const price = z.number().int().min(1).max(1_000_000_000_000);
-const product = z.object({ name, sku: z.string().trim().min(1).max(60).transform(s => s.toUpperCase()).optional(), sizeMl: z.number().int().min(1).max(100_000), groupId: z.union([id, z.literal('')]).default(''), price, description: z.string().trim().max(2000).optional(), imageUrl: z.union([z.string().trim().url().max(2000), z.string().regex(/^\/api\/product-images\/[a-f\d]{24}$/i), z.literal('')]).optional(), minStock: z.number().int().min(0).max(1_000_000_000).default(0) });
+const productDate = z.union([z.literal(''), z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const parsed = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}, 'Ngày không hợp lệ.')]).optional();
+const validProductDates = (value: { manufacturedOn?: string; expiresOn?: string }) =>
+  !value.manufacturedOn || !value.expiresOn || value.expiresOn >= value.manufacturedOn;
+const dateOrderError = { message: 'Hạn sử dụng không được trước ngày sản xuất.', path: ['expiresOn'] };
+const product = z.object({ origin: z.string().trim().max(200).optional(), manufacturedOn: productDate, expiresOn: productDate, name, sku: z.string().trim().min(1).max(60).transform(s => s.toUpperCase()).optional(), sizeMl: z.number().int().min(1).max(100_000), groupId: z.union([id, z.literal('')]).default(''), price, description: z.string().trim().max(2000).optional(), imageUrl: z.union([z.string().trim().url().max(2000), z.string().regex(/^\/api\/product-images\/[a-f\d]{24}$/i), z.literal('')]).optional(), minStock: z.number().int().min(0).max(1_000_000_000).default(0) });
 export const productInputs = {
-  product, updateProduct: product.extend({ id }),
+  product: product.refine(validProductDates, dateOrderError), updateProduct: product.extend({ id }).refine(validProductDates, dateOrderError),
   productStatus: z.object({ id, active: z.boolean() }),
   productGroup: z.object({ name }), updateProductGroup: z.object({ id, name }),
   stockMovement: z.object({ productId: id, direction: z.enum(['IN', 'OUT']), quantity, reason: z.string().trim().max(2000).default('') }),
