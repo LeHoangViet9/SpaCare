@@ -77,6 +77,30 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await operate(a,'closeDay',{day:spaDay(),counted:390,expectedPreview:400},key);
       const closed=await Day.findById(day._id);assert.equal(closed!.expected,400);assert.equal(closed!.difference,-10);
     });
+    await t.test('owner removes a paid mistaken invoice with cash correction; invoice date is optional',async()=>{
+      const bill=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:service.id,total:100000}],issuedOn:'2026-10-01'});
+      const before=await Invoice.findById(bill.id);assert.equal(spaDay(before!.createdAt),'2026-10-01');assert.ok(before!.recordedAt);
+      await call('payment',{invoiceId:bill.id,amount:100000,method:'CASH',receivedConfirmation:true});
+      const fresh=await Invoice.findById(bill.id);
+      const payload={id:bill.id,expectedUpdatedAt:fresh!.updatedAt.toISOString(),reason:'Nhập sai hóa đơn',confirmDelete:true};
+      await assert.rejects(operate(employee,'deleteInvoice',payload,randomUUID()),/Chỉ chủ spa/);
+      const key=randomUUID();await call('deleteInvoice',payload,key);await call('deleteInvoice',payload,key);
+      assert.equal(await Invoice.findById(bill.id),null);
+      const payment=await Payment.findOne({spaId,invoiceId:bill.id});assert.equal(payment!.reversed,true);
+      assert.equal(await CashEntry.countDocuments({spaId,kind:'REVERSAL',originalId:payment!.receiptId}),1);
+      assert.equal((await Commission.findOne({spaId,invoiceId:bill.id}))!.amount,0);
+    });
+    await t.test('signed package visit and additional standalone service commit together and retry once',async()=>{
+      const template=await call('packageTemplate',{serviceId:service.id,name:'Mixed visit',price:900000,totalSessions:3});
+      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
+      const plan=await Treatment.findOne({spaId,invoiceId:sale.invoiceId});
+      const data={customerId:customer.id,serviceId:service.id,treatmentId:String(plan!._id),staffId:String(staff._id),signature:signed,remainingBefore:3,additionalServices:[{serviceId:service.id,total:60000}]};
+      const key=randomUUID();const result=await call('invoice',data,key);await call('invoice',data,key);
+      const invoice=await Invoice.findById(result.invoiceId);assert.equal(invoice!.total,60000);assert.equal(invoice!.kind,'SESSION');assert.equal(invoice!.serviceItems[0].total,0);
+      assert.equal((await Treatment.findById(plan!._id))!.remaining,2);
+      await assert.rejects(call('invoice',{...data,remainingBefore:2,additionalServices:[{serviceId:new mongoose.Types.ObjectId().toString(),total:10}]}));
+      assert.equal((await Treatment.findById(plan!._id))!.remaining,2);
+    });
     await t.test('unassigned appointments: creation, retry, completion performer and rollback', async () => {
       const tomorrow = new Date(Date.now() + 86400000);
       const startAt = new Date(tomorrow.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }) + 'T10:00:00+07:00').toISOString();
@@ -258,7 +282,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const created=await call('invoice',{customerId:customer.id,serviceId:service.id});
       const original=await Invoice.findById(created.id);
       const deletion={id:created.id,expectedUpdatedAt:original!.updatedAt.toISOString(),reason:'Nhập nhầm',confirmDelete:true};
-      await assert.rejects(call('deleteInvoice',deletion),/Hủy hóa đơn trước/);
+      // Owner may now delete active or paid invoices using correction entries.
       await call('cancelInvoice',{id:created.id,expectedUpdatedAt:original!.updatedAt.toISOString(),reason:'Nhập nhầm'});
       const canceled=await Invoice.findById(created.id);
       const payload={...deletion,expectedUpdatedAt:canceled!.updatedAt.toISOString()};
@@ -275,8 +299,8 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.ok(await Customer.findById(customer.id));
       const linked=await Invoice.create({spaId,customerId:customer.id,description:'History',total:0,paid:0,status:'CANCELLED'});
       await Commission.create({spaId,invoiceId:linked._id,staffId:staff._id,customerId:customer.id,amount:0,sourceType:'INVOICE',sourceId:linked._id,earnedAt:new Date(),cancelledAt:new Date()});
-      await assert.rejects(call('deleteInvoice',{...payload,id:String(linked._id),expectedUpdatedAt:linked.updatedAt.toISOString()}),/lịch sử giao dịch/);
-      assert.ok(await Invoice.findById(linked._id));
+      await call('deleteInvoice',{...payload,id:String(linked._id),expectedUpdatedAt:linked.updatedAt.toISOString()});
+      assert.equal(await Invoice.findById(linked._id),null);
     });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});

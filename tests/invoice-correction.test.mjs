@@ -12,8 +12,7 @@ test('invoice repricing preserves fixed commissions and reconciles rounding exac
 });
 
 import { invoiceDeletionBlock } from '../src/lib/invoice-correction.ts';
-test('permanent invoice deletion only accepts canceled and untouched records',()=>{
- assert.equal(invoiceDeletionBlock({status:'CANCELLED',paid:0}), '');
- assert.ok(invoiceDeletionBlock({status:'OPEN',paid:0}));
- for(const patch of [{paid:1},{cardPaid:1},{refunded:1},{openingBalance:true},{performedAt:new Date()},{performedBy:'actor'},{appointmentId:'visit'},{treatmentId:'plan'},{treatmentUseId:'use'},{giftOfInvoiceId:'gift'},{productId:'product'},{kind:'PRODUCT'},{kind:'SESSION'},{kind:'GIFT'},{saleCommissionAccrued:1}]) assert.ok(invoiceDeletionBlock({status:'CANCELLED',...patch}),JSON.stringify(patch));
+test('invoice correction preserves signed evidence, opening balances and refund history',()=>{
+ assert.equal(invoiceDeletionBlock({}), '');
+ for(const invoice of [{openingBalance:true},{treatmentUseId:'signed-use'},{giftOfInvoiceId:'purchase'},{refunded:100}]) assert.ok(invoiceDeletionBlock(invoice));
 });

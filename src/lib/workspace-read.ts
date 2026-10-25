@@ -156,7 +156,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   ] }] }).lean(),
     Deposit.find({ $and: [filters.deposits, { $or: [{ balance: { $gt: 0 } }, { _id: { $in: [...listed('deposits').map(d => d._id), ...auditIds('depositId')] } }] }] }).lean(),
   ]);
-  const invoices = invoiceChoices.map(i => ({ ...i, status: invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
+  const invoices = invoiceChoices.map(i => ({ ...i, status: i.status === 'CANCELLED' ? 'CANCELLED' : invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
   const treatments = await Treatment.find({ ...scope, $or: [
     availableTreatmentFilter(), { _id: { $in: listed('treatments').map(t => t._id) } },
     { _id: { $in: auditIds('treatmentId') } },
@@ -169,7 +169,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     Customer.find({ ...scope, _id: { $in: [...customerRefs, ...listed('customers').map(c => c._id), ...auditIds('customerId'), ...(query.customer ? [query.customer] : [])] } }).lean(),
   ]);
   const packages = treatments.map(t => { const bill = packageInvoices.find(i => String(i._id) === String(t.invoiceId)); return { ...t, serviceId: t.serviceId || bill?.serviceId, paymentDueDate: bill?.dueDate, paymentOverdue: !!bill?.dueDate && bill.dueDate < today && bill.paid < bill.total }; });
-  if (pages.invoices) pages.invoices.rows = listed('invoices').map(i => ({ ...i, status: invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
+  if (pages.invoices) pages.invoices.rows = listed('invoices').map(i => ({ ...i, status: i.status === 'CANCELLED' ? 'CANCELLED' : invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
   if (pages.treatments) pages.treatments.rows = listed('treatments').map(t => packages.find(p => String(p._id) === String(t._id)) || t);
   const spaObjectId = new mongoose.Types.ObjectId(user.spaId);
   const aggregateScope = { spaId: spaObjectId };

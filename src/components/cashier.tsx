@@ -28,6 +28,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [performerId, setPerformerId] = useState('');
+  const [issuedOn,setIssuedOn]=useState('');
   const [dueDate, setDueDate] = useState('');
   const [startsOn, setStartsOn] = useState(treatmentDay());
   const [participantIds,setParticipantIds] = useState<string[]>([data.user.id]);
@@ -46,7 +47,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
   const pageCount = showWholeGroup ? 1 : Math.max(1, Math.ceil(catalog.length / 8));
   const page = Math.min(catalogPage, pageCount);
   const visibleCatalog = showWholeGroup ? catalog : catalog.slice((page - 1) * 8, page * 8);
-  const amount = mode === 'service' ? serviceItems.reduce((sum, item) => { try { return sum + parseMoney(item.total); } catch { return sum; } }, 0) : mode === 'session' ? 0 : (price ? (()=>{try{return parseMoney(price);}catch{return 0;}})() : 0) * (mode === 'product' ? Number(quantity) : 1);
+  const amount = mode === 'service' ? serviceItems.reduce((sum, item) => { try { return sum + parseMoney(item.total); } catch { return sum; } }, 0) : mode === 'session' ? serviceItems.reduce((sum,item)=>{try{return sum+parseMoney(item.total);}catch{return sum;}},0) : (price ? (()=>{try{return parseMoney(price);}catch{return 0;}})() : 0) * (mode === 'product' ? Number(quantity) : 1);
   const cardContext=JSON.stringify([customer?._id, mode === 'service' ? serviceItems.map(item => [item._id, item.total]) : selected?._id, amount]);
   const appliedCard=mode==='service'&&cardPreview.context===cardContext?cardPreview.amount:0;
   const previewCard=useCallback((value:number)=>setCardPreview({context:cardContext,amount:value}),[cardContext]);
@@ -69,8 +70,9 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
     if (mode === 'session' && !isValidSignature(signature)) { setError('Khách cần ký xác nhận buổi thực hiện.'); return; }
     if (mode === 'package' && (gifts.length || giftCardValue>0) && (!promotion.trim() || gifts.some(g => !g.templateId))) { setError('Nhập đợt khuyến mãi và chọn đủ gói quà tặng.'); return; }
     if (mode !== 'session' && mode !== 'service') { try { const value = parseMoney(price); if (value < 1) throw new Error('Giá bán phải lớn hơn 0.'); } catch(e) {setError((e as Error).message);return;} }
+    if(mode==='session') {try {for(const item of serviceItems) if(parseMoney(item.total)<=0) throw new Error('Giá dịch vụ lẻ phải lớn hơn 0.');}catch(error){setError((error as Error).message);return;}}
     const cardValue = new FormData(e.currentTarget).get('cashCard');
-    const common = { customerId: customer._id };
+    const common = { customerId: customer._id, ...(issuedOn ? {issuedOn} : {}) };
     if (mode === 'service') {
       try {
         const items = serviceItems.map(item => ({ serviceId: item._id, total: parseMoney(item.total) }));
@@ -81,7 +83,7 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
     else if (mode === 'product') onSubmit('sellProduct', { ...common, productId: selected._id, quantity: Number(quantity), unitPrice: parseMoney(price), ...(dueDate ? { dueDate } : {}) });
     else if (mode === 'package') onSubmit('sellPackage', { ...common, templateId: selected._id, total: amount, dueDate, ...(startsOn ? { startsOn } : {}), participantIds, promotion, giftCashCardAmount: parseMoney(giftCashCardAmount), gifts: gifts.map(g => ({templateId:g.templateId})) });
     else onSubmit('invoice', { ...common, staffId: performerId, serviceId: mode === 'session' ? selected.serviceId : selected._id, ...(description.trim()?{description:description.trim()}:{}), total: amount,
-      ...(mode === 'session' ? { treatmentId: selected._id, remainingBefore: useToken(selected), signature } : dueDate ? { dueDate } : {}) });
+      ...(mode === 'session' ? { treatmentId: selected._id, additionalServices:serviceItems.map(item=>({serviceId:item._id,total:parseMoney(item.total)})), remainingBefore: useToken(selected), signature } : dueDate ? { dueDate } : {}) });
   }
   return <ValidatedForm onSubmit={submit} className="cashier">
     <section className="panel panel-padded cashier-customer"><div className="section-head"><h3>1. Khách hàng</h3><div className="actions"><button type="button" onClick={onNewCustomer} disabled={busy}>+ Khách mới</button><button type="button" onClick={onInvoices} disabled={busy}>Danh sách hóa đơn</button></div></div>
@@ -122,13 +124,15 @@ export default function Cashier({ data, busy, initialMode, initialCustomer, onSu
         {mode !== 'session' && <label>Hạn thanh toán{mode === 'service' ? ' (nếu có)' : ''}<input name="dueDate" type="date" min={mode === 'package' ? data.today : undefined} required={mode === 'package'} value={dueDate} onChange={e => setDueDate(e.target.value)} /></label>}
         {(mode === 'service' || mode === 'session') && <label>Nhân viên trực tiếp thực hiện<select name="staffId" required value={performerId} onChange={e => { setPerformerId(e.target.value); setSignature({ version: 1, strokes: [] }); }}><option value="">Chọn người đã thực hiện.</option>{data.staff.filter((s: Row) => s.active && ['OWNER','STAFF'].includes(s.role)).map((s: Row) => <option key={s._id} value={s._id}>{s.name}</option>)}</select><small>Hoa hồng dịch vụ được ghi cho người thực hiện.</small></label>}
         {mode === 'service' && <p>Lưu hóa đơn xác nhận dịch vụ đã làm xong và ghi hoa hồng một lần cho nhân viên đã chọn.</p>}
+        {mode === 'session' && <section className="session-extra-services"><h3>Thêm dịch vụ lẻ (tùy chọn)</h3><div className="cashier-cards">{data.services.filter((service:Row)=>service.active).map((service:Row)=><button type="button" key={service._id} disabled={busy} aria-pressed={serviceItems.some(item=>item._id===service._id)} onClick={()=>{setServiceItems(old=>old.some(item=>item._id===service._id)?old.filter(item=>item._id!==service._id):old.length<30?[...old,{...service,total:String(service.price)}]:old);}}><strong>{service.name}</strong><span>{money(service.price)}</span></button>)}</div>{serviceItems.map(item=><label key={item._id}>{item.name} · Giá dịch vụ lẻ<MoneyInput value={item.total} required onValueChange={total=>setServiceItems(old=>old.map(row=>row._id===item._id?{...row,total}:row))}/></label>)}</section>}
         {mode === 'session' && <section><strong>Khách ký xác nhận dùng 1 buổi</strong><SignaturePad value={signature} onChange={setSignature} disabled={busy || !performerId} /></section>}
       </fieldset>}
       <div className="cashier-total"><span>{mode === 'session' ? 'Thu thêm' : 'Tổng hóa đơn'}</span><strong>{money(Number.isFinite(amount) ? amount : 0)}</strong></div>
       {mode==='service' && appliedCard>0 && <div className="cashier-total card-payment-due" role="status"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
-      {mode === 'session' && selected && <p>Ghi 1 buổi · Không thu thêm tiền</p>}
+      {mode === 'session' && selected && <p>Buổi liệu trình: 0đ · Chỉ thu phần dịch vụ lẻ thêm.</p>}
+      <label>Ngày hóa đơn (để trống: hôm nay)<input type="date" max={data.today} value={issuedOn} onChange={e=>setIssuedOn(e.target.value)} disabled={busy}/><small>Ngày ghi hóa đơn; khoản tiền nhận sau vẫn ghi vào ngày thực nhận.</small></label>
       {error && <p className="negative" role="alert">{error}</p>}
-      <button type="submit" className="primary cashier-save" disabled={busy || !selected || !customer || ((mode === 'service' || mode === 'session') && !performerId) || (mode === 'session' && !isValidSignature(signature))}>{busy ? 'Đang lưu…' : mode === 'session' ? 'Xác nhận dùng 1 buổi' : mode === 'package' ? 'Tạo gói & hóa đơn' : mode === 'service' ? 'Hoàn thành & lập hóa đơn' : 'Lưu hóa đơn'}</button>
+      <button type="submit" className="primary cashier-save" disabled={busy || !selected || !customer || ((mode === 'service' || mode === 'session') && !performerId) || (mode === 'session' && !isValidSignature(signature))}>{busy ? 'Đang lưu…' : mode === 'session' ? 'Ghi buổi & lập hóa đơn dịch vụ thêm' : mode === 'package' ? 'Tạo gói & hóa đơn' : mode === 'service' ? 'Hoàn thành & lập hóa đơn' : 'Lưu hóa đơn'}</button>
       {mode !== 'session' && <small className="cashier-save-note">Nếu áp dụng thẻ, lưu hóa đơn sẽ trừ thẻ và thu thêm theo xác nhận. Phần còn nợ có thể thu sau.</small>}
     </section>
   </ValidatedForm>;

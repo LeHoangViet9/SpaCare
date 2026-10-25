@@ -24,7 +24,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
     {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button><button disabled={!onCancel || data.invoice.status === 'CANCELLED'} onClick={()=>onCancel?.(data.invoice)}>Hủy hóa đơn</button></div>}
-    {record.kind === 'invoice' && data && !error && onDelete && data.invoice.status === 'CANCELLED' && <button onClick={()=>onDelete(data.invoice)}>Xóa vĩnh viễn</button>}
+    {record.kind === 'invoice' && data && !error && onDelete && <button onClick={()=>onDelete(data.invoice)}>Xóa vĩnh viễn</button>}
     {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
 
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
@@ -57,7 +57,7 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
         {data.invoice.performedAt && <p>Đã thực hiện: <strong>{data.invoice.performerName || 'Nhân viên đã ghi nhận'}</strong> · {new Date(data.invoice.performedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
         {onCompleteService && data.invoice.status !== 'CANCELLED' && data.canCompleteService && <button onClick={() => onCompleteService(data.invoice)}>Hoàn thành dịch vụ / ghi hoa hồng</button>}
         {onPayment && data.invoice.total > data.invoice.paid && <div className="actions"><button onClick={() => onPayment(data.invoice, 'CASH')}>Thu tiền mặt</button><button onClick={() => onPayment(data.invoice, 'BANK_TRANSFER')}>Chuyển khoản / QR</button></div>}
-        {data.invoice.kind === 'SESSION' && <p>Buổi thuộc liệu trình · Không thu thêm tiền</p>}
+        {data.invoice.kind === 'SESSION' && <p>Buổi thuộc liệu trình: 0đ{data.invoice.total>0 ? ' · Có dịch vụ lẻ thu thêm trong hóa đơn' : ' · Không thu thêm tiền'}</p>}
         {data.invoice.kind === 'GIFT' && <p>Quà tặng 0đ · Hóa đơn mua #{data.invoice.giftOfInvoiceId?.slice(-6)}</p>}
         {data.invoice.promotion && <p>Khuyến mãi: {data.invoice.promotion}</p>}
         {data.gifts?.length > 0 && <section><h3>Quà tặng kèm</h3>{data.gifts.map((gift: Row) => <p key={gift._id}>{gift.description} · <strong>0đ</strong></p>)}</section>}

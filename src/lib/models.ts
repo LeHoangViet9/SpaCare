@@ -139,6 +139,7 @@ const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, requ
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
   serviceItems: { type: [serviceItemSchema], default: undefined },
@@ -184,6 +185,7 @@ export const CashCard = model('CashCard', {
   [{ spaId: 1, receiptId: 1 }, { unique: true, partialFilterExpression: { receiptId: { $exists: true } } }],
   [{ spaId: 1, sourceInvoiceId: 1 }, { unique: true, partialFilterExpression: { sourceInvoiceId: { $exists: true } } }]]);
 export const CashCardUse = model('CashCardUse', {
+  reversedAt:Date,
   cardId: id, customerId: id, invoiceId: id, amount, balanceBefore: amount, balanceAfter: amount, actorId: id,
 }, [[{ spaId: 1, customerId: 1, createdAt: -1 }], [{ spaId: 1, invoiceId: 1 }], [{ spaId: 1, cardId: 1, createdAt: -1 }]]);
 

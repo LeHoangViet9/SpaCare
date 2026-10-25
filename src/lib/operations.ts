@@ -120,6 +120,7 @@ const schemas = {
       .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
   }),
   invoice: z.object({
+    additionalServices:z.array(z.object({serviceId:objectId,total:moneySchema})).max(30).optional(),
     cashCard: invoiceCardInput.optional(),
     staffId: objectId.optional(),
     treatmentId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(),
@@ -190,7 +191,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
   ensure(Object.hasOwn(schemas, action), 'Thao tác không hợp lệ.');
   ensure(/^[a-zA-Z0-9-]{16,100}$/.test(key), 'Cần Idempotency-Key hợp lệ.');
   const op = action as Operation;
-  const data = schemas[op].parse(raw);
+  const data = {...schemas[op].parse(raw), ...(['invoice','serviceInvoice','sellPackage','sellProduct'].includes(op) ? {issuedOn:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().parse((raw as Record<string,unknown>)?.issuedOn)} : {})};
   const fingerprint = sha(JSON.stringify({ action, data }));
   await connect();
   return mongoose.connection.transaction(
@@ -229,7 +230,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if (model === Invoice) {
           const counter = await Control.findOneAndUpdate(scope, { $inc: { invoiceSequence: 1 } }, { session, returnDocument: 'after' });
           ensure(counter, 'Spa chưa sẵn sàng cấp mã hóa đơn.', 503);
-          values = { ...values, code: sequenceInvoiceCode(counter.invoiceSequence) };
+          if(data.issuedOn) {dayBounds(data.issuedOn);ensure(data.issuedOn <= spaDay(),'Không nhập hóa đơn ngày tương lai.');}
+          values = { ...values, code: sequenceInvoiceCode(counter.invoiceSequence), recordedAt:new Date(), ...(data.issuedOn ? {createdAt:new Date(data.issuedOn+'T12:00:00+07:00')} : {}) };
         }
         const record = (await model.create([{ ...scope, ...(model === Invoice ? { createdBy: actor.id, creatorName: user.name } : {}), ...values }], { session }))[0];
         if (model === Invoice) await queueInvoiceNotifications(record, session);
@@ -856,7 +858,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(service.active, 'Dịch vụ không hoạt động.');
           packagePaymentDeadline(d.dueDate, today);
           ensure(!d.gifts.length || d.promotion.trim().length > 0, 'Nhập đợt khuyến mãi khi có quà tặng.');
-          const startsOn = packageStartOnPurchase(template, service.category, today, d.startsOn);
+          const startsOn = packageStartOnPurchase(template, service.category, data.issuedOn || today, d.startsOn);
           if (timedPackage(template)) { ensure(startsOn, 'Chọn ngày bắt đầu cho gói theo thời gian.'); dayBounds(startsOn!); }
           const advisor = await consultant(customer, d.consultantId);
           const participants = [];
@@ -872,7 +874,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             const giftTemplate = await get(PackageTemplate, gift.templateId);
             ensure(giftTemplate.active, 'Gói quà tặng đã ngừng bán.');
             const giftService = await get(Service, String(giftTemplate.serviceId));
-            const giftStartsOn = packageStartOnPurchase(giftTemplate, giftService.category, today, d.startsOn);
+            const giftStartsOn = packageStartOnPurchase(giftTemplate, giftService.category, data.issuedOn || today, d.startsOn);
             if (timedPackage(giftTemplate)) { ensure(giftStartsOn, 'Chọn ngày bắt đầu cho gói quà tặng theo thời gian.'); dayBounds(giftStartsOn!); }
 
             ensure(giftService.active, 'Dịch vụ quà tặng không hoạt động.');
@@ -889,17 +891,52 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           target=await Invoice.findOne({...scope,_id:d.id}).session(session);
           ensure(target,'Không tìm thấy hóa đơn trong spa này.',404);
           ensure(target.updatedAt?.toISOString()===d.expectedUpdatedAt,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
-          const block=invoiceDeletionBlock(target);
-          ensure(!block,block,409);
-          for(const model of [Payment,Allocation,CashCardUse,Commission,SaleCommission,SharedSaleCommission,StockMovement]) {
-            ensure(!await model.exists({...scope,invoiceId:target._id}).session(session),'Hóa đơn còn lịch sử giao dịch, kho hoặc hoa hồng; không được xóa vĩnh viễn.',409);
+          const deletionBlock=invoiceDeletionBlock(target);ensure(!deletionBlock,deletionBlock,409);
+          const family=await Invoice.find({...scope,$or:[{_id:target._id},{giftOfInvoiceId:target._id}]}).session(session);
+          const ids=family.map(i=>i._id);
+          const plans=await Treatment.find({...scope,invoiceId:{$in:ids}}).session(session);
+          ensure(!await TreatmentUse.exists({...scope,treatmentId:{$in:plans.map(p=>p._id)}}).session(session),'Gói đã có buổi xác nhận; không xóa lịch sử đã ký.',409);
+          ensure(!await Appointment.exists({...scope,treatmentId:{$in:plans.map(p=>p._id)},status:{$in:['CONFIRMED','POSTPONED']}}).session(session),'Gói còn lịch hẹn. Xử lý lịch trước khi xóa.',409);
+          const gifts=await CashCard.find({...scope,sourceInvoiceId:{$in:ids}}).session(session);
+          for(const card of gifts) ensure(card.balance===card.amount && !await CashCardUse.exists({...scope,cardId:card._id}).session(session),'Thẻ tặng đã sử dụng; cần đối soát riêng.',409);
+          appointmentBefore=target.toObject();appointmentBefore!.family=family.map(i=>i.toObject());
+          const payments=await Payment.find({...scope,invoiceId:{$in:ids},reversed:false}).session(session);
+          for(const payment of payments) {
+            const original=await get(CashEntry,String(payment.receiptId));
+            ensure(!original.reversed,'Khoản thu đã thay đổi, cần đối soát.',409);
+            await receipt({amount:original.amount,method:original.method,direction:'OUT',kind:'REVERSAL',originalId:original._id,customerId:target.customerId,note:d.reason});
+            original.reversed=true;payment.reversed=true;await original.save({session});await payment.save({session});
           }
-          ensure(!await Treatment.exists({...scope,$or:[{invoiceId:target._id},{giftOfInvoiceId:target._id}]}).session(session),'Hóa đơn còn liên kết liệu trình; không được xóa vĩnh viễn.',409);
-          ensure(!await Invoice.exists({...scope,giftOfInvoiceId:target._id}).session(session),'Hóa đơn còn quà tặng liên quan; không được xóa vĩnh viễn.',409);
-          ensure(!await CashCard.exists({...scope,sourceInvoiceId:target._id}).session(session),'Hóa đơn đã phát hành thẻ; không được xóa vĩnh viễn.',409);
-          ensure(!await Day.exists({...scope,day:spaDay(target.createdAt),status:'CLOSED'}).session(session),'Ngày lập hóa đơn đã chốt sổ. Chủ spa cần mở lại trước khi xóa.',409);
-          await ActivityNotification.deleteMany({...scope,kind:'INVOICE_CREATED',invoiceId:target._id},{session});
-          const deleted=await Invoice.deleteOne({...scope,_id:target._id,updatedAt:target.updatedAt,status:'CANCELLED'},{session});
+          const allocations=await Allocation.find({...scope,invoiceId:{$in:ids},reversed:false}).session(session);
+          for(const allocation of allocations) {
+            const deposit=await get(Deposit,String(allocation.depositId));deposit.balance+=allocation.amount;
+            ensure(deposit.balance<=deposit.amount,'Số dư cọc không hợp lệ.');await deposit.save({session});
+            allocation.reversed=true;await allocation.save({session});
+          }
+          const cardUses=await CashCardUse.find({...scope,invoiceId:{$in:ids}}).session(session);
+          for(const use of cardUses) {
+            ensure(!use.reversedAt,'Lượt thẻ đã được điều chỉnh.',409);
+            const card=await get(CashCard,String(use.cardId));card.balance+=use.amount;
+            ensure(card.balance<=card.amount,'Số dư thẻ không hợp lệ.');await card.save({session});use.reversedAt=new Date();await use.save({session});
+          }
+          for(const model of [Commission,SaleCommission,SharedSaleCommission]) {
+            const rows=await model.find({...scope,invoiceId:{$in:ids}}).session(session);
+            for(const row of rows) {
+              ensure(!row.payrollId,'Hoa hồng đã chốt/chi lương cần điều chỉnh bảng lương trước khi xóa.',409);
+              row.amount=0;if(model===Commission)row.cancelledAt=new Date();await row.save({session});
+            }
+          }
+          const movements=await StockMovement.find({...scope,invoiceId:{$in:ids}}).session(session);
+          for(const movement of movements) {
+            ensure(movement.direction==='OUT','Phiếu kho không phải xuất bán, cần đối soát.',409);
+            const product=await get(Product,String(movement.productId));const before=product.stock;product.stock=stockBalance(product.stock,'IN',movement.quantity);await product.save({session});
+            await create(StockMovement,{productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:actor.name,direction:'IN',kind:'MANUAL',quantity:movement.quantity,before,after:product.stock,reason:d.reason});
+          }
+          for(const plan of plans) {plan.status='CANCELLED';await plan.save({session});}
+          for(const card of gifts) {card.balance=0;await card.save({session});}
+          for(const gift of family.filter(i=>String(i._id)!==String(target._id))) {gift.cancelledTotal=gift.total;gift.total=0;gift.paid=0;gift.status='CANCELLED';await gift.save({session});}
+          await ActivityNotification.deleteMany({...scope,kind:'INVOICE_CREATED',invoiceId:{$in:ids}},{session});
+          const deleted=await Invoice.deleteOne({...scope,_id:target._id,updatedAt:target.updatedAt},{session});
           ensure(deleted.deletedCount===1,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
           break;
         }
@@ -1048,12 +1085,28 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             const recorded = await recordUse(schemas.use.parse({ treatmentId: d.treatmentId, signature: d.signature, remainingBefore: d.remainingBefore, staffId: d.staffId }));
             treatmentUseId = String(recorded._id);
             target = await get(Invoice, linkedInvoiceId!);
-            if (d.description) target.description = d.description;
+            if(d.additionalServices?.length) {
+              ensure(new Set(d.additionalServices.map(item=>item.serviceId)).size===d.additionalServices.length,'Không chọn trùng dịch vụ lẻ.');
+              const items=[];
+              for(const item of d.additionalServices) {
+                const extra=await get(Service,item.serviceId);ensure(extra.active,'Dịch vụ đã ngừng hoạt động.');
+                items.push({serviceId:extra._id,name:extra.name,total:item.total,commission:extra.commission || 0});
+              }
+              target.serviceItems=[{serviceId:service._id,name:target.description,total:0,commission:target.commission || 0},...items];
+              target.total=money(items.reduce((n,item)=>n+item.total,0));target.status=invoiceState(target.total,0);
+              target.description += ' + '+items.map(item=>item.name).join(' + ');
+              const earned=await Commission.findOne({...scope,invoiceId:target._id}).session(session);
+              ensure(earned && !earned.payrollId,'Không cập nhật được hoa hồng lần thực hiện.',409);
+              earned.amount=money(earned.amount+items.reduce((n,item)=>n+item.commission,0),true);earned.serviceName=target.description;
+              await earned.save({session});target.commission=earned.amount;
+            }
+            if (d.description && !d.additionalServices?.length) target.description = d.description;
             if (d.consultantId) Object.assign(target, await consultant(customer, d.consultantId));
             await target.save({ session });
             break;
           }
           ensure(service.active, 'Dịch vụ không hoạt động.');
+          ensure(!d.additionalServices?.length,'Dịch vụ thêm chỉ dùng khi ghi buổi liệu trình.');
           ensure(!d.signature && !d.remainingBefore, 'Chỉ dùng chữ ký xác nhận khi chọn liệu trình.');
           if (d.staffId) {
             const performer = await get(User, d.staffId);
@@ -1297,7 +1350,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const details = { ...data } as Record<string, unknown>;
       if (appointmentBefore) {
         details.before = appointmentBefore;
-        details.after = target.toObject();
+        details.after = op === 'deleteInvoice' ? null : target.toObject();
         if(op === 'updateInvoice' || op === 'cancelInvoice') details.commissionsAfter = await Commission.find({...scope,invoiceId:target._id}).session(session).lean();
         if(op === 'updateInvoice') details.treatmentAfter = await Treatment.findOne({...scope,invoiceId:target._id}).session(session).lean();
       }

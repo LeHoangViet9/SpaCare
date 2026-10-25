@@ -2022,3 +2022,7 @@ label textarea { margin-top: 8px; }
 .day-close-preview dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; }
 .day-close-difference { padding:12px 0; font-size:16px; }
 .day-close-preview small { display:block; line-height:1.6; color:var(--muted); }
+
+.appointment-service-choices,.session-extra-services .cashier-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; max-height:320px; overflow:auto; padding:4px; }
+.appointment-service-choices button,.session-extra-services .cashier-cards button { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; min-height:76px; padding:14px; text-align:left; white-space:normal; line-height:1.5; }
+.appointment-service-choices button[aria-pressed="true"],.session-extra-services button[aria-pressed="true"] { border-color:var(--green); background:var(--sage); }
