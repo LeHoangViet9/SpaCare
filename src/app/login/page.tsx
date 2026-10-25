@@ -1,5 +1,6 @@
 'use client';
 import ValidatedForm from '@/components/validated-form';
+import PasswordInput from '@/components/password-input';
 
 import Link from 'next/link';
 import Brand from '@/components/brand';
@@ -120,9 +121,9 @@ function LoginForm() {
           </div>
 
           <div>
-            <label style={{ fontSize: '13px', fontWeight: 600 }}>Mật khẩu</label>
-            <input
-              type="password"
+            <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: 600 }}>Mật khẩu</label>
+            <PasswordInput
+              id="login-password"
               autoComplete="current-password"
               required
               maxLength={128}

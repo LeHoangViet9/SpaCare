@@ -17,6 +17,17 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const scope = { spaId: user.spaId };
   const finance = user.role === 'OWNER' || user.cashier;
   const today = spaDay();
+  // Customer history and pagination are served by /api/customers.
+  // Do not read financial balances and operational history for this shell.
+  if (query.section === 'customers') {
+    const staff = await User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } })
+      .select(user.role === 'OWNER' ? 'name email phone role cashier active' : 'name role cashier active').lean();
+    return { user, today, todayDay: null, pages: {} as Record<string, any>, staff,
+      customers: [], services: [], serviceGroups: [], packageTemplates: [], products: [], productGroups: [],
+      appointments: [], invoices: [], deposits: [], allocations: [], cash: [], treatments: [], uses: [], days: [], audit: [],
+      report: { inflow: 0, outflow: 0, days: [] },
+      totals: { debt: 0, credit: 0, inflow: 0, outflow: 0, bookings: 0, treatments: 0, remaining: 0, activeTreatments: 0, uses: 0 } };
+  }
   const todayDay = finance ? await Day.findOne({ ...scope, day: today }).lean() : null;
   const assignedQuery = user.role === 'OWNER' ? scope : await invoiceScope({ ...user, role: 'STAFF', cashier: false });
   const assignedBills = user.role === 'OWNER' ? [] : await Invoice.find(assignedQuery).select('_id customerId').lean();

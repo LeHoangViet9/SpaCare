@@ -408,3 +408,7 @@ PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng 
 
 ## Tích dùng thẻ tại Thu ngân — 24/10/2026
 Thu ngân và form hóa đơn có checkbox Dùng thẻ tiền mặt khi trang thẻ hiện tại có số dư. Tích chọn thẻ còn tiền đầu tiên trên trang, cho chọn lại khi nhiều thẻ; mặc định trừ tối đa số phải trả, hiển thị phần còn phải trả về 0 khi đủ số dư, phần thiếu là thu thêm theo xác nhận hiện có. Bỏ tích không gửi cashCard. Tổng giá dịch vụ giữ nguyên để đối chiếu, không biến thành hóa đơn dịch vụ 0đ; paid/cardPaid cập nhật bởi transaction invoice hiện có khi lưu. Chỉ dùng dịch vụ lẻ, không thay quyền, schema hay dữ liệu cũ.
+
+
+## Workspace navigation performance (2026-10-25)
+Technical design: native History API updates the section URL immediately and preserves the mounted workspace shell, including Back/Forward. Initial document routes still validate the session; each data API independently validates the current account, permissions and spa scope. Customer navigation reuses the shell and calls /api/customers directly; its initial workspace response only loads staff choices. No financial data is cached or authorization removed.

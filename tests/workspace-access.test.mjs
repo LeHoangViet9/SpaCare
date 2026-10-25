@@ -17,3 +17,27 @@ test('restricted workspace sections reject unauthorized actors before database a
 test('staff profile denies staff and cashier before database reads', async () => {
   for (const cashier of [false, true]) await assert.rejects(readStaffProfile({ id: 'a'.repeat(24), spaId: 'b'.repeat(24), name: 'Test', role: 'STAFF', cashier }, 'c'.repeat(24)), error => error.status === 403);
 });
+
+
+test('customer shell reads scoped staff only, without financial or history queries', async t => {
+  const { User, Day, Invoice, Deposit, Treatment, Customer } = await tsImport('../src/lib/models.ts', import.meta.url);
+  const employee = { id: 'a'.repeat(24), spaId: 'b'.repeat(24), name: 'Test', role: 'STAFF', cashier: false };
+  const staff = [{ _id: employee.id, name: 'Test' }];
+  t.mock.method(User, 'find', filter => {
+    assert.equal(filter.spaId, employee.spaId);
+    return { select: fields => {
+      assert.equal(fields.includes('email'), false);
+      return { lean: async () => staff };
+    } };
+  });
+  for (const model of [Day, Invoice, Deposit, Treatment, Customer]) {
+    for (const method of ['find', 'findOne', 'aggregate', 'countDocuments']) {
+      t.mock.method(model, method, () => { throw new Error('Unnecessary query: ' + model.modelName + '.' + method); });
+    }
+  }
+  const result = await readWorkspace(employee, workspaceQuery(new URLSearchParams({ section: 'customers', search: 'test' })));
+  assert.deepEqual(result.staff, staff);
+  assert.deepEqual(result.customers, []);
+  assert.deepEqual(result.invoices, []);
+  assert.equal(result.user, employee);
+});

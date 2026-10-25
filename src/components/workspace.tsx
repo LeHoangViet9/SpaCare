@@ -5,6 +5,7 @@ import {serviceGroupNames} from '@/lib/service-groups';
 import PackageTypeFields from './package-type-fields';
 import { timedPackage, packageLabel, useToken, treatmentAvailable } from '@/lib/treatment-rules';
 import ValidatedForm from '@/components/validated-form';
+import PasswordInput from '@/components/password-input';
 import Notifications, { disablePush } from '@/components/notifications';
 import Link from 'next/link';
 import MoneyInput from './money-input';
@@ -146,7 +147,7 @@ export default function Workspace() {
         return nextGroups;
       });
     }
-    router.push(workspaceHref(next, linkedSearch)); setNotice(''); setError(''); setModal(null); setDetail(null); setSelectedStaff(null); setCashierNewCustomer(null);
+    window.history.pushState(null, '', workspaceHref(next, linkedSearch)); setNotice(''); setError(''); setModal(null); setDetail(null); setSelectedStaff(null); setCashierNewCustomer(null);
   }
   useEffect(() => {
     if (!notice) return;
@@ -170,6 +171,8 @@ export default function Workspace() {
     setData({ ...payload, _requestKey: requestQuery });
   }, [requestQuery]);
   useEffect(() => {
+    // CustomerList owns its paginated request; keep the existing shell.
+    if (tab === 'customers' && data) return;
     let current = true;
     const controller = new AbortController();
     const delay = lastLoadedSection.current === tab ? 250 : 0;
@@ -233,7 +236,7 @@ export default function Workspace() {
   }
   if (loading) return <div className="loading">✧ SpaCare <small>Đang kết nối không gian làm việc…</small></div>;
   if (!data && !needsLogin) return <main className="loading"><h1>Không thể tải không gian làm việc</h1><p className="alert error" role="alert">{error || 'Dữ liệu chưa tải được. Vui lòng thử lại.'}</p><button className="primary" onClick={() => { setLoading(true); setError(''); load().catch(e => setError(e.message)).finally(() => setLoading(false)); }}>Thử tải lại</button><Link href="/">Về trang chủ</Link></main>;
-  if (!data) return <main className="login-page"><section className="login-intro"><Brand href="/workspace" /><span className="eyebrow">CHĂM SÓC KHÁCH HÀNG, GỌN GÀNG HƠN</span><h1>Một ngày tại spa.<br />Mọi thứ trong tầm tay.</h1><p>Lịch hẹn, liệu trình và từng khoản thu chi —<br />trong cùng một không gian làm việc.</p><div className="petal">✧</div><small>Phiên bản MVP · Dành cho vận hành nội bộ</small></section><section className="login-card"><span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập SpaCare</h2><p>Dùng tài khoản được chủ spa cấp.</p><ValidatedForm onSubmit={login}><label>Số điện thoại hoặc email<input name="identifier" type="text" autoComplete="username" required placeholder="owner@spacare.local" /></label><label>Mật khẩu<input name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>{error && <div className="alert error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Vào không gian làm việc →'}</button></ValidatedForm></section></main>;
+  if (!data) return <main className="login-page"><section className="login-intro"><Brand href="/workspace" /><span className="eyebrow">CHĂM SÓC KHÁCH HÀNG, GỌN GÀNG HƠN</span><h1>Một ngày tại spa.<br />Mọi thứ trong tầm tay.</h1><p>Lịch hẹn, liệu trình và từng khoản thu chi —<br />trong cùng một không gian làm việc.</p><div className="petal">✧</div><small>Phiên bản MVP · Dành cho vận hành nội bộ</small></section><section className="login-card"><span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập SpaCare</h2><p>Dùng tài khoản được chủ spa cấp.</p><ValidatedForm onSubmit={login}><label>Số điện thoại hoặc email<input name="identifier" type="text" autoComplete="username" required placeholder="owner@spacare.local" /></label><label>Mật khẩu<PasswordInput name="password" autoComplete="current-password" required maxLength={128} /></label>{error && <div className="alert error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Vào không gian làm việc →'}</button></ValidatedForm></section></main>;
 
   const owner = data.user.role === 'OWNER';
   const finance = owner || data.user.cashier;
@@ -446,7 +449,7 @@ export default function Workspace() {
     }
     if (node.pending) return <span key={node.key} className="nav-item nav-pending" aria-disabled="true" title="Chờ xác định nghiệp vụ">{node.title}<small>Chưa triển khai</small></span>;
     if (!canViewPage(node.key, data!.user)) return null;
-    return <Link key={node.key} href={workspaceHref(node.key)} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined} onClick={() => setMobileMenuOpen(false)}>{node.title}</Link>;
+    return <Link key={node.key} href={workspaceHref(node.key)} className={tab === node.key ? 'nav-item active' : 'nav-item'} aria-current={tab === node.key ? 'page' : undefined} onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); changeTab(node.key); }} prefetch={false}>{node.title}</Link>;
   }
   return <div className={"app" + (owner ? " has-notification-bar" : "")}>
     <header className="mobile-toolbar">
@@ -486,7 +489,7 @@ export default function Workspace() {
         </div>
         {error && !modal && <div className="alert error" role="alert">{error}</div>}
         {notice && <div className="alert success" role="status">{notice}</div>}
-        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} onChange={setFilters} />{content}
+        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} onChange={setFilters} />{viewPending && tab !== 'customers' ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
         <footer>SpaCare · MVP nội bộ <span>Giờ Việt Nam · VNĐ</span></footer>
       </div>
     </main>
@@ -535,7 +538,7 @@ function CustomerList({ search, refreshKey, renderRows }: { search: string; refr
         if (!response.ok) throw new Error(payload.error || 'Không tải được khách hàng.');
         if (!controller.signal.aborted) { setResult({ ...payload, query }); setLoading(false); }
       } catch (e) { if (!controller.signal.aborted) { setError((e as Error).message); setLoading(false); } }
-    }, 250);
+    }, 0);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query, refreshKey, retry]);
   const current = result?.query === query && !loading && !error ? result : null;
