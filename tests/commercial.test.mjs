@@ -10,10 +10,10 @@ test('package catalog requires a service, positive sale price and bounded sessio
 test('sale requires saved template and promotion for gifts; gift price cannot be submitted', () => {
   const sale = { customerId: id, templateId: id, dueDate: '2026-12-01' };
   assert.deepEqual(packageSaleInput.parse(sale).gifts, []);
-  assert.equal(packageSaleInput.safeParse({ ...sale, gifts: [{ templateId: id }] }).success, false);
-  assert.equal(packageSaleInput.safeParse({ ...sale, promotion: '   ', gifts: [{ templateId: id }] }).success, false);
-  assert.equal(packageSaleInput.parse({ ...sale, promotion: 'Tháng 10', gifts: [{ templateId: id }] }).gifts.length, 1);
-  assert.equal(packageSaleInput.safeParse({ ...sale, promotion: 'Tháng 10', gifts: [{ templateId: id, price: 123 }] }).success, false);
+  assert.equal(packageSaleInput.safeParse({ ...sale, gifts: [{ serviceId: id }] }).success, false);
+  assert.equal(packageSaleInput.safeParse({ ...sale, promotion: '   ', gifts: [{ serviceId: id }] }).success, false);
+  assert.equal(packageSaleInput.parse({ ...sale, promotion: 'Tháng 10', gifts: [{ serviceId: id }] }).gifts.length, 1);
+  assert.equal(packageSaleInput.safeParse({ ...sale, promotion: 'Tháng 10', gifts: [{ serviceId: id, price: 123 }] }).success, false);
   assert.equal(packageSaleInput.safeParse({ customerId: id, serviceId: id, name: 'Unsaved', totalSessions: 10, total: 100 }).success, false);
 });
 test('standalone invoice permits price override; covered session is always zero', () => {
@@ -22,3 +22,5 @@ test('standalone invoice permits price override; covered session is always zero'
   assert.equal(invoiceCharge(350000, 999999, true), 0);
   for (const value of [0, -1, 1.5, NaN, Infinity, 1000000000001]) assert.throws(() => invoiceCharge(350000, value, false));
 });
+
+test('gifts cannot grant an entire package template',()=>assert.equal(packageSaleInput.safeParse({customerId:id,templateId:id,dueDate:'2026-10-26',promotion:'Gift',gifts:[{templateId:id}]}).success,false));

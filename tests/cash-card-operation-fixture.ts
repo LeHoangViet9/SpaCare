@@ -305,3 +305,18 @@ await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'checkout',c
 const mixedServiceProduct=await call('serviceInvoice',{customerId,staffId:performerId,items:[{serviceId,total:100000}],additionalProducts:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
 assert.equal(state.Invoice.find(row=>row._id===mixedServiceProduct.id).total,150000);
 assert.equal(state.Commission.find(row=>row.invoiceId===mixedServiceProduct.id).amount,999,'product has no service commission');
+
+// Service gifts grant one free visit, never a package entitlement.
+const giftSale={customerId,templateId,dueDate:spaDay(),promotion:'Tặng gội',gifts:[{serviceId}]};
+const giftKeySingle=randomUUID(),serviceGift=await call('sellPackage',giftSale,giftKeySingle);
+await call('sellPackage',giftSale,giftKeySingle);
+const singleGift=state.Treatment.find(row=>row.giftOfInvoiceId===serviceGift.invoiceId);
+assert.equal(singleGift.totalSessions,1);assert.equal(singleGift.remaining,1);assert.equal(singleGift.packageType,'SESSIONS');
+assert.equal(singleGift.templateId,undefined);assert.equal(singleGift.durationMonths,undefined);
+assert.equal(state.Invoice.find(row=>row._id===singleGift.invoiceId).total,0);
+snapshot=clone(state);
+await assert.rejects(call('sellPackage',{...giftSale,gifts:[{templateId}]}));assert.deepEqual(state,snapshot);
+await assert.rejects(call('sellPackage',{...giftSale,gifts:[{serviceId:'9'.repeat(24)}]}));assert.deepEqual(state,snapshot);
+await call('use',{treatmentId:singleGift._id,remainingBefore:1});
+assert.equal(state.Treatment.find(row=>row._id===singleGift._id).remaining,0);
+await assert.rejects(call('use',{treatmentId:singleGift._id,remainingBefore:0}));

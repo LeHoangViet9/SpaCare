@@ -16,7 +16,7 @@ export default function CommercialFields({ action, data, disabled, customerId }:
   const [selection, setSelection] = useState('');
   const [total, setTotal] = useState('');
   const [description, setDescription] = useState('');
-  const [gifts, setGifts] = useState<{id:string;templateId:string}[]>([]);
+  const [gifts, setGifts] = useState<{id:string;serviceId:string}[]>([]);
   const [giftCashCardAmount,setGiftCashCardAmount] = useState('0');
   const [treatmentIds,setTreatmentIds]=useState<string[]>([]);
   const setTreatmentId=(_id:string)=>setTreatmentIds([]);
@@ -40,11 +40,11 @@ export default function CommercialFields({ action, data, disabled, customerId }:
     <label>Giá bán (VNĐ)<MoneyInput name="total" required min={treatment ? 0 : 1} max={1_000_000_000_000} value={treatment ? '0' : total} readOnly={!!treatment} onValueChange={setTotal} /></label>
     {!packageSale && !treatment && customerId && selection && <InvoiceCardPayment key={customerId+selection+total} customerId={customerId} total={(()=>{try{return parseMoney(total);}catch{return 0;}})()} disabled={disabled}/>}
     {treatment && <TreatmentConfirmations key={treatmentIds.join(',')} treatments={selectedTreatments} disabled={disabled}/>}
-    {packageSale && <><SaleParticipants people={data.staff || []} value={participantIds} onChange={setParticipantIds} total={Number(total)} disabled={disabled} />{(timedPackage(templates.find((t: Row) => t._id === selection) || {}) || gifts.some(g => timedPackage(templates.find((t: Row) => t._id === g.templateId) || {}))) && <label>Ngày bắt đầu sử dụng<input name="startsOn" type="date" required defaultValue={treatmentDay()} /><small>Gói triệt lông 36 tháng tự tính từ ngày mua.</small></label>}<label>Đợt khuyến mãi<input name="promotion" maxLength={2000} required={gifts.length > 0 || giftCardValue>0} placeholder="Ví dụ: ưu đãi tháng 10" /></label>
-      {gifts.map((gift, index) => <div className="gift-row" key={gift.id}><label>Quà tặng · 0đ<select name={`gifts.${index}.templateId`} required value={gift.templateId} onChange={e => setGifts(old => old.map((v, i) => i === index ? {...v,templateId:e.target.value} : v))}><option value="">Chọn gói tặng…</option>{templates.map((r: Row) => <option key={r._id} value={r._id}>{r.name} · {packageLabel(r)}</option>)}</select></label><button type="button" onClick={() => setGifts(old => old.filter((_, i) => i !== index))}>Bỏ</button></div>)}
+    {packageSale && <><SaleParticipants people={data.staff || []} value={participantIds} onChange={setParticipantIds} total={Number(total)} disabled={disabled} />{(timedPackage(templates.find((t: Row) => t._id === selection) || {})) && <label>Ngày bắt đầu sử dụng<input name="startsOn" type="date" required defaultValue={treatmentDay()} /><small>Gói triệt lông 36 tháng tự tính từ ngày mua.</small></label>}<label>Đợt khuyến mãi<input name="promotion" maxLength={2000} required={gifts.length > 0 || giftCardValue>0} placeholder="Ví dụ: ưu đãi tháng 10" /></label>
+      {gifts.map((gift, index) => <div className="gift-row" key={gift.id}><label>Dịch vụ lẻ tặng 1 lần · 0đ<select name={`gifts.${index}.serviceId`} required value={gift.serviceId} onChange={e => setGifts(old => old.map((v, i) => i === index ? {...v,serviceId:e.target.value} : v))}><option value="">Chọn dịch vụ tặng…</option>{data.services.filter((s:Row)=>s.active).map((s:Row)=><option key={s._id} value={s._id}>{s.name} · 1 lần</option>)}</select></label><button type="button" onClick={() => setGifts(old => old.filter((_, i) => i !== index))}>Bỏ</button></div>)}
       <label>Thẻ tiền tặng kèm (VNĐ, 0 nếu không tặng)<MoneyInput name="giftCashCardAmount" required min={0} max={1_000_000_000_000} value={giftCashCardAmount} onValueChange={setGiftCashCardAmount}/></label>
-      <input type="hidden" name="gifts" value={JSON.stringify(gifts.map(g => ({templateId:g.templateId})))} />
-      <button type="button" disabled={gifts.length >= 20} onClick={() => setGifts(old => [...old, {id:crypto.randomUUID(),templateId:''}])}>+ Quà tặng 0đ</button>
+      <input type="hidden" name="gifts" value={JSON.stringify(gifts.map(g => ({serviceId:g.serviceId})))} />
+      <button type="button" disabled={gifts.length >= 20} onClick={() => setGifts(old => [...old, {id:crypto.randomUUID(),serviceId:''}])}>+ Tặng dịch vụ lẻ 0đ</button>
       {!templates.length && <p>Chủ spa cần thêm gói tại Danh mục liệu trình trước khi bán.</p>}
     </>}
   </FormFields></fieldset>;

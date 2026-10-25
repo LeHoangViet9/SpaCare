@@ -14,7 +14,7 @@ export const packageSaleInput = z.object({
   startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), consultantId: id.optional(),
   promotion: z.string().trim().max(2000).default(''),
-  gifts: z.array(z.object({ templateId: id }).strict()).max(20).default([]),
+  gifts: z.array(z.object({ serviceId: id }).strict()).max(20).default([]),
 }).refine(d => !d.participantIds || !d.sellerId || d.participantIds[0] === d.sellerId.toLowerCase(), { message: 'Người bán phải là người đầu tiên trong danh sách tư vấn.', path: ['participantIds'] }).refine(d => (!d.gifts.length && !d.giftCashCardAmount) || !!d.promotion, { message: 'Nhập đợt khuyến mãi khi có quà tặng.', path: ['promotion'] });
 
 export function invoiceCharge(price: number, requested: number | undefined, covered: boolean) {

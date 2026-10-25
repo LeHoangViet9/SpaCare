@@ -17,7 +17,7 @@ export function cashierActions(input:{
  if(sessions.length) actions.push({action:'invoice',data:{customerId,serviceId:sessions[0].serviceId,staffId,treatments:sessions.map(item=>({treatmentId:item._id,remainingBefore:useToken(item)})),additionalServices:items,additionalProducts:productItems,...(signature?{signature}:{}),...(dueDate?{dueDate}:{})}});
  else if(services.length)actions.push({action:'serviceInvoice',data:{customerId,staffId,items,additionalProducts:productItems,...(dueDate?{dueDate}:{}),...(cashCard?{cashCard}:{})}});
  else if(products.length)actions.push({action:'productInvoice',data:{customerId,items:productItems,...(dueDate?{dueDate}:{})}});
- for(const item of packages)actions.push({action:'sellPackage',data:{customerId,templateId:item._id,total:parseMoney(item.total),dueDate,participantIds,startsOn:item.startsOn,promotion:item.promotion || '',giftCashCardAmount:parseMoney(item.giftCashCardAmount || '0'),gifts:(item.gifts || []).map((gift:Row)=>({templateId:gift.templateId}))}});
+ for(const item of packages)actions.push({action:'sellPackage',data:{customerId,templateId:item._id,total:parseMoney(item.total),dueDate,participantIds,startsOn:item.startsOn,promotion:item.promotion || '',giftCashCardAmount:parseMoney(item.giftCashCardAmount || '0'),gifts:(item.gifts || []).map((gift:Row)=>({serviceId:gift.serviceId}))}});
  if(!actions.length)throw new Error('Chọn ít nhất một dịch vụ, gói hoặc sản phẩm.');
  return actions;
 }

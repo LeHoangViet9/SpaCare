@@ -331,7 +331,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await assert.rejects(call('cancelInvoice',{...payload,id:paid.id,expectedUpdatedAt:fresh!.updatedAt.toISOString()}),/giao dịch/);
       assert.equal((await Invoice.findById(paid.id))!.total,fresh!.total);
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói hủy test',totalSessions:3,price:500000});
-      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[{templateId:template.id}],promotion:'Quà test'});
+      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[{serviceId:service.id}],promotion:'Quà test'});
       const purchase=await Invoice.findById(sale.invoiceId);
       await call('cancelInvoice',{id:sale.invoiceId,expectedUpdatedAt:purchase!.updatedAt.toISOString(),reason:'Bán nhầm gói'});
       const family=await Invoice.find({spaId,$or:[{_id:sale.invoiceId},{giftOfInvoiceId:sale.invoiceId}]});
@@ -647,7 +647,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const today = spaDay();
       const timeTemplate = await call('packageTemplate', { name:'Triệt 2 năm', serviceId:service.id, packageType:'TIME', durationMonths:24, price:2000000 });
       await assert.rejects(call('sellPackage',{customerId:customer.id,templateId:timeTemplate.id,dueDate:today}));
-      const sold = await call('sellPackage',{customerId:customer.id,templateId:timeTemplate.id,dueDate:today,startsOn:today,promotion:'Time gift',gifts:[{templateId:timeTemplate.id}]});
+      const sold = await call('sellPackage',{customerId:customer.id,templateId:timeTemplate.id,dueDate:today,startsOn:today,promotion:'Time gift',gifts:[{serviceId:service.id}]});
       let plan = await Treatment.findById(sold.id);
       assert.equal(plan!.packageType,'TIME'); assert.equal(plan!.remaining,undefined); assert.ok(plan!.expiresOn);
       const useData={treatmentId:sold.id,signature:signed,remainingBefore:0}; const key=randomUUID();
@@ -655,7 +655,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await assert.rejects(call('use',useData),(e:any)=>e.status===409);
       await call('use',{...useData,remainingBefore:1});
       plan=await Treatment.findById(sold.id); assert.equal(plan!.usedSessions,2); assert.equal(plan!.status,'ACTIVE'); assert.equal(plan!.remaining,undefined);
-      const gift=await Treatment.findOne({spaId,giftOfInvoiceId:plan!.invoiceId}); assert.equal(gift!.packageType,'TIME');
+      const gift=await Treatment.findOne({spaId,giftOfInvoiceId:plan!.invoiceId}); assert.equal(gift!.packageType,'SESSIONS');assert.equal(gift!.remaining,1);
       await call('updatePackageTemplate',{id:timeTemplate.id,name:'Triệt 3 năm',serviceId:service.id,packageType:'TIME',durationMonths:36,price:3000000});
       assert.equal((await Treatment.findById(sold.id))!.durationMonths,24);
       await call('pauseTreatment',{id:sold.id,holdUntil:today,reason:'Test'});
@@ -677,7 +677,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await t.test('catalog sale: gifts zero, consultant snapshots, price overrides and signed session invoices', async () => {
       await call('updateCustomer', { id: customer.id, name: 'Updated', phone: '0900000000', consultantId: employee.id });
       await call('updateService', { id: service.id, name: 'Updated service', price: 350000, duration: 90, commission: 30000 });
-      const saleData = { ...sale, promotion: 'October', gifts: [{ templateId: template.id }] };
+      const saleData = { ...sale, promotion: 'October', gifts: [{ serviceId: service.id }] };
       const key = randomUUID();
       const beforeCash = await CashEntry.countDocuments({ spaId });
       const sold = await call('sellPackage', saleData, key);
@@ -690,18 +690,18 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(giftBills.length, 1);
       assert.equal(giftBills[0].total, 0); assert.equal(giftBills[0].status, 'PAID');
       const giftPlan = (await Treatment.findOne({ spaId, invoiceId: giftBills[0]._id }))!;
-      assert.equal(giftPlan.remaining, 5);
+      assert.equal(giftPlan.remaining, 1);
       const entered = await call('invoice', { customerId: customer.id, serviceId: service.id, description: 'Adjusted description', total: 123000, consultantId: String(other._id) });
       const enteredBill = (await Invoice.findById(entered.id))!;
       assert.equal(enteredBill.total, 123000); assert.equal(enteredBill.description, 'Adjusted description');
       assert.equal(String(enteredBill.consultantId), String(other._id));
       const sessionKey = randomUUID();
-      const payload = { customerId: customer.id, serviceId: service.id, treatmentId: String(giftPlan._id), total: 999999, signature: signed, remainingBefore: 5 };
+      const payload = { customerId: customer.id, serviceId: service.id, treatmentId: String(giftPlan._id), total: 999999, signature: signed, remainingBefore: 1 };
       const sessionInvoice = await call('invoice', payload, sessionKey);
       assert.deepEqual(await call('invoice', payload, sessionKey), sessionInvoice);
       const bill = (await Invoice.findById(sessionInvoice.id))!;
       assert.equal(bill.total, 0); assert.equal(bill.paid, 0); assert.equal(bill.status, 'PAID');
-      assert.equal((await Treatment.findById(giftPlan._id))!.remaining, 4);
+      assert.equal((await Treatment.findById(giftPlan._id))!.remaining, 0);
       assert.equal(await CashEntry.countDocuments({ spaId }), beforeCash);
       const detail = await readInvoice(actor, sessionInvoice.id);
       assert.deepEqual(detail.signature, signed);
@@ -717,10 +717,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await Audit.findOne({ spaId, action: 'invoice', targetId: bill._id }))!.details.signature, undefined);
       await assert.rejects(readInvoice({ ...employee, id: String(other._id) }, sessionInvoice.id));
       const beforePlans = await Treatment.countDocuments({ spaId });
-      await assert.rejects(call('sellPackage', { ...saleData, gifts: [{ templateId: String(new mongoose.Types.ObjectId()) }] }));
+      await assert.rejects(call('sellPackage', { ...saleData, gifts: [{ serviceId: String(new mongoose.Types.ObjectId()) }] }));
       assert.equal(await Treatment.countDocuments({ spaId }), beforePlans);
-      await assert.rejects(call('invoice', { ...payload, signature: { version: 1, strokes: [] }, remainingBefore: 4 }));
-      assert.equal((await Treatment.findById(giftPlan._id))!.remaining, 4);
+      await assert.rejects(call('invoice', { ...payload, signature: { version: 1, strokes: [] }, remainingBefore: 0 }));
+      assert.equal((await Treatment.findById(giftPlan._id))!.remaining, 0);
       await call('updateCustomer', { id: customer.id, name: 'Updated', phone: '0900000000' });
     });
     const saleKey = randomUUID();
@@ -1213,10 +1213,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await Commission.countDocuments({ spaId, invoiceId: bill.id }), 1);
       assert.equal((await Invoice.findById(bill.id))!.paid, 0);
       await assert.rejects(perform(who, 'completeInvoiceService', { id: bill.id, staffId: who.id }), status(403));
-      const gifts = await call('sellPackage', { ...sale, promotion: 'Payroll gift', gifts: [{ templateId: template.id }] });
+      const gifts = await call('sellPackage', { ...sale, promotion: 'Payroll gift', gifts: [{ serviceId: service.id }] });
       const giftBill = (await Invoice.findOne({ spaId, giftOfInvoiceId: gifts.invoiceId }))!;
       const gift = (await Treatment.findOne({ spaId, invoiceId: giftBill._id }))!;
-      const used = await perform(who, 'use', { treatmentId: String(gift._id), signature: signed, remainingBefore: 5 });
+      const used = await perform(who, 'use', { treatmentId: String(gift._id), signature: signed, remainingBefore: 1 });
       const useCommission = (await Commission.findOne({ spaId, sourceType: 'TREATMENT_USE', sourceId: used.id }))!;
       assert.equal(useCommission.amount, 99999);
       assert.equal((await Invoice.findById(useCommission.invoiceId))!.total, 0);
@@ -1294,7 +1294,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const customer=await call('customer',{name:'Guest',phone:'0912345678'});
       const service=await call('service',{name:'Service',duration:60,price:2000000,commission:20000});
       const template=await call('packageTemplate',{name:'Package',serviceId:service.id,totalSessions:10,price:2000000});
-      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,sellerId:String(staff._id),dueDate:spaDay(),promotion:'Gift',gifts:[{templateId:template.id}]});
+      const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,sellerId:String(staff._id),dueDate:spaDay(),promotion:'Gift',gifts:[{serviceId:service.id}]});
       const invoice=(await Invoice.findById(sale.invoiceId))!;assert.equal(String(invoice.sellerId),String(staff._id));
       assert.equal(await SaleCommission.countDocuments(scope),0);
       const payment={invoiceId:sale.invoiceId,amount:500000,method:'CASH',receivedConfirmation:true};const key=randomUUID();

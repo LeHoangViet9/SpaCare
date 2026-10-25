@@ -2026,3 +2026,26 @@ label textarea { margin-top: 8px; }
 .appointment-service-choices,.session-extra-services .cashier-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; max-height:320px; overflow:auto; padding:4px; }
 .appointment-service-choices button,.session-extra-services .cashier-cards button { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; min-height:76px; padding:14px; text-align:left; white-space:normal; line-height:1.5; }
 .appointment-service-choices button[aria-pressed="true"],.session-extra-services button[aria-pressed="true"] { border-color:var(--green); background:var(--sage); }
+
+/* Workspace navigation is portaled to body, anchored independently of page scroll. */
+@media (max-width: 700px) {
+  .mobile-bottom-nav {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+    transform: translate3d(0, 0, 0);
+    background: #fff;
+    isolation: isolate;
+  }
+  .mobile-bottom-nav small { font-size: 12px; line-height: 1.45; }
+  .app { padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 700px) {
+  .mobile-menu-panel .nav-item, .mobile-menu-panel .nav-group-header { font-size: 16px; min-height: 48px; }
+}

@@ -1,4 +1,5 @@
 'use client';
+import InvoiceCorrectionMenu from './invoice-correction-menu';
 import { invoiceCode } from '@/lib/invoice-code';
 import CashCards from './cash-cards';
 import { packageLabel } from '@/lib/treatment-rules';
@@ -23,8 +24,8 @@ export default function InvoiceDetail({ record, onClose, onInvoice, onPayment, o
   }, [record.id, record.kind, page, historyKind, revision]);
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
-    {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button><button disabled={!onCancel || data.invoice.status === 'CANCELLED'} onClick={()=>onCancel?.(data.invoice)}>Hủy hóa đơn</button></div>}
-    {record.kind === 'invoice' && data && !error && onDelete && <button onClick={()=>onDelete(data.invoice)}>Xóa vĩnh viễn</button>}
+    {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button></div>}
+    {record.kind === 'invoice' && data && !error && <InvoiceCorrectionMenu invoice={data.invoice} onCancel={onCancel} onDelete={onDelete}/>}
     {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
 
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>

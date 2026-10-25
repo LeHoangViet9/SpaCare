@@ -974,15 +974,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const invoice = await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
           target = await create(Treatment, { customerId: d.customerId, serviceId: service._id, templateId: template._id, invoiceId: invoice._id, name: template.name, ...packageSnapshot(template, startsOn) });
           for (const gift of d.gifts) {
-            const giftTemplate = await get(PackageTemplate, gift.templateId);
-            ensure(giftTemplate.active, 'Gói quà tặng đã ngừng bán.');
-            const giftService = await get(Service, String(giftTemplate.serviceId));
-            const giftStartsOn = packageStartOnPurchase(giftTemplate, giftService.category, data.issuedOn || today, d.startsOn);
-            if (timedPackage(giftTemplate)) { ensure(giftStartsOn, 'Chọn ngày bắt đầu cho gói quà tặng theo thời gian.'); dayBounds(giftStartsOn!); }
+            const giftService = await get(Service,gift.serviceId);
+            ensure(giftService.active,'Dịch vụ quà tặng không hoạt động.');
+            const name='Tặng 1 lần · '+giftService.name;
+            const giftInvoice=await create(Invoice,{customerId:customer._id,serviceId:giftService._id,description:name,kind:'GIFT',total:0,paid:0,status:'PAID',giftOfInvoiceId:invoice._id,promotion:d.promotion,...advisor});
+            await create(Treatment,{customerId:customer._id,invoiceId:giftInvoice._id,serviceId:giftService._id,name,packageType:'SESSIONS',totalSessions:1,remaining:1,giftOfInvoiceId:invoice._id,promotion:d.promotion});
 
-            ensure(giftService.active, 'Dịch vụ quà tặng không hoạt động.');
-            const giftInvoice = await create(Invoice, { customerId: customer._id, serviceId: giftService._id, description: 'Quà tặng · ' + giftTemplate.name, kind: 'GIFT', total: 0, paid: 0, status: 'PAID', giftOfInvoiceId: invoice._id, promotion: d.promotion, ...advisor });
-            await create(Treatment, { customerId: customer._id, invoiceId: giftInvoice._id, serviceId: giftService._id, templateId: giftTemplate._id, name: giftTemplate.name, ...packageSnapshot(giftTemplate, giftStartsOn), giftOfInvoiceId: invoice._id, promotion: d.promotion });
           }
           if (d.giftCashCardAmount) await create(CashCard, { customerId: customer._id, amount: d.giftCashCardAmount, balance: d.giftCashCardAmount, origin: 'GIFT', sourceInvoiceId: invoice._id, promotion: d.promotion, actorId: actor.id });
           linkedInvoiceId = String(invoice._id);
