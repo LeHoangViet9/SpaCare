@@ -503,3 +503,29 @@ chi tiết đúng spa/khách. Trả lịch, dấu hiệu hóa đơn đã liên k
 dịch vụ, liệu trình để điền giỏ. no-store; không thay endpoint đặt lịch công khai.
 UI hỗ trợ phân trang, không giới hạn lịch sử ở trang đầu. Không schema/index/migration
 mới, không tự liên kết dữ liệu cũ hay chạy ghi dữ liệu thật khi triển khai code.
+
+
+## Điều chỉnh riêng ngày hóa đơn đã thực hiện — 26/10/2026
+
+CONFIRMED theo yêu cầu khắc phục hóa đơn buổi liệu trình bị chặn sau khi đã mở lại
+sổ: OWNER được điều chỉnh riêng ngày hóa đơn SERVICE/SESSION/PACKAGE/PRODUCT đã
+thực hiện hoặc có thanh toán; không mở quyền sửa giá, dịch vụ, số buổi hay lịch sử
+thanh toán. Trước đó updateInvoice chặn SESSION/liên kết buổi; ngoại lệ mới chỉ áp
+dụng action riêng correctInvoiceDate. Chứng từ nhập ban đầu và hóa đơn CANCELLED
+vẫn không dùng action này. Không sửa dữ liệu thật tự động trong phiên phát triển.
+
+PROPOSED kỹ thuật / API: POST /api/operations action correctInvoiceDate,
+data strict {id,expectedUpdatedAt,issuedOn:YYYY-MM-DD,reason}. Backend lấy actor/spa
+từ phiên active, kiểm OWNER, đúng spa, phiên bản, ngày thực/không tương lai và cả
+ngày cũ/ngày mới không CLOSED. Cần mở lại ngày đã chốt trước khi điều chỉnh. Không
+yêu cầu ngày mới đã mở sổ vì không ghi dòng tiền. Ngày mới khác ngày cũ dùng 12:00
+Việt Nam cho Invoice.createdAt; cùng ngày giữ giờ cũ. Giữ Invoice.recordedAt; chứng
+từ cũ thiếu trường này dùng createdAt trước đổi làm thời điểm ghi nhận ban đầu.
+Chỉ cập nhật createdAt/recordedAt/updatedAt, không ghi Payment/CashEntry, không đổi
+performedAt, chữ ký/snapshot/digest TreatmentUse, quyền lợi Treatment, Commission,
+ngày bắt đầu/hết hạn gói hay lịch hẹn. Vì thế số liệu hóa đơn theo ngày đổi theo
+ngày mới, còn sổ tiền/hoa hồng/thực hiện vẫn theo thời điểm ghi nhận riêng.
+Control transaction, idempotency fingerprint và audit metadata trước/sau cùng lý
+do được giữ. UI có nút Sửa ngày hóa đơn tại danh sách/chi tiết; Sửa hóa đơn trên
+buổi liệu trình/đã thanh toán mở form chỉ gồm ngày và lý do. Không schema/index hay
+migration mới, không xóa/tạo lại hóa đơn hoặc bút toán để thay ngày.

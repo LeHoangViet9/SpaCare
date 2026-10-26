@@ -1,6 +1,7 @@
 import { formatCurrency } from './currency';
 type Row = Record<string, any>;
 export const auditActions: Record<string, string> = {
+  correctInvoiceDate: 'Điều chỉnh ngày hóa đơn',
   linkAppointmentInvoice: 'Liên kết hóa đơn và hoàn thành lịch hẹn',
   serviceInvoice: 'Lập hóa đơn nhiều dịch vụ lẻ',
   importOpeningBalances:'Nhập quyền lợi và công nợ từ sổ cũ',

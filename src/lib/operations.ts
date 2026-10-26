@@ -71,6 +71,7 @@ const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
 
 const schemas = {
+  correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
   productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).min(1).max(30)}),
@@ -169,7 +170,7 @@ export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
   'serviceGroup',
-  'linkAppointmentInvoice', 'updateInvoice', 'cancelInvoice', 'deleteInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
+  'correctInvoiceDate', 'linkAppointmentInvoice', 'updateInvoice', 'cancelInvoice', 'deleteInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
@@ -497,6 +498,24 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const execute = async (op:Operation,data:any) => {
       target=undefined;appointmentBefore=undefined;linkedInvoiceId=undefined;treatmentUseId=undefined;replacementAppointmentId=undefined;financialBefore=undefined;
       switch (op) {
+        case 'correctInvoiceDate': {
+          const d=schemas.correctInvoiceDate.parse(data);
+          const invoice=await get(Invoice,d.id);
+          ensure(!invoice.openingBalance,'Chứng từ nhập ban đầu cần đối soát riêng, không đổi ngày bán.');
+          ensure(invoice.updatedAt?.toISOString()===d.expectedUpdatedAt,'Hóa đơn đã thay đổi. Tải lại trước khi sửa.',409);
+          dayBounds(d.issuedOn);
+          ensure(d.issuedOn<=today,'Không nhập hóa đơn ngày tương lai.');
+          const oldDay=spaDay(invoice.createdAt);
+          for(const day of new Set([oldDay,d.issuedOn])) {
+            ensure(!await Day.exists({...scope,day,status:'CLOSED'}).session(session),'Ngày '+day+' đã chốt sổ. Chủ spa cần mở lại trước khi sửa ngày hóa đơn.',409);
+          }
+          const before={createdAt:invoice.createdAt,recordedAt:invoice.recordedAt};
+          const createdAt=d.issuedOn===oldDay ? invoice.createdAt : new Date(d.issuedOn+'T12:00:00+07:00');
+          const recordedAt=invoice.recordedAt || invoice.createdAt;
+          await Invoice.updateOne({...scope,_id:invoice._id},{$set:{createdAt,recordedAt,updatedAt:new Date()}},{session,timestamps:false,overwriteImmutable:true});
+          await create(Audit,{actorId:actor.id,action:op,targetId:invoice._id,details:{reason:d.reason,before,after:{createdAt,recordedAt}}});
+          return {id:String(invoice._id),invoiceId:String(invoice._id),message:'Đã điều chỉnh ngày hóa đơn. Giữ nguyên tiền và lịch sử thực hiện.'};
+        }
         case 'linkAppointmentInvoice': {
           const d=schemas.linkAppointmentInvoice.parse(data);
           target=await get(Appointment,d.appointmentId);
