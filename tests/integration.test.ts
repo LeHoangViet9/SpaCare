@@ -398,7 +398,17 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const invoice=await Invoice.findById(sale.invoiceId);
       const payload={id:String(invoice!._id),expectedUpdatedAt:invoice!.updatedAt.toISOString(),description:'Gói đã sửa',total:600000,packageName:'Liệu trình đã sửa',packageType:'SESSIONS',totalSessions:8,reason:'Nhập nhầm số buổi'};
       await assert.rejects(operate(employee,'updateInvoice',payload,randomUUID()),/Chỉ chủ spa/);
+      const originalRecordedAt=invoice!.recordedAt;
+      const originalCreatedAt=invoice!.createdAt;
+      const issuedOn=spaDay(new Date(Date.now()-86400_000));
+      Object.assign(payload,{issuedOn});
+      await assert.rejects(call('updateInvoice',{...payload,issuedOn:'2026-02-30'}),/Ngày không hợp lệ/);
+      await assert.rejects(call('updateInvoice',{...payload,issuedOn:'2999-01-01'}),/tương lai/);
+      assert.equal((await Invoice.findById(invoice!._id))!.createdAt.toISOString(),originalCreatedAt.toISOString());
       const key=randomUUID();await call('updateInvoice',payload,key);await call('updateInvoice',payload,key);
+      const datedInvoice=await Invoice.findById(invoice!._id);
+      assert.equal(datedInvoice!.createdAt.toISOString(),new Date(issuedOn+'T12:00:00+07:00').toISOString());
+      assert.equal(datedInvoice!.recordedAt.toISOString(),originalRecordedAt.toISOString());
       assert.equal((await Invoice.findById(invoice!._id))!.total,600000);
       const plan=await Treatment.findOne({spaId,invoiceId:invoice!._id});assert.equal(plan!.remaining,8);assert.equal(plan!.name,'Liệu trình đã sửa');
       assert.equal(await Audit.countDocuments({spaId,action:'updateInvoice',targetId:invoice!._id}),1);

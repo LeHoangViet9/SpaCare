@@ -115,7 +115,7 @@ const schemas = {
   completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
   deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
-  updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
+  updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, issuedOn:dateOnly.optional(), description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
@@ -1043,7 +1043,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'cancelInvoice':
         case 'updateInvoice': {
           const cancelling = op === 'cancelInvoice';
-          const d = cancelling ? {...schemas.cancelInvoice.parse(data), description:'', total:0, items:undefined, dueDate:undefined, packageName:undefined, packageType:undefined, totalSessions:undefined, durationMonths:undefined, startsOn:undefined} : schemas.updateInvoice.parse(data);
+          const d = cancelling ? {...schemas.cancelInvoice.parse(data), description:'', total:0, items:undefined, dueDate:undefined, packageName:undefined, packageType:undefined, totalSessions:undefined, durationMonths:undefined, startsOn:undefined, issuedOn:undefined} : schemas.updateInvoice.parse(data);
           target = await get(Invoice,d.id);
           ensure(target.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể sửa hoặc hủy lại.',409);
           ensure(!target.openingBalance,'Không sửa chứng từ chuyển số dư bằng luồng sửa hóa đơn bán mới.',409);
@@ -1073,6 +1073,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const closed=await Day.exists({...scope,day:spaDay(target.createdAt),status:'CLOSED'}).session(session);
           ensure(!closed,'Ngày lập hóa đơn đã chốt sổ. Chủ spa cần mở lại trước khi sửa.',409);
           if(d.dueDate) dayBounds(d.dueDate);
+          const correctedDate = d.issuedOn && d.issuedOn !== spaDay(target.createdAt)
+            ? new Date(d.issuedOn + 'T12:00:00+07:00') : undefined;
+          if(d.issuedOn) {
+            dayBounds(d.issuedOn);
+            ensure(d.issuedOn <= spaDay(), 'Không nhập hóa đơn ngày tương lai.');
+            ensure(!await Day.exists({...scope,day:d.issuedOn,status:'CLOSED'}).session(session), 'Ngày hóa đơn mới đã chốt sổ. Chủ spa cần mở lại trước khi sửa.',409);
+          }
           appointmentBefore=target.toObject();
           const plan=plans.find(p=>String(p.invoiceId)===String(target._id));
           if(cancelling) {
@@ -1142,6 +1149,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           }
           target.description=d.items && d.description===target.description ? target.serviceItems.map((item:any)=>item.name).join(' + ') : d.description; target.total=d.total; target.dueDate=d.dueDate; target.status=invoiceState(d.total,0);
           await target.save({session});
+          if(correctedDate) {
+            // Mongoose timestamps make createdAt immutable by default. This scoped
+            // correction is part of the same owner-only audited transaction.
+            await Invoice.updateOne({...scope,_id:target._id}, {$set:{createdAt:correctedDate,recordedAt:target.recordedAt || appointmentBefore!.createdAt}}, {session,timestamps:false,overwriteImmutable:true});
+            target=await get(Invoice,String(target._id));
+          }
           linkedInvoiceId=String(target._id);
           break;
         }

@@ -36,6 +36,7 @@ import { isValidSignature, type Signature } from '@/lib/signature';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { menu, menuPath, pageKeys, canViewPage } from '@/lib/navigation';
 import { workspaceHref } from '@/lib/workspace-view';
+import { fetchWorkspace } from '@/lib/workspace-fetch';
 import { sectionCollection } from '@/lib/workspace-query';
 import { staffBookingsToday } from '@/lib/rules';
 import { isValidElement, useCallback, useEffect, useRef, useState } from 'react';
@@ -168,8 +169,7 @@ export default function Workspace() {
   const lastLoadedSection = useRef('');
   const load = useCallback(async (signal?: AbortSignal) => {
     const sequence = ++loadSequence.current;
-    const response = await fetch('/api/workspace?' + requestQuery, { cache: 'no-store', signal });
-    const payload = await response.json();
+    const { response, payload } = await fetchWorkspace('/api/workspace?' + requestQuery, signal);
     if (sequence !== loadSequence.current || currentRequest.current !== requestQuery) return;
     if (response.status === 401) { setNeedsLogin(true); setData(null); return; }
     setNeedsLogin(false);
@@ -183,7 +183,10 @@ export default function Workspace() {
     const controller = new AbortController();
     const delay = lastLoadedSection.current === tab ? 250 : 0;
     lastLoadedSection.current = tab;
-    const timer = window.setTimeout(() => { load(controller.signal).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); }); }, delay);
+    const start = () => { load(controller.signal).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); }); };
+    // Initial navigation must not wait for a background-tab debounce timer.
+    const timer = delay ? window.setTimeout(start, delay) : undefined;
+    if (!delay) start();
     return () => { current = false; controller.abort(); window.clearTimeout(timer); loadSequence.current += 1; };
   }, [load, tab]);
   async function login(e: React.FormEvent<HTMLFormElement>) {
@@ -391,10 +394,11 @@ export default function Workspace() {
     audit: 'Lịch sử thao tác trong spa.',
   };
   const editInvoice = (invoice:Row,plan:Row|null) => {setDetail(null);open('Sửa hóa đơn','updateInvoice',[
+ {key:'issuedOn',label:'Ngày hóa đơn',type:'date',optional:true,hint:'Để trống giữ nguyên ngày hiện tại của hóa đơn. Không đổi ngày thu tiền.'},
  {key:'description',label:'Nội dung hóa đơn'},
  ...((!invoice.kind || invoice.kind==='SERVICE') && (invoice.serviceItems?.length || invoice.serviceId) ? (invoice.serviceItems?.length ? invoice.serviceItems : [{serviceId:invoice.serviceId,total:invoice.total}]).flatMap((item:Row,i:number)=>[{key:'editService'+i,label:'Dịch vụ '+(i+1),options:choices('services',r=>r.name)},{key:'editPrice'+i,label:'Giá dịch vụ '+(i+1)+' (VNĐ)',type:'number',min:1}]) : [{key:'total',label:'Giá hóa đơn (VNĐ)',type:'number',min:1}]), {key:'dueDate',label:'Hạn thanh toán',type:'date',optional:true},
  ...(invoice.kind==='PACKAGE' ? [{key:'packageName',label:'Tên liệu trình'},...(plan?.packageType==='TIME' ? [{key:'durationMonths',label:'Thời hạn (tháng)',type:'number',min:1,max:120},{key:'startsOn',label:'Ngày bắt đầu',type:'date'}] : [{key:'totalSessions',label:'Số buổi',type:'number',min:1,max:10000}])] : []),
- {key:'reason',label:'Lý do sửa'}],{...((!invoice.kind || invoice.kind==='SERVICE') && (invoice.serviceItems?.length || invoice.serviceId) ? {editLineCount:invoice.serviceItems?.length || 1,...Object.fromEntries((invoice.serviceItems?.length ? invoice.serviceItems : [{serviceId:invoice.serviceId,total:invoice.total}]).flatMap((item:Row,i:number)=>[['editService'+i,item.serviceId],['editPrice'+i,item.total]]))}:{}),id:invoice._id,expectedUpdatedAt:invoice.updatedAt,description:invoice.description,total:invoice.total,dueDate:invoice.dueDate,...(plan ? {packageName:plan.name,packageType:plan.packageType || 'SESSIONS',totalSessions:plan.totalSessions,durationMonths:plan.durationMonths,startsOn:plan.startsOn}: {})},'Chỉ chủ spa được sửa nội dung, giá và hạn trả khi chưa thanh toán hoặc áp cọc/thẻ. Giá và công nợ tự tính từ từng dòng. Đổi dịch vụ tự cập nhật hoa hồng; chỉ đổi giá giữ hoa hồng cố định. Giữ nguyên người thực hiện. Lịch sử trước/sau được lưu.');};
+ {key:'reason',label:'Lý do sửa'}],{...((!invoice.kind || invoice.kind==='SERVICE') && (invoice.serviceItems?.length || invoice.serviceId) ? {editLineCount:invoice.serviceItems?.length || 1,...Object.fromEntries((invoice.serviceItems?.length ? invoice.serviceItems : [{serviceId:invoice.serviceId,total:invoice.total}]).flatMap((item:Row,i:number)=>[['editService'+i,item.serviceId],['editPrice'+i,item.total]]))}:{}),id:invoice._id,expectedUpdatedAt:invoice.updatedAt,issuedOn:invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}) : '',description:invoice.description,total:invoice.total,dueDate:invoice.dueDate,...(plan ? {packageName:plan.name,packageType:plan.packageType || 'SESSIONS',totalSessions:plan.totalSessions,durationMonths:plan.durationMonths,startsOn:plan.startsOn}: {})},'Chỉ chủ spa được sửa nội dung, giá và hạn trả khi chưa thanh toán hoặc áp cọc/thẻ. Giá và công nợ tự tính từ từng dòng. Đổi dịch vụ tự cập nhật hoa hồng; chỉ đổi giá giữ hoa hồng cố định. Giữ nguyên người thực hiện. Lịch sử trước/sau được lưu.');};
   const cancelInvoice = (invoice:Row) => {setDetail(null);open('Hủy hóa đơn chưa thanh toán','cancelInvoice',[reasonField],{id:invoice._id,expectedUpdatedAt:invoice.updatedAt},'Chỉ chủ spa được hủy. Công nợ về 0; hoa hồng dịch vụ chưa chốt lương được đưa về 0 và lưu lịch sử. Nếu hoa hồng đã duyệt/chi, hệ thống yêu cầu xử lý bảng lương trước. Gói và quà phải chưa sử dụng.');};
   const deleteInvoice = (invoice:Row) => {setDetail(null);open('Xóa vĩnh viễn hóa đơn nhập nhầm','deleteInvoice',[reasonField,{key:'confirmDelete',label:'Tôi xác nhận xóa vĩnh viễn hóa đơn này, không thể khôi phục',type:'checkbox'}],{id:invoice._id,expectedUpdatedAt:invoice.updatedAt},'Chủ spa xóa hóa đơn nhập sai: tự điều chỉnh khoản thu, cọc/thẻ, hoa hồng chưa chốt và kho liên quan. Không phải hoàn tiền thực tế. Gói đã dùng hoặc hoa hồng đã chốt cần đối soát riêng. Không xóa hồ sơ khách.');};
   async function editInvoiceFromList(invoice:Row) {

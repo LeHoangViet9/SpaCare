@@ -29,20 +29,22 @@
     "db:opening:preview": "tsx scripts/import-opening-balances.ts",
     "db:opening:live": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-opening-balances.ts",
     "db:invoice-codes": "tsx --env-file=.env.local scripts/setup-invoice-codes.ts",
-    "db:hair-removal": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-hair-removal.ts"
+    "db:hair-removal": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-hair-removal.ts",
+    "test:selenium": "node --env-file-if-exists=.env.selenium.local tests/selenium/workspace.e2e.mjs"
   },
   "dependencies": {
+    "mongoose": "^9.0.0",
     "next": "^16.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "mongoose": "^9.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
-    "tsx": "^4.20.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0"
+    "@types/react-dom": "^19.2.0",
+    "selenium-webdriver": "^4.51.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
   }
 }

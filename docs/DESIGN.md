@@ -500,3 +500,29 @@ Thanh menu mobile cùng panel/backdrop được portal trực tiếp vào body �
 ## Quà tặng dịch vụ lẻ thay cho cả liệu trình — 26/10/2026
 CONFIRMED theo yêu cầu mới nhất: quà khi bán gói chỉ chọn dịch vụ lẻ, không tặng nguyên gói liệu trình. Thay quy tắc trước cho chọn PackageTemplate làm quà mới; quà đã cấp giữ nguyên quyền lợi/lịch sử. Tên/ghi chú ưu đãi (promotion) mô tả chương trình áp dụng để tra cứu, không tự tạo mức giảm giá; giữ điều kiện có quà/thẻ tặng thì nhập ghi chú.
 PROPOSED kỹ thuật: sellPackage.gifts đổi thành [{serviceId}] strict, không nhận templateId/giá/số buổi từ client. Backend kiểm dịch vụ active/cùng spa và tạo chứng từ GIFT total=paid=0 liên kết hóa đơn mua. Dùng hạ tầng quyền lợi hiện có lưu một lượt dịch vụ tặng (Treatment packageType SESSIONS,totalSessions=remaining=1, không templateId/durationMonths); không cấp bảo hành/gói nhiều buổi và không tự đặt hạn. Khách có thể dùng sau qua luồng dùng quyền lợi: một lượt, chữ ký tùy chọn, hoa hồng thực hiện theo dịch vụ như trước; không sinh khoản thu/công nợ/hoa hồng bán gói cho quà. Mọi quà và gói mua cùng transaction/idempotency/audit, lỗi rollback toàn bộ. UI ghi Dịch vụ lẻ tặng 1 lần, dropdown từ Service; form cũ gửi templateId phải tải lại. Không schema/index/migration/backfill hoặc sửa dữ liệu thật.
+
+## Workspace loading guard — 26/10/2026
+
+Technical behavior: the initial workspace request starts immediately; only subsequent
+same-section filter requests retain the 250 ms debounce. Workspace fetch and JSON
+body parsing share a 20-second client deadline and cancellation on obsolete views.
+A stalled request exits the initial loading state with the existing retry UI; it
+is not reported as successful data loading. This does not change authorization,
+schemas, actions, or business policy. Production Selenium observed intermittent
+workspace-fetch loading despite separate diagnostic API reads returning 200; that
+observation alone does not establish which original request stalled. No production
+root-cause resolution or deployment is claimed by this guard.
+
+## Sửa ngày hóa đơn — 26/10/2026
+
+CONFIRMED theo yêu cầu người dùng: form sửa hóa đơn bổ sung Ngày hóa đơn,
+điền sẵn ngày hiện có theo giờ Việt Nam. OWNER được sửa ngày khi hóa đơn đủ
+điều kiện sửa hiện hành. Bỏ trống/không gửi giữ nguyên ngày, không lấy ngày hôm nay.
+PROPOSED kỹ thuật: updateInvoice nhận issuedOn? YYYY-MM-DD, kiểm ngày thực,
+không tương lai và cả ngày cũ/ngày mới chưa CLOSED. Đổi ngày cập nhật Invoice.createdAt
+về 12:00 Việt Nam; nếu chọn lại cùng ngày giữ giờ cũ. recordedAt giữ thời điểm nhập
+thật (chứng từ cũ thiếu trường này dùng createdAt trước sửa). Không đổi ngày thanh
+toán, hoa hồng, thực hiện hay ngày bắt đầu/hết hạn liệu trình chỉ vì sửa ngày hóa đơn;
+các trường liệu trình vẫn theo form sửa riêng. Giữ transaction, kiểm phiên active,
+cùng spa, OWNER, expectedUpdatedAt, idempotency và audit trước/sau. Không backfill
+hoặc sửa dữ liệu thật; không schema/index mới.
