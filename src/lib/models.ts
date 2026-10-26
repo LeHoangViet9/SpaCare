@@ -143,6 +143,7 @@ const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, requ
 
 export const Invoice = model('Invoice', {
   treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,strict:'throw'})],default:undefined},
+  packageItems: {type:[new Schema({templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,promotion:String,giftCashCardAmount:Number},{_id:false,strict:'throw'})],default:undefined},
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
@@ -275,7 +276,7 @@ export const Treatment = model(
     resumedBy: optionalId,
     expiresOn: String,
   },
-  [[{ spaId: 1, invoiceId: 1 }, { unique: true }]],
+  [[{ spaId: 1, invoiceId: 1 }, { name: 'treatment_invoice_lookup' }]],
 );
 
 export const TreatmentUse = model('TreatmentUse', {

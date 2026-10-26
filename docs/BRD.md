@@ -360,3 +360,8 @@ Control transaction, idempotency fingerprint và audit metadata trước/sau cù
 do được giữ. UI có nút Sửa ngày hóa đơn tại danh sách/chi tiết; Sửa hóa đơn trên
 buổi liệu trình/đã thanh toán mở form chỉ gồm ngày và lý do. Không schema/index hay
 migration mới, không xóa/tạo lại hóa đơn hoặc bút toán để thay ngày.
+
+
+## Một lần mua nhiều gói dùng chung hóa đơn — 26/10/2026
+
+CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua của một khách gộp thành một hóa đơn PACKAGE, nhiều dòng giá và nhiều hồ sơ Treatment độc lập; thu tiền/công nợ trên tổng hóa đơn. Thay thế mô tả checkout trước đây mỗi gói có hóa đơn riêng. Không tự gộp chứng từ lịch sử. Phần dịch vụ đã làm/sản phẩm trong giỏ vẫn theo chứng từ vận hành hiện có; yêu cầu này áp dụng các gói mua mới.

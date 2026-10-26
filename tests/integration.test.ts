@@ -1,3 +1,4 @@
+import { migratePackageInvoiceIndex } from '../src/lib/package-invoice-indexes';
 import { parseOpening, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
 import { ServiceGroup } from '../src/lib/models';
 import { CashCard, CashCardUse } from '../src/lib/models';
@@ -41,6 +42,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const userIndexes = await User.collection.indexes();
     assert.ok(!userIndexes.some(index => index.unique && !index.partialFilterExpression && !index.sparse && Object.keys(index.key).length === 1 && index.key.email === 1));
     for (const model of allModels) { await model.createCollection(); await model.createIndexes(); }
+    await migratePackageInvoiceIndex();
     const spa = await Spa.create({ name: `Integration ${randomUUID()}` }); spaId = spa._id;
     const owner = await User.create({ spaId, name: 'Owner test', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'OWNER', cashier: true });
     const staff = await User.create({ spaId, name: 'Staff test', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'STAFF', cashier: false });
@@ -179,7 +181,15 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await Product.findById(p1._id))!.stock,5);
       await PackageTemplate.updateOne({_id:g2.id},{$set:{active:true}});
       const key=randomUUID(),result=await call('checkout',input,key);await call('checkout',input,key);
-      assert.equal(result.invoiceIds!.length,3);assert.equal(result.total,1510000);
+      assert.equal(result.invoiceIds!.length,2);assert.equal(result.total,1510000);
+      const combined=await Invoice.findById(result.invoiceIds![1]);
+      assert.equal(combined!.packageItems.length,2);assert.equal(combined!.total,1300000);
+      assert.equal(await Treatment.countDocuments({spaId,invoiceId:combined!._id}),2);
+      const receiptKey=randomUUID();const receipt={invoiceId:String(combined!._id),amount:1300000,method:'CASH',receivedConfirmation:true};
+      await call('payment',receipt,receiptKey);await call('payment',receipt,receiptKey);
+      assert.equal((await Invoice.findById(combined!._id))!.paid,1300000);
+      assert.equal(await Payment.countDocuments({spaId,invoiceId:combined!._id}),1);
+      assert.equal((await SaleCommission.find({spaId,invoiceId:combined!._id})).reduce((sum,row)=>sum+row.amount,0),65000);
       assert.equal((await Product.findById(p1._id))!.stock,3);assert.equal((await Product.findById(p2._id))!.stock,5);
       assert.equal(await Treatment.countDocuments({spaId,invoiceId:{$in:result.invoiceIds}}),2);
       assert.equal(await StockMovement.countDocuments({spaId,checkoutInvoiceId:result.invoiceIds![0]}),2);

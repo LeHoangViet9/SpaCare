@@ -11,7 +11,7 @@ export async function readCustomerHistory(user: Actor, id: string, kind: 'invoic
   ensure(customer, 'Không tìm thấy khách hàng.', 404);
   const invoiceFilter = { ...await invoiceScope(user), customerId: id };
   const appointmentsFilter = { ...scope, customerId: id, ...(user.role !== 'OWNER' && !user.cashier ? { staffId: user.id } : {}) };
-  const treatmentFilter = { ...scope, customerId: id };
+  const treatmentFilter = { ...scope, customerId: id, status:{$ne:'CANCELLED'} };
   const models = { invoices: Invoice, appointments: Appointment, treatments: Treatment };
   const filter = kind === 'invoices' ? invoiceFilter : kind === 'appointments' ? appointmentsFilter : treatmentFilter;
   const total = await models[kind].countDocuments(filter);

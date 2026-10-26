@@ -10,6 +10,7 @@ process.env.SEED_OWNER_PHONE = '+84 912 345 678';
 process.env.SEED_OWNER_EMAIL = '';
 process.env.SEED_OWNER_PASSWORD = 'fixture-password-123';
 mock.module('../src/lib/db.ts', { namedExports: { connect: async () => {}, DatabaseUnavailableError: class extends Error {} } });
+mock.module('../src/lib/package-invoice-indexes.ts', { namedExports: { migratePackageInvoiceIndex: async () => {} } });
 mock.module('../src/lib/user-indexes.ts', { namedExports: { migrateUserIndexes: async () => {} } });
 for (const model of allModels) {
   (model as any).createCollection = async () => {};

@@ -1,3 +1,4 @@
+import { ensureGroupedPackageIndex } from './package-invoice-indexes';
 import { coversVisit } from './appointment-checkout';
 import { invoiceDeletionBlock, repriceInvoiceItems } from './invoice-correction';
 import { sequenceInvoiceCode } from './invoice-code';
@@ -237,6 +238,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         );
         return previous.result;
       }
+      let groupedPackageSale = false;
+      let packageInvoice: any;
       let checkoutAppointmentId: string | undefined;
       const createdInvoiceIds: string[] = [];
       const create = async (model: mongoose.Model<any>, values: Record<string, unknown>) => {
@@ -287,10 +290,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       };
       // Ordinary staff may collect/apply credit only for invoices attached to their visits.
       const assignedInvoice = async (invoice: any) => {
-        const treatment = await Treatment.findOne({ ...scope, invoiceId: invoice._id }).session(session);
+        const treatments = await Treatment.find({ ...scope, invoiceId: invoice._id }).session(session);
         const references = [
           ...(invoice.appointmentId ? [{ _id: invoice.appointmentId }] : []),
-          ...(treatment ? [{ treatmentId: treatment._id }] : []),
+          ...(treatments.length ? [{ treatmentId: {$in:treatments.map(t=>t._id)} },{treatmentIds:{$in:treatments.map(t=>t._id)}}] : []),
         ];
         if (!references.length) return false;
         return !!await Appointment.exists({ ...scope, staffId: actor.id, status: { $in: ['CONFIRMED', 'COMPLETED'] }, $or: references }).session(session);
@@ -1042,8 +1045,19 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             participants.push({staffId:person._id,staffName:person.name});
           }
           const seller = participants[0];
-          const invoice = await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
+          const invoice = groupedPackageSale && packageInvoice ? packageInvoice : await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
           target = await create(Treatment, { customerId: d.customerId, serviceId: service._id, templateId: template._id, invoiceId: invoice._id, name: template.name, ...packageSnapshot(template, startsOn) });
+          if(groupedPackageSale) {
+            if(packageInvoice) {
+              ensure(JSON.stringify(invoice.saleParticipants.map((p:any)=>String(p.staffId)))===JSON.stringify(participants.map(p=>String(p.staffId))) && invoice.dueDate===d.dueDate && String(invoice.consultantId || '')===String(advisor.consultantId || ''),'Các gói trong cùng hóa đơn phải có cùng người tư vấn và hạn thanh toán.');
+              invoice.total=money(invoice.total+money(d.total ?? template.price));
+              invoice.giftCashCardAmount=money((invoice.giftCashCardAmount || 0)+(d.giftCashCardAmount || 0),true);
+            }
+            invoice.packageItems=[...(invoice.packageItems || []),{templateId:template._id,treatmentId:target._id,serviceId:service._id,name:template.name+' · '+service.name,total:money(d.total ?? template.price),promotion:d.promotion,giftCashCardAmount:d.giftCashCardAmount || 0}];
+            invoice.description=invoice.packageItems.map((item:any)=>item.name).join(' + ');
+            invoice.promotion=[...new Set(invoice.packageItems.map((item:any)=>item.promotion).filter(Boolean))].join('; ');
+            await invoice.save({session});packageInvoice=invoice;
+          }
           for (const gift of d.gifts) {
             const giftService = await get(Service,gift.serviceId);
             ensure(giftService.active,'Dịch vụ quà tặng không hoạt động.');
@@ -1052,7 +1066,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             await create(Treatment,{customerId:customer._id,invoiceId:giftInvoice._id,serviceId:giftService._id,name,packageType:'SESSIONS',totalSessions:1,remaining:1,giftOfInvoiceId:invoice._id,promotion:d.promotion});
 
           }
-          if (d.giftCashCardAmount) await create(CashCard, { customerId: customer._id, amount: d.giftCashCardAmount, balance: d.giftCashCardAmount, origin: 'GIFT', sourceInvoiceId: invoice._id, promotion: d.promotion, actorId: actor.id });
+          if (d.giftCashCardAmount && !groupedPackageSale) await create(CashCard, { customerId: customer._id, amount: d.giftCashCardAmount, balance: d.giftCashCardAmount, origin: 'GIFT', sourceInvoiceId: invoice._id, promotion: d.promotion, actorId: actor.id });
           linkedInvoiceId = String(invoice._id);
           break;
         }
@@ -1120,6 +1134,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(!target.openingBalance,'Không sửa chứng từ chuyển số dư bằng luồng sửa hóa đơn bán mới.',409);
           ensure(target.updatedAt?.toISOString() === d.expectedUpdatedAt, 'Hóa đơn đã thay đổi. Tải lại trước khi sửa.',409);
           ensure(!target.productItems?.length,'Hóa đơn có sản phẩm cần đối soát kho bằng chức năng xóa sai sót; chưa hỗ trợ sửa/hủy từng dòng.',409);
+          ensure(cancelling || !target.packageItems?.length,'Hóa đơn nhiều gói chỉ hỗ trợ sửa ngày; không sửa một gói làm lệch tổng hóa đơn.',409);
           const serviceCorrection = !target.kind || target.kind === 'SERVICE';
           ensure((serviceCorrection || target.kind === 'PACKAGE') && (serviceCorrection || (!target.performedAt && !target.appointmentId)) && !target.treatmentUseId && !target.treatmentId && !target.giftOfInvoiceId, 'Hóa đơn đã thực hiện hoặc có liên kết vận hành, không thể sửa.',409);
           ensure(!await CashCard.exists({ ...scope, sourceInvoiceId: target._id }).session(session), 'Hóa đơn đã phát hành thẻ tặng, không thể sửa.', 409);
@@ -1528,7 +1543,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           break;
         }
       }
-      for (const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
+      if(action!=='checkout') for (const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
       const details = { ...data } as Record<string, unknown>;
       if(action==='checkout')details.checkoutKey=sha(key);
       if (appointmentBefore) {
@@ -1583,14 +1598,20 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         }
         const kinds=batch.actions.map(line=>line.action==='sellPackage' ? 'package:'+String(line.data.templateId).toLowerCase() : 'base');
         ensure(new Set(kinds).size===kinds.length,'Không chọn trùng gói mới hoặc tạo lặp hóa đơn dịch vụ/sản phẩm trong giỏ.');
+        groupedPackageSale=batch.actions.filter(line=>line.action==='sellPackage').length>1;
+        if(groupedPackageSale) await ensureGroupedPackageIndex();
         for(const line of batch.actions){
           ensure(line.data.customerId===undefined || line.data.customerId===batch.customerId,'Mọi mục trong giỏ phải cùng khách.');
           const values=schemas[line.action].parse({...line.data,customerId:batch.customerId});
           results.push(await execute(line.action,{...values,...('issuedOn' in data && data.issuedOn?{issuedOn:data.issuedOn}:{})}));
         }
+        if(packageInvoice?.giftCashCardAmount) await create(CashCard,{customerId:batch.customerId,amount:packageInvoice.giftCashCardAmount,balance:packageInvoice.giftCashCardAmount,origin:'GIFT',sourceInvoiceId:packageInvoice._id,promotion:packageInvoice.promotion,actorId:actor.id});
         const invoices=[];
+        const seenInvoices=new Set<string>();
         for(const item of results){
           const invoice=await get(Invoice,item.invoiceId || item.id);
+          if(seenInvoices.has(String(invoice._id))) continue;
+          seenInvoices.add(String(invoice._id));
           invoices.push({id:String(invoice._id),code:invoice.code,total:invoice.total});
         }
         if(appointment) {
@@ -1601,6 +1622,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const total=money(invoices.reduce((sum,item)=>sum+item.total,0),true);
         result={id:invoices[0].id,invoiceId:invoices[0].id,invoiceIds:invoices.map(item=>item.id),invoices,total,message:'Đã lưu '+invoices.length+' hóa đơn trong cùng lần thu ngân.'};
       }else result=await execute(op,data);
+      if(op==='checkout') for(const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
       await create(Idempotency, { userId: actor.id, key, fingerprint, result });
       return result;
     },

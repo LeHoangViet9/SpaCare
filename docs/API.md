@@ -601,3 +601,15 @@ Theo yêu cầu mới nhất, bỏ nút Sửa ngày hóa đơn riêng ở danh s
 CONFIRMED theo yêu cầu chủ spa: trong Sửa hóa đơn, tùy chọn Điều chỉnh cả ngày thu tiền gửi correctInvoiceDate.adjustPaymentDates: true (mặc định false). OWNER đang hoạt động được chuyển CashEntry.day của tất cả khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực về ngày hóa đơn đã chọn, khi thực tế mọi khoản này đã thu ngày đó. Đây là ngoại lệ cho quy tắc trước đó chỉ sửa ngày hóa đơn. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
 
 Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không được CLOSED. Backend kiểm tra cùng spa, phiên/quyền, phiên bản hóa đơn, liên kết Payment–CashEntry; chặn khoản đảo/dùng chung và hóa đơn đã hoàn tiền. Ghi tuần tự trong transaction, tăng Day.revision cho các ngày thay đổi, giữ idempotency và Audit.details gồm adjustPaymentDates, receiptChanges (receiptId, paymentId, amount, method, before, after), lý do và ngày hóa đơn trước/sau. Không tạo khoản thu mới; tổng toàn kỳ không đổi, thực thu theo ngày chuyển theo CashEntry.day.
+
+
+## Một lần mua nhiều gói dùng chung hóa đơn — 26/10/2026
+
+CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua của một khách gộp thành một hóa đơn PACKAGE, nhiều dòng giá và nhiều hồ sơ Treatment độc lập; thu tiền/công nợ trên tổng hóa đơn. Thay thế mô tả checkout trước đây mỗi gói có hóa đơn riêng. Không tự gộp chứng từ lịch sử. Phần dịch vụ đã làm/sản phẩm trong giỏ vẫn theo chứng từ vận hành hiện có; yêu cầu này áp dụng các gói mua mới.
+
+checkout giữ payload actions sellPackage hiện tại; nếu có nhiều dòng sellPackage thì cùng invoiceId, invoiceIds/invoices trả danh sách không trùng, total không đếm lặp. Backend kiểm cùng khách/spa, gói/dịch vụ active, cùng tư vấn/hạn trả; tuần tự trong một Control transaction, idempotency và audit từng gói. Notification chỉ xếp sau khi toàn giỏ hoàn thành để có tổng cuối. GET invoice thêm treatments[] và packageItems; treatment cũ vẫn giữ tương thích. PDF/UI hiện từng dòng gói. Nếu còn index unique cũ trả lỗi 503 hướng dẫn cập nhật index trước, không tự migrate trong request.
+
+
+## Ẩn liệu trình đã hủy khỏi vận hành — 26/10/2026
+
+CONFIRMED theo phản hồi người dùng: gói đã hủy do hóa đơn nhập nhầm không còn xuất hiện trong Gói của khách hoặc tab liệu trình của hồ sơ khách. Lọc tại backend trước đếm/phân trang, kể cả khi tìm theo khách hoặc lọc quà tặng. Giữ bản ghi nội bộ và audit để đối chiếu điều chỉnh tài chính; không xóa lịch sử liên quan hoặc khôi phục quyền lợi đã hủy. Công cụ bổ sung Hương Lan KL chỉ kiểm trùng các gói chưa CANCELLED, nên gói nhập nhầm đã hủy không chặn việc thêm quyền lợi lịch sử đúng; không sửa hoặc xóa gói đã hủy. Gói còn ACTIVE/PAUSED/COMPLETED khác ngày vẫn chặn để đối soát. Không migration hay sửa dữ liệu thật.

@@ -407,7 +407,7 @@ export default function Workspace() {
     'Mặc định chỉ đổi ngày hóa đơn. Nếu đã thu tiền vào ngày này nhưng quên nhập, tích Điều chỉnh cả ngày thu tiền để chuyển khoản thu về đúng ngày. Giữ nguyên số tiền, buổi đã dùng, chữ ký và hoa hồng. Các ngày liên quan phải chưa chốt sổ hoặc đã mở lại.');
   };
   const editInvoice = (invoice:Row,plan:Row|null) => {
-    if(invoice.kind==='SESSION' || invoice.treatmentUseId || invoice.treatmentId || invoice.paid>0 || invoice.productItems?.length){correctInvoiceDate(invoice);return;}
+    if(invoice.packageItems?.length || invoice.kind==='SESSION' || invoice.treatmentUseId || invoice.treatmentId || invoice.paid>0 || invoice.productItems?.length){correctInvoiceDate(invoice);return;}
     setDetail(null);open('Sửa hóa đơn','updateInvoice',[
  {key:'issuedOn',label:'Ngày hóa đơn',type:'date',optional:true,hint:'Để trống giữ nguyên ngày hiện tại của hóa đơn. Không đổi ngày thu tiền.'},
  {key:'description',label:'Nội dung hóa đơn'},

@@ -37,3 +37,11 @@ test('date presets handle month and year boundaries', () => {
   const paid = listFilter('invoices', query('invoices', {status:'PAID'}), '2026-10-25');
   assert.ok(paid.$and.some(c => c.status?.$ne === 'CANCELLED'));
 });
+
+
+test('cancelled treatments stay out of operational lists even when searching gifts or a customer',()=>{
+ for(const extra of [{},{status:'GIFT'},{customer:'a'.repeat(24)},{status:'ACTIVE'}]){
+  const filter=listFilter('treatments',query('packages',extra),'2026-10-26');
+  assert.ok(filter.$and.some(c=>c.status?.$ne==='CANCELLED'));
+ }
+});

@@ -1,3 +1,4 @@
+import { migratePackageInvoiceIndex } from '../src/lib/package-invoice-indexes';
 import mongoose from 'mongoose';
 import { DatabaseUnavailableError, connect } from '../src/lib/db';
 import { allModels, Spa, User, Control, Migration, StaffLeave } from '../src/lib/models';
@@ -18,6 +19,8 @@ async function setup() {
     stage = `indexes:${model.modelName}`;
     await model.createIndexes();
   }
+  stage = 'package-invoice-indexes';
+  await migratePackageInvoiceIndex();
   stage = 'leave-indexes';
   // Upgrade only the old leave uniqueness constraint, after the new index exists.
   // No documents are changed; period permits distinct AM/PM requests on one day.

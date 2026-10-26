@@ -613,3 +613,19 @@ Theo yêu cầu mới nhất, bỏ nút Sửa ngày hóa đơn riêng ở danh s
 CONFIRMED theo yêu cầu chủ spa: trong Sửa hóa đơn, tùy chọn Điều chỉnh cả ngày thu tiền gửi correctInvoiceDate.adjustPaymentDates: true (mặc định false). OWNER đang hoạt động được chuyển CashEntry.day của tất cả khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực về ngày hóa đơn đã chọn, khi thực tế mọi khoản này đã thu ngày đó. Đây là ngoại lệ cho quy tắc trước đó chỉ sửa ngày hóa đơn. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
 
 Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không được CLOSED. Backend kiểm tra cùng spa, phiên/quyền, phiên bản hóa đơn, liên kết Payment–CashEntry; chặn khoản đảo/dùng chung và hóa đơn đã hoàn tiền. Ghi tuần tự trong transaction, tăng Day.revision cho các ngày thay đổi, giữ idempotency và Audit.details gồm adjustPaymentDates, receiptChanges (receiptId, paymentId, amount, method, before, after), lý do và ngày hóa đơn trước/sau. Không tạo khoản thu mới; tổng toàn kỳ không đổi, thực thu theo ngày chuyển theo CashEntry.day.
+
+
+## Một lần mua nhiều gói dùng chung hóa đơn — 26/10/2026
+
+CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua của một khách gộp thành một hóa đơn PACKAGE, nhiều dòng giá và nhiều hồ sơ Treatment độc lập; thu tiền/công nợ trên tổng hóa đơn. Thay thế mô tả checkout trước đây mỗi gói có hóa đơn riêng. Không tự gộp chứng từ lịch sử. Phần dịch vụ đã làm/sản phẩm trong giỏ vẫn theo chứng từ vận hành hiện có; yêu cầu này áp dụng các gói mua mới.
+
+PROPOSED kỹ thuật: execute(sellPackage) dùng lại invoice trong phạm vi một checkout, tạo Treatment riêng và snapshot packageItems. Chỉ deduplicate kết quả sau thực thi, không gộp bằng khách/ngày. Chốt tổng/quà tiền rồi xếp notifications; rollback toàn giỏ khi gói/thẻ/audit lỗi. Luồng thu tiền dùng hóa đơn chung, quy tắc 5% hiện hành giữ nguyên.
+
+Vận hành: npm run db:package-invoices dùng .env.live.local, kiểm database cho phép và xác thực OWNER trước khi thay index. Với database mới, db:setup tạo index mới; database test chỉ spacare_test. Không tự seed/reset live.
+
+Bổ sung riêng Hương Lan KL theo xác nhận 26/10/2026: mua 17/06/2025, 3 gói nách + ½ chân + bikini, thời hạn 36 tháng đến 17/06/2028, đã thanh toán. scripts/supplement-huong-lan.ts --check đối chiếu đúng hồ sơ đã nhập, giữ nguyên gói mép và lịch sử khác; --write chỉ thêm các gói thiếu dưới một chứng từ openingBalance total=paid=0, không coi giá gốc là 0, không tạo thu/hoa hồng lịch sử. Chặn gói tồn tại khác ngày/trạng thái hoặc hồ sơ mơ hồ. Xác thực OWNER, đúng spacare_live, Control transaction, idempotency đợt cố định và audit; không chạy lại đợt nhập tóc cũ hay sửa fingerprint đợt đó.
+
+
+## Ẩn liệu trình đã hủy khỏi vận hành — 26/10/2026
+
+CONFIRMED theo phản hồi người dùng: gói đã hủy do hóa đơn nhập nhầm không còn xuất hiện trong Gói của khách hoặc tab liệu trình của hồ sơ khách. Lọc tại backend trước đếm/phân trang, kể cả khi tìm theo khách hoặc lọc quà tặng. Giữ bản ghi nội bộ và audit để đối chiếu điều chỉnh tài chính; không xóa lịch sử liên quan hoặc khôi phục quyền lợi đã hủy. Công cụ bổ sung Hương Lan KL chỉ kiểm trùng các gói chưa CANCELLED, nên gói nhập nhầm đã hủy không chặn việc thêm quyền lợi lịch sử đúng; không sửa hoặc xóa gói đã hủy. Gói còn ACTIVE/PAUSED/COMPLETED khác ngày vẫn chặn để đối soát. Không migration hay sửa dữ liệu thật.

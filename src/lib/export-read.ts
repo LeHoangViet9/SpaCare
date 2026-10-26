@@ -27,7 +27,7 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
         ...(bill.kind === 'PACKAGE' ? [['Tư vấn bán gói', bill.saleParticipants?.length ? bill.saleParticipants.map((p:{staffName:string})=>p.staffName).join(', ') : bill.sellerName || 'Chưa ghi nhận']] : []),
       ] },
       { heading: 'Dịch vụ / gói / sản phẩm', columns: ['Nội dung', 'Thành tiền'], widths: [0.72, 0.28], rows: [
-        ...(bill.serviceItems?.length ? bill.serviceItems.map((item: { name: string; total: number }) => [item.name, money(item.total)]) : bill.productItems?.length ? [] : [[bill.description || 'Dịch vụ', money(bill.total)]]),
+        ...(bill.packageItems?.length ? bill.packageItems.map((item:{name:string;total:number})=>[item.name,money(item.total)]) : bill.serviceItems?.length ? bill.serviceItems.map((item: { name: string; total: number }) => [item.name, money(item.total)]) : bill.productItems?.length ? [] : [[bill.description || 'Dịch vụ', money(bill.total)]]),
         ...(bill.productItems || []).map((item:any)=>[`${item.name} · ${item.quantity} ${item.unit} × ${money(item.unitPrice)}`,money(item.total)]),
         ...data.gifts.map(gift => [`Quà tặng: ${gift.description || 'Gói tặng'}`, money(0)]),
       ] },

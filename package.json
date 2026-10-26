@@ -30,7 +30,9 @@
     "db:opening:live": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-opening-balances.ts",
     "db:invoice-codes": "tsx --env-file=.env.local scripts/setup-invoice-codes.ts",
     "db:hair-removal": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/import-hair-removal.ts",
-    "test:selenium": "node --env-file-if-exists=.env.selenium.local tests/selenium/workspace.e2e.mjs"
+    "test:selenium": "node --env-file-if-exists=.env.selenium.local tests/selenium/workspace.e2e.mjs",
+    "db:package-invoices": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/setup-package-invoices.ts",
+    "db:supplement-huong-lan": "node --env-file=.env.live.local --import ./scripts/local-dns.mjs --import tsx scripts/supplement-huong-lan.ts"
   },
   "dependencies": {
     "mongoose": "^9.0.0",

@@ -536,3 +536,10 @@ migration mới, không xóa/tạo lại hóa đơn hoặc bút toán để thay
 CONFIRMED theo yêu cầu chủ spa: trong Sửa hóa đơn, tùy chọn Điều chỉnh cả ngày thu tiền gửi correctInvoiceDate.adjustPaymentDates: true (mặc định false). OWNER đang hoạt động được chuyển CashEntry.day của tất cả khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực về ngày hóa đơn đã chọn, khi thực tế mọi khoản này đã thu ngày đó. Đây là ngoại lệ cho quy tắc trước đó chỉ sửa ngày hóa đơn. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
 
 Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không được CLOSED. Backend kiểm tra cùng spa, phiên/quyền, phiên bản hóa đơn, liên kết Payment–CashEntry; chặn khoản đảo/dùng chung và hóa đơn đã hoàn tiền. Ghi tuần tự trong transaction, tăng Day.revision cho các ngày thay đổi, giữ idempotency và Audit.details gồm adjustPaymentDates, receiptChanges (receiptId, paymentId, amount, method, before, after), lý do và ngày hóa đơn trước/sau. Không tạo khoản thu mới; tổng toàn kỳ không đổi, thực thu theo ngày chuyển theo CashEntry.day.
+
+
+## Một lần mua nhiều gói dùng chung hóa đơn — 26/10/2026
+
+CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua của một khách gộp thành một hóa đơn PACKAGE, nhiều dòng giá và nhiều hồ sơ Treatment độc lập; thu tiền/công nợ trên tổng hóa đơn. Thay thế mô tả checkout trước đây mỗi gói có hóa đơn riêng. Không tự gộp chứng từ lịch sử. Phần dịch vụ đã làm/sản phẩm trong giỏ vẫn theo chứng từ vận hành hiện có; yêu cầu này áp dụng các gói mua mới.
+
+Invoice.packageItems?: [{templateId?,treatmentId,serviceId,name,total,promotion,giftCashCardAmount}] là snapshot từng gói; tổng total bằng tổng dòng. Treatment.invoiceId trở thành nhiều-một; giữ nguyên tham chiếu cũ. Migration chỉ tạo index nonunique (spaId,invoiceId) tên treatment_invoice_lookup trước, rồi bỏ đúng index unique cũ cùng key. Không xóa/sửa documents; không dùng syncIndexes. Invoice.serviceId giữ dòng đầu để tương thích ledger 5% cũ; description gom tên các gói. Chưa di chuyển hóa đơn lịch sử.

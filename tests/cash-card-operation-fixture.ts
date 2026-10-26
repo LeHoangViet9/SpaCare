@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
-import { Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
+import { SaleCommission, SharedSaleCommission, Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
 const actor={id:ownerId,spaId,name:'Owner',role:'OWNER' as const,cashier:false};
@@ -12,7 +12,7 @@ function match(row:any,filter:any):boolean{return Object.entries(filter).every((
 function doc(name:string,row:any):any{if(!row)return null;return {...clone(row),...(name==='Appointment'?{startAt:new Date(row.startAt)}:{}),toObject(){const {toObject,save,...v}=this;return clone(v);},async save(){const i=state[name].findIndex(v=>String(v._id)===String(this._id));state[name][i]=this.toObject();}};}
 function query(value:any):any{return {distinct:(key:string)=>query([...new Set((value||[]).map((row:any)=>row[key]).filter(Boolean))]),session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
 let failModel='';
-for(const model of [Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
+for(const model of [SaleCommission,SharedSaleCommission,Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
   (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
@@ -28,6 +28,8 @@ for(const model of [Product,StockMovement,TreatmentUse,ActivityNotification,Appo
     const result=[];for(const row of rows){const item=new model(row);await item.validate();const v=clone(item.toObject());state[name].push(v);result.push(doc(name,v));}return result;
   };
 }
+let legacyPackageIndex=false;
+(Treatment.collection as any).indexes=async()=>legacyPackageIndex ? [{name:'spaId_1_invoiceId_1',key:{spaId:1,invoiceId:1},unique:true}] : [{name:'treatment_invoice_lookup',key:{spaId:1,invoiceId:1}}];
 state.User=[{_id:ownerId,spaId,name:'Owner',role:'OWNER',active:true,cashier:false}];
 state.Control=[{_id:'e'.repeat(24),spaId,revision:0}];
 state.Customer=[{_id:customerId,spaId,name:'Customer'}];
@@ -293,7 +295,7 @@ const cart={customerId,issuedOn:spaDay(),actions:[
 ]};
 const cartBefore=clone(state);failModel='Treatment';await assert.rejects(call('checkout',cart),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,cartBefore,'failed package rolls back earlier product invoice and inventory');
 const cartKey=randomUUID(),cartDone=await call('checkout',cart,cartKey);await call('checkout',cart,cartKey);
-assert.equal(cartDone.invoiceIds.length,3);assert.equal(cartDone.total,6180000);
+assert.equal(cartDone.invoiceIds.length,2);assert.equal(cartDone.total,6180000);
 assert.equal(state.Invoice.find(row=>row._id===cartDone.invoiceIds[0]).productItems.length,2);
 assert.equal(state.Product.find(row=>row._id===extraProductId).stock,2);assert.equal(state.Product.find(row=>row._id===secondProductId).stock,6);
 assert.equal(state.Treatment.filter(row=>cartDone.invoiceIds.includes(row.invoiceId)).length,2);
@@ -320,3 +322,27 @@ await assert.rejects(call('sellPackage',{...giftSale,gifts:[{serviceId:'9'.repea
 await call('use',{treatmentId:singleGift._id,remainingBefore:1});
 assert.equal(state.Treatment.find(row=>row._id===singleGift._id).remaining,0);
 await assert.rejects(call('use',{treatmentId:singleGift._id,remainingBefore:0}));
+
+// Grouped packages use a single receivable and keep independent entitlement snapshots.
+const groupedInput={customerId,actions:[
+ {action:'sellPackage',data:{templateId,dueDate:spaDay(),promotion:'Gift A',giftCashCardAmount:100000}},
+ {action:'sellPackage',data:{templateId:secondTemplateId,dueDate:spaDay(),promotion:'Gift B',giftCashCardAmount:200000}}
+]};
+snapshot=clone(state);legacyPackageIndex=true;
+await assert.rejects(call('checkout',groupedInput),/index/);assert.deepEqual(state,snapshot);legacyPackageIndex=false;
+const groupedKey=randomUUID(),grouped=await call('checkout',groupedInput,groupedKey);await call('checkout',groupedInput,groupedKey);
+assert.equal(grouped.invoiceIds.length,1);assert.equal(grouped.total,6000000);
+const groupBill=state.Invoice.find(row=>row._id===grouped.invoiceId);
+assert.equal(groupBill.packageItems.length,2);assert.equal(groupBill.packageItems.reduce((n:any,row:any)=>n+row.total,0),groupBill.total);
+assert.equal(state.Treatment.filter(row=>row.invoiceId===grouped.invoiceId).length,2);
+assert.equal(state.CashCard.filter(row=>row.sourceInvoiceId===grouped.invoiceId).length,1);
+assert.equal(state.CashCard.find(row=>row.sourceInvoiceId===grouped.invoiceId).balance,300000);
+assert.equal(state.CashEntry.length,snapshot.CashEntry.length,'sale is not receipt confirmation');
+state.Day[0].status='OPEN';
+const payKey=randomUUID(),payInput={invoiceId:grouped.invoiceId,amount:1000000,method:'CASH',receivedConfirmation:true};
+await call('payment',payInput,payKey);await call('payment',payInput,payKey);
+assert.equal(state.Invoice.find(row=>row._id===grouped.invoiceId).paid,1000000);
+assert.equal(state.SaleCommission.filter(row=>row.invoiceId===grouped.invoiceId).reduce((n,row)=>n+row.amount,0),50000,'5% of the combined amount received, once');
+snapshot=clone(state);failModel='CashCard';await assert.rejects(call('checkout',groupedInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,snapshot,'combined invoice, both plans and gifts roll back together');
+const badGroup={...groupedInput,actions:[groupedInput.actions[0],{...groupedInput.actions[1],data:{...groupedInput.actions[1].data,participantIds:[performerId]}}]};
+await assert.rejects(call('checkout',badGroup),/cùng người tư vấn/);assert.deepEqual(state,snapshot);

@@ -1,6 +1,7 @@
 export type ListFilters = { status: string; employee: string; method: string; direction: string; category: string; customer: string; from: string; to: string };
 export function listFilter(collection: string, q: ListFilters, today: string): Record<string, any> {
   const clauses: Record<string, any>[] = [];
+  if(collection === 'treatments') clauses.push({status:{$ne:'CANCELLED'}});
   if (q.status) {
     if (collection === 'invoices') {
       const debt = { $expr: { $gt: ['$total', '$paid'] } };
