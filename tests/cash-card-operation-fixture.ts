@@ -37,6 +37,7 @@ state.Service=[{_id:serviceId,spaId,name:'Service',price:400000,active:true,comm
 state.Day=[{_id:'f'.repeat(24),spaId,day:spaDay(),status:'OPEN'}];
 (mongoose as any).connect=()=>assert.fail('Model doubles must never connect to a database');
 (mongoose.connection as any).readyState=1;
+(mongoose.connection as any).name='spacare_test';
 let queue=Promise.resolve();
 (mongoose.connection as any).transaction=(fn:any)=>{const result=queue.then(async()=>{const before=clone(state);try{return await fn({fixture:true});}catch(e){state=before;throw e;}});queue=result.catch(()=>{});return result;};
 const call=(action:string,data:any,key=randomUUID())=>operate(actor,action,data,key);

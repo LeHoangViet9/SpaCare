@@ -143,7 +143,7 @@ Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn
 
 
 ## Thông báo và hotline — 23/10/2026
-CONFIRMED theo yêu cầu người dùng: thêm chuông và push trên điện thoại cho chủ spa khi có đặt lịch online; hotline 0329357116. Chi tiết kỹ thuật PROPOSED, cấu hình và giới hạn: PUSH_NOTIFICATIONS.md.
+CONFIRMED theo yêu cầu người dùng: thêm chuông và push trên điện thoại cho chủ spa khi có đặt lịch online; hotline [liên hệ hỗ trợ cấu hình riêng]. Chi tiết kỹ thuật PROPOSED, cấu hình và giới hạn: PUSH_NOTIFICATIONS.md.
 
 
 ## Tài khoản nhân viên dùng số điện thoại — 23/10/2026
@@ -238,7 +238,7 @@ UI/PDF ghi rõ chứng từ chuyển số dư, tổng gốc chưa có, 0 chỉ n
 
 
 ## Gộp bảng mặt và gội — xác nhận 24/10/2026
-CONFIRMED: Yến Thương giữ 1 buổi Mặt cơ bản và 11 buổi Gội đầu dưỡng sinh 1; dòng GD 11 trong bảng gội là cùng quyền lợi, không cộng lần hai. Ng T Lệ Quyên còn 1 buổi Gội đầu cấp collagen và được tặng 1 buổi Laser Carbon. Khách thiếu SĐT giữ trống, không tự tạo số giả hoặc nhận SĐT khách phía trước.
+CONFIRMED: Đối soát quyền lợi từng khách theo input vận hành riêng đã duyệt; dòng ghi lặp cùng quyền lợi không được cộng lần hai. Quà dịch vụ giữ theo đối soát, khách thiếu SĐT giữ trống và không tự tạo số.
 PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng và chuẩn hóa thành undefined; duplicate detection chỉ kiểm số có thật. Khách thiếu SĐT không tự gộp với bất kỳ hồ sơ thiếu số khác, cùng tên có sẵn hoặc trùng tên trong nguồn phải đối chiếu riêng; tạo Customer không có field phone. Mã batch vẫn bảo vệ retry. Treatment input thêm gift/benefitNote tùy chọn, giữ quyền lợi mặt nạ thêm kèm trong tên liệu trình/chứng từ và audit, không cộng thành buổi gội hay tự đặt giá. Gói GD+CVG giữ nhãn kết hợp và phải ánh xạ với danh mục thực tế trước ghi. Gộp ngoại tuyến ra imports/opening-combined.review.json: 84 khách, 93 dòng quyền lợi/319 buổi, 6 thẻ số dư 14.310.000đ, riêng nợ mỹ phẩm 7.000.000đ; 3 khách chưa có số. Loại 3 dòng quyền lợi lặp và 1 thẻ lặp; lưu provenance hai nguồn trong file review bị Git bỏ qua. Chưa đối chiếu/ghi live.
 
 

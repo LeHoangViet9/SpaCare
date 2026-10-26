@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import mongoose from 'mongoose';
@@ -19,7 +20,8 @@ async function main(){
   if(flags.has('--check')&&!flags.has('--write')) {
     const timer=setTimeout(()=>{console.error('Đối chiếu chỉ đọc hết thời gian chờ kết nối. Chưa ghi database.',{code:'READ_ONLY_CHECK_TIMEOUT'});process.exit(1);},20000);timer.unref();
   }
-  const identity=seedOwnerConfig(process.env);await connect();const owner=await openingOwner(identity);await checkOpeningIndexes();
+  const identity=seedOwnerConfig(process.env);assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'import');
+  await connect('import');const owner=await openingOwner(identity);await checkOpeningIndexes();
   const batch=options.get('--batch');if(!batch)throw new Error('BATCH_REQUIRED');
   if(flags.has('--write')){
     if(!flags.has('--app-ready')||!options.get('--approve'))throw new Error('APP_READY_AND_APPROVAL_REQUIRED');

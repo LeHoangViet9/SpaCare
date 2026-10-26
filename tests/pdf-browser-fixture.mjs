@@ -11,11 +11,11 @@ const source = compile('src/lib/pdf-bytes.ts') + '\n' + compile('src/lib/render-
 const docs = [
   { receipt: { name: 'Thanh Thư Spa', address: 'CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên', phone: '0329 357 116', cashier: 'Thanh Thư' }, filename: 'invoice.pdf', title: 'HÓA ĐƠN DỊCH VỤ', subtitle: 'SpaCare | Hotline 0329 357 116',
     notes: ['Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.'],
-    tables: [{ columns: ['Thông tin', 'Chi tiết'], widths: [.28,.72], rows: [['Khách hàng','Nguyễn Thị Huyền Trang'],['Số điện thoại','0329357116'],['Mã hóa đơn','0123456789abcdef01234567']] },
+    tables: [{ columns: ['Thông tin', 'Chi tiết'], widths: [.28,.72], rows: [['Khách hàng','Khách Tổng Hợp PDF'],['Số điện thoại','0900000066'],['Mã hóa đơn','0123456789abcdef01234567']] },
       { heading: 'Thanh toán', columns: ['Khoản mục','Số tiền'], widths: [.65,.35], rows: [['Gói chăm sóc da chuyên sâu và phục hồi cấp ẩm', '2.000.000 đ'],['Quà tặng: Chăm sóc da','0 đ'],['Đã thanh toán','1.500.000 đ'],['Còn phải thanh toán','500.000 đ']] }] },
-  { filename: 'commission.pdf', title: 'BẢNG KÊ HOA HỒNG', subtitle: 'Tháng 10/2026 | Nguyễn Thị Huyền Trang', notes: ['Đủ 120 khoản, gồm cả khoản điều chỉnh âm. Không xác nhận đã chi lương.'], tables: [
+  { filename: 'commission.pdf', title: 'BẢNG KÊ HOA HỒNG', subtitle: 'Tháng 10/2026 | Khách Tổng Hợp PDF', notes: ['Đủ 120 khoản, gồm cả khoản điều chỉnh âm. Không xác nhận đã chi lương.'], tables: [
     { heading: 'Chi tiết phát sinh', columns: ['Ngày','Nhân viên','Nội dung','Hoa hồng'], widths: [.2,.22,.36,.22],
-      rows: Array.from({length:120}, (_, i) => ['23/10/2026, 14:30:00','Nguyễn Thị Huyền Trang',`Khoản ${i+1}: ${i%2 ? 'Bán gói 5%: Chăm sóc da chuyên sâu, phục hồi và cấp ẩm | HĐ #012345' : 'Dịch vụ: Gội đầu dưỡng sinh'}`,i===119 ? '-100.000 đ' : '20.000 đ']) }] },
+      rows: Array.from({length:120}, (_, i) => ['23/10/2026, 14:30:00','Khách Tổng Hợp PDF',`Khoản ${i+1}: ${i%2 ? 'Bán gói 5%: Chăm sóc da chuyên sâu, phục hồi và cấp ẩm | HĐ #012345' : 'Dịch vụ: Gội đầu dưỡng sinh'}`,i===119 ? '-100.000 đ' : '20.000 đ']) }] },
 ];
 const html = `<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDF fixture</title><body><p id="status">Đang kiểm tra PDF…</p><script>${source}
 window.runFixture = async () => { for (const doc of ${JSON.stringify(docs)}) { const file = await renderPdf(doc); await fetch('/result/'+doc.filename, {method:'POST',body:file}); } document.getElementById('status').textContent='Đã tạo 2 PDF kiểm thử'; return true; };</script></body></html>`;

@@ -1,10 +1,11 @@
+import { seleniumBaseUrl, seleniumProductionHosts } from '../../src/lib/production-safety.mjs';
 import { Builder, By, until } from 'selenium-webdriver';
 import chrome from 'selenium-webdriver/chrome.js';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-const base = new URL(process.env.SELENIUM_BASE_URL || 'https://spacare-rho.vercel.app');
+const base = seleniumBaseUrl(process.env);
 assert.ok(['http:', 'https:'].includes(base.protocol));
 assert.equal(base.username + base.password, '', 'Credentials must be environment variables');
 const origin = base.origin;
@@ -176,6 +177,14 @@ try {
   let builder = new Builder().forBrowser('chrome').setChromeOptions(options);
   if (process.env.SELENIUM_REMOTE_URL) builder = builder.usingServer(process.env.SELENIUM_REMOTE_URL);
   driver = await builder.build();
+  // Block redirects/subresources to known production hosts before any page loads.
+  // Do not silently skip this protection on an unsupported remote driver.
+  await driver.sendDevToolsCommand('Network.enable', {});
+  await driver.sendDevToolsCommand('Network.setBlockedURLs', {
+    urls: seleniumProductionHosts(process.env)
+      .filter(host => !['localhost','127.0.0.1','[::1]'].includes(host))
+      .map(host => '*' + host + '*'),
+  });
   await driver.manage().setTimeouts({ pageLoad: 45000, script: timeout, implicit: 0 });
   await go('/login');
   await run('SEL-AUTH-00', 'Workspace yêu cầu phiên đăng nhập', async () => {

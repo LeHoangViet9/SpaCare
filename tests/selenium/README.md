@@ -83,3 +83,10 @@ Nếu đăng nhập bị từ chối hoặc giới hạn, ca báo LoginRejected/
 các ca phụ thuộc tiếp theo BLOCKED. Report ghi bước cuối để phân biệt timeout
 đăng nhập với timeout giao diện. Không tự retry đăng nhập liên tục.
 Nếu vừa chạy phiên bản cũ và bị giới hạn, chờ tối đa 15 phút trước khi chạy lại.
+
+
+## Production safety (PR 1)
+
+Bắt buộc SELENIUM_ENV=test|staging và SELENIUM_BASE_URL. Không còn mặc định production.
+Staging từ xa cần HTTPS và SELENIUM_ALLOWED_ORIGIN trùng origin; production hiện hành và SELENIUM_PRODUCTION_ORIGIN bị chặn kể cả khi có allowlist. Remote Chrome cần hỗ trợ CDP để chặn redirect production.
+Chỉ dùng app có DB test/dữ liệu giả; xem docs/PRODUCTION_SAFETY.md. Không chạy suite trên dữ liệu thật.

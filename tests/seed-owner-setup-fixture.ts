@@ -3,6 +3,7 @@ import { mock } from 'node:test';
 import mongoose from 'mongoose';
 import { allModels, User, Spa, Control, StaffLeave, Migration } from '../src/lib/models';
 import { verifyPassword } from '../src/lib/password';
+process.env.MONGODB_URI = 'mongodb://127.0.0.1:1/spacare_test';
 const scenario = process.argv[2];
 const errors: string[] = [];
 console.error = (...values) => { errors.push(values.map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' ')); };

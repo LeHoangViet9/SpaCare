@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import { migratePackageInvoiceIndex } from '../src/lib/package-invoice-indexes';
 import mongoose from 'mongoose';
 import { DatabaseUnavailableError, connect } from '../src/lib/db';
@@ -9,7 +10,8 @@ let stage = 'validate-seed';
 async function setup() {
   const owner = seedOwnerConfig(process.env);
   stage = 'connect';
-  await connect();
+  assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'maintenance');
+  await connect('maintenance');
   stage = 'user-indexes';
   await migrateUserIndexes();
   // Additive migration: create collections/indexes; never drop or rewrite legacy data.

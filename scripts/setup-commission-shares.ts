@@ -1,8 +1,10 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { SharedSaleCommission } from '../src/lib/models';
 try {
-  await connect();
+  assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'maintenance');
+  await connect('maintenance');
   await SharedSaleCommission.createCollection();
   await SharedSaleCommission.createIndexes();
   console.log('Đã tạo sổ chia hoa hồng và indexes. Không sửa/xóa dữ liệu hoặc indexes cũ.');

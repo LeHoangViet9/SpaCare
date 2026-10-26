@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import { createHash } from 'node:crypto';
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
@@ -7,6 +8,7 @@ import { allModels, Spa, User, Control, Customer, Service, Appointment, Invoice,
 
 // Deliberately isolated: never seed a production DB or use the application's .env.local.
 const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/spacare_demo?replicaSet=rs0&directConnection=true';
+assertDatabaseTarget(uri, process.env, 'demo');
 const parsed = new URL(uri);
 if (!['mongodb:', 'mongodb+srv:'].includes(parsed.protocol) || parsed.pathname !== '/spacare_demo') {
   throw new Error('db:demo chỉ được ghi database spacare_demo. Không đổi tên database vận hành để chạy seed.');
@@ -22,7 +24,8 @@ async function main() {
   const checkOnly = process.argv.includes('--check');
   let checked = 0;
   if (!checkOnly) {
-    await connect();
+    assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'demo');
+    await connect('demo');
     for (const model of allModels) { await model.createCollection(); await model.createIndexes(); }
   }
   const now = new Date();
@@ -143,7 +146,7 @@ async function main() {
   await mongoose.connection.transaction(seed);
   console.log(inserted ? 'Đã tạo dữ liệu mẫu trong spacare_demo.' : 'Dữ liệu mẫu đã có; giữ nguyên các thao tác/mật khẩu bạn đã thay đổi, không seed lại.');
   console.log('Tài khoản mẫu: owner@demo.spacare.test | cashier@demo.spacare.test | lan@demo.spacare.test | hoa@demo.spacare.test');
-  console.log('Mật khẩu khởi tạo (chỉ cho demo): ' + demoPassword);
+  console.log('Mật khẩu demo không được ghi ra log.');
   console.log('Để mở giao diện demo: chạy npm run dev:demo, rồi truy cập http://localhost:3000.');
 }
 

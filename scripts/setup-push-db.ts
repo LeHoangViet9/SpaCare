@@ -1,9 +1,11 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { ActivityNotification, Notification, PushDevice } from '../src/lib/models';
 
 try {
-  await connect();
+  assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'maintenance');
+  await connect('maintenance');
   for (const model of [Notification, ActivityNotification, PushDevice]) {
     await model.createCollection();
     await model.createIndexes();

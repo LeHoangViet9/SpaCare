@@ -1,5 +1,6 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import fs from 'node:fs';
-import { confirmedHairRemovalName } from '../src/lib/hair-removal-import';
+import { confirmedHairRemovalName, readConfirmedAliases } from '../src/lib/hair-removal-import';
 import mongoose from 'mongoose';
 import { connect, DatabaseUnavailableError } from '../src/lib/db';
 import { Service, Idempotency } from '../src/lib/models';
@@ -11,13 +12,15 @@ async function main(){
   const args=process.argv.slice(2);
   ensure(args.length<=1 && args.every(a=>['--check','--write'].includes(a)), 'Use --check or --write.');
   const data=parseOpening(JSON.parse(fs.readFileSync('imports/hair-removal.opening.json','utf8')));
-  for(const customer of data.customers) customer.name=confirmedHairRemovalName(customer.name,customer.phone);
+  const aliases=readConfirmedAliases('imports/hair-removal-aliases.private.json');
+  for(const customer of data.customers) customer.name=confirmedHairRemovalName(customer.name,customer.phone,aliases);
   console.log('Offline summary:',openingSummary(data));
   if(!args.length){console.log('No database connection or writes.');return;}
   checkOpeningTarget(process.env.MONGODB_URI||'', 'spacare_live');
   ensure(data.targetDatabase==='spacare_live','Unexpected source target.');
   const identity=seedOwnerConfig(process.env);
-  await connect();
+  assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'import');
+  await connect('import');
   const owner=await openingOwner(identity);
   await checkOpeningIndexes();
   const services=await Service.find({spaId:owner.spaId,active:true}).lean();

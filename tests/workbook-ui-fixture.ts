@@ -1,3 +1,4 @@
+import { assertDatabaseTarget, assertConnectedDatabase } from '../src/lib/production-safety.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import mongoose from 'mongoose';
@@ -6,9 +7,11 @@ import { allModels, Spa, User, Control, Customer, Service, Appointment, Invoice,
 import { hashPassword, hash } from '../src/lib/password';
 import { operate } from '../src/lib/operations';
 import { spaDay } from '../src/lib/rules';
-const uri=process.env.MONGODB_URI||'';assert.equal(new URL(uri).pathname,'/spacare_test');
+const uri=process.env.MONGODB_URI||'';assertDatabaseTarget(uri, process.env, 'test');
 const out='outputs/test-review-20261021/ui-fixture.json';
+assertDatabaseTarget(uri, process.env, 'test');
 await mongoose.connect(uri,{autoIndex:false});
+assertConnectedDatabase('spacare_test', mongoose.connection.name);
 try {
  if(process.argv.includes('--cleanup')) {
   const f=JSON.parse(await fs.readFile(out,'utf8'));

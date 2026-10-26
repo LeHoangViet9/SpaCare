@@ -142,12 +142,12 @@ const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, requ
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
-  treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,strict:'throw'})],default:undefined},
-  packageItems: {type:[new Schema({templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,promotion:String,giftCashCardAmount:Number},{_id:false,strict:'throw'})],default:undefined},
+  treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
+  packageItems: {type:[new Schema({templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,promotion:String,giftCashCardAmount:Number},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
-  productItems: {type:[new Schema({productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount},{_id:false,strict:'throw'})],default:undefined},
+  productItems: {type:[new Schema({productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
   serviceItems: { type: [serviceItemSchema], default: undefined },
   openingBalance: Boolean, openingDate: String,
   saleParticipants: [saleParticipantSchema],

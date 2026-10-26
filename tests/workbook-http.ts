@@ -1,3 +1,4 @@
+import { assertDatabaseTarget, assertConnectedDatabase } from '../src/lib/production-safety.mjs';
 // Executable workbook cases. Only a dedicated app backed by spacare_test is allowed.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -8,7 +9,7 @@ import { hashPassword, hash } from '../src/lib/password';
 import { spaDay } from '../src/lib/rules';
 
 const uri = process.env.MONGODB_URI || '';
-assert.equal(new URL(uri).pathname, '/spacare_test', 'Only spacare_test is allowed.');
+assertDatabaseTarget(uri, process.env, 'test');
 const base = process.env.TEST_APP_ORIGIN || 'http://127.0.0.1:3100';
 assert.equal(new URL(base).hostname, '127.0.0.1');
 assert.equal(new URL(base).port, '3100', 'Use the dedicated app, not the operational app.');
@@ -87,7 +88,9 @@ async function plan(f: any, totalSessions = 10) {
 const evidence = { signature: { version: 1, strokes: [[[0.1,0.6],[0.3,0.2],[0.8,0.7]]] } };
 const receive = { method: 'CASH', receivedConfirmation: true };
 
+assertDatabaseTarget(uri, process.env, 'test');
 await mongoose.connect(uri, { autoIndex: false, serverSelectionTimeoutMS: 5000 });
+assertConnectedDatabase('spacare_test', mongoose.connection.name);
 try {
   for (const model of allModels) { await model.createCollection(); await model.createIndexes(); }
   await run('TC-AUTH-02', async f => {

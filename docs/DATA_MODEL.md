@@ -338,7 +338,7 @@ UI/PDF ghi rõ chứng từ chuyển số dư, tổng gốc chưa có, 0 chỉ n
 
 
 ## Gộp bảng mặt và gội — xác nhận 24/10/2026
-CONFIRMED: Yến Thương giữ 1 buổi Mặt cơ bản và 11 buổi Gội đầu dưỡng sinh 1; dòng GD 11 trong bảng gội là cùng quyền lợi, không cộng lần hai. Ng T Lệ Quyên còn 1 buổi Gội đầu cấp collagen và được tặng 1 buổi Laser Carbon. Khách thiếu SĐT giữ trống, không tự tạo số giả hoặc nhận SĐT khách phía trước.
+CONFIRMED: Đối soát quyền lợi từng khách theo input vận hành riêng đã duyệt; dòng ghi lặp cùng quyền lợi không được cộng lần hai. Quà dịch vụ giữ theo đối soát, khách thiếu SĐT giữ trống và không tự tạo số.
 PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng và chuẩn hóa thành undefined; duplicate detection chỉ kiểm số có thật. Khách thiếu SĐT không tự gộp với bất kỳ hồ sơ thiếu số khác, cùng tên có sẵn hoặc trùng tên trong nguồn phải đối chiếu riêng; tạo Customer không có field phone. Mã batch vẫn bảo vệ retry. Treatment input thêm gift/benefitNote tùy chọn, giữ quyền lợi mặt nạ thêm kèm trong tên liệu trình/chứng từ và audit, không cộng thành buổi gội hay tự đặt giá. Gói GD+CVG giữ nhãn kết hợp và phải ánh xạ với danh mục thực tế trước ghi. Gộp ngoại tuyến ra imports/opening-combined.review.json: 84 khách, 93 dòng quyền lợi/319 buổi, 6 thẻ số dư 14.310.000đ, riêng nợ mỹ phẩm 7.000.000đ; 3 khách chưa có số. Loại 3 dòng quyền lợi lặp và 1 thẻ lặp; lưu provenance hai nguồn trong file review bị Git bỏ qua. Chưa đối chiếu/ghi live.
 
 
@@ -543,3 +543,17 @@ Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không 
 CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua của một khách gộp thành một hóa đơn PACKAGE, nhiều dòng giá và nhiều hồ sơ Treatment độc lập; thu tiền/công nợ trên tổng hóa đơn. Thay thế mô tả checkout trước đây mỗi gói có hóa đơn riêng. Không tự gộp chứng từ lịch sử. Phần dịch vụ đã làm/sản phẩm trong giỏ vẫn theo chứng từ vận hành hiện có; yêu cầu này áp dụng các gói mua mới.
 
 Invoice.packageItems?: [{templateId?,treatmentId,serviceId,name,total,promotion,giftCashCardAmount}] là snapshot từng gói; tổng total bằng tổng dòng. Treatment.invoiceId trở thành nhiều-một; giữ nguyên tham chiếu cũ. Migration chỉ tạo index nonunique (spaId,invoiceId) tên treatment_invoice_lookup trước, rồi bỏ đúng index unique cũ cùng key. Không xóa/sửa documents; không dùng syncIndexes. Invoice.serviceId giữ dòng đầu để tương thích ledger 5% cũ; description gom tên các gói. Chưa di chuyển hóa đơn lịch sử.
+
+
+## Production Safety Guards — 26/10/2026
+
+CONFIRMED phạm vi PR 1 theo yêu cầu người dùng: guard môi trường/database cho runtime, CLI và kiểm thử; Selenium bắt buộc URL test/staging, từ chối production. Không thay đổi nghiệp vụ, schema/index, quyền OWNER/STAFF hoặc dữ liệu thật.
+PROPOSED kỹ thuật và ma trận tương thích: xem [PRODUCTION_SAFETY.md](PRODUCTION_SAFETY.md). Production runtime giữ cấu hình hiện tại; dev/Preview/test không dùng DB vận hành. CLI live cần opt-in local operations + đúng đích, giữ OWNER/mã duyệt sẵn có. API lỗi guard trả 503/SAFETY_GUARD_BLOCKED; không lộ URI/secrets. Không chạy script dữ liệu trong build.
+
+
+## Integration rollback regression — 26/10/2026
+PROPOSED kỹ thuật: ba embedded snapshot Invoice.treatmentSessions/packageItems/productItems khai báo versionKey:false, cùng quy ước snapshot hiện có. Giữ strict:throw; không thêm field/index, không migration hoặc sửa dữ liệu cũ. Tránh Mongoose khôi phục __v không có trong schema khi transaction abort, giữ nguyên lỗi gốc và rollback. Không đổi API/quyền hoặc quy tắc tài chính. Test xác nhận hóa đơn PACKAGE có Commission bị từ chối sửa (409); dịch vụ có lịch CONFIRMED phải được xử lý lịch trước khi ngừng hoạt động.
+
+
+### PR 1: fail-closed và input riêng — 26/10/2026
+PROPOSED kỹ thuật theo yêu cầu người dùng: tín hiệu Vercel thiếu/mâu thuẫn bị chặn trước kết nối, không suy Production từ NODE_ENV. Dữ liệu khách và bảng ánh xạ vận hành chỉ nằm trong input imports/ bị ignore; fixture/tài liệu dùng dữ liệu tổng hợp. Script bổ sung bắt buộc --file, giữ kiểm OWNER, batch/fingerprint, transaction và audit. Không đổi API nghiệp vụ, schema field/index, quyền hay quy tắc nhiều khách cùng giờ; không migration hoặc ghi dữ liệu thật. Chi tiết và giới hạn cloud identity tại PRODUCTION_SAFETY.md.

@@ -1,8 +1,10 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { backfillInvoiceCodes } from '../src/lib/invoice-code-migration';
 try {
-  await connect();
+  assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'maintenance');
+  await connect('maintenance');
   const count = await backfillInvoiceCodes();
   console.log(`Đã cấp mã HD cho ${count} hóa đơn. Không thay đổi tiền, thanh toán hoặc ID liên kết.`);
 } catch {

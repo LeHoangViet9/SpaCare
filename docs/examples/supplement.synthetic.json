@@ -1,0 +1,10 @@
+{
+  "batch": "synthetic-example-001",
+  "source": {
+    "name": "Synthetic Customer",
+    "phone": "0900000099",
+    "startsOn": "2022-01-15",
+    "expiresOn": "2025-01-15",
+    "services": ["Service A", "Service B", "Service C"]
+  }
+}

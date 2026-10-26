@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import mongoose from 'mongoose';
 import { connect, DatabaseUnavailableError } from '../src/lib/db';
 import { openingOwner, checkOpeningTarget } from '../src/lib/opening-balances';
@@ -8,7 +9,8 @@ const timeout=setTimeout(()=>{console.error('Kết nối quá thời gian. Chưa
 try {
  const database=new URL(process.env.MONGODB_URI || '').pathname.slice(1);
  checkOpeningTarget(process.env.MONGODB_URI || '',database);
- await connect();await openingOwner(seedOwnerConfig(process.env));
+ assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'maintenance');
+  await connect('maintenance');await openingOwner(seedOwnerConfig(process.env));
  await migratePackageInvoiceIndex();await ensureGroupedPackageIndex();
  console.log('Đã cập nhật index hóa đơn nhiều gói. Không thay đổi chứng từ hoặc liệu trình.');
 }catch(error){

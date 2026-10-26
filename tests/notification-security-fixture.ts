@@ -15,6 +15,7 @@ mock.module('../src/lib/notifications',{namedExports:{
 }});
 const {ActivityNotification,Notification,PushDevice,Session,User}=await import('../src/lib/models');
 (mongoose.connection as any).readyState=1;
+(mongoose.connection as any).name='spacare_test';
 (mongoose as any).connect=()=>assert.fail('No database connection allowed');
 let role='STAFF',active=true;const spaId='a'.repeat(24),userId='b'.repeat(24),noticeId='c'.repeat(24);
 (Session as any).findOne=async()=>({userId,spaId});

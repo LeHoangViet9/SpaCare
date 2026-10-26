@@ -35,6 +35,7 @@ state.Service=[{_id:serviceId,spaId,name:'Service',price:400000,active:true,comm
 state.Day=[{_id:'f'.repeat(24),spaId,day:spaDay(),status:'OPEN'}];
 (mongoose as any).connect=()=>assert.fail('Model doubles must never connect to a database');
 (mongoose.connection as any).readyState=1;
+(mongoose.connection as any).name='spacare_test';
 let queue=Promise.resolve();
 (mongoose.connection as any).transaction=(fn:any)=>{const result=queue.then(async()=>{const before=clone(state);try{return await fn({fixture:true});}catch(e){state=before;throw e;}});queue=result.catch(()=>{});return result;};
 
@@ -95,16 +96,17 @@ assert.equal(timeTreatments[0].expiresOn,'2027-02-28');assert.equal(timeTreatmen
 assert.equal(timeTreatments[0].remaining,undefined);assert.equal(state.Payment.length,0);assert.equal(state.CashEntry.length,0);
 
 // Owner-confirmed aliases reuse the existing customer, without weakening name checks.
-for(const [phone,source,existing] of [
- ['0366575893','H\u01b0\u01a1ng Lan Kim Lan','H\u01b0\u01a1ng Lan KL'],
- ['0973425688','Ch\u1ecb Ng\u1ea7n X3','C Ng\u1ea7n x3'],
- ['0399319594','Ho\u00e0i Thu V\u0103n \u0110\u1ee9c','Ho\u00e0i Thu'],
-]){
- assert.equal(confirmedHairRemovalName(source,phone),existing);
- assert.equal(confirmedHairRemovalName(source,'0900000088'),source);
- assert.equal(confirmedHairRemovalName('Unknown customer',phone),'Unknown customer');
+const syntheticAliases = [
+ ['0900000070','Khách Nguồn Tổng Hợp 0','Khách Đích Tổng Hợp 0'],
+ ['0900000071','Khách Nguồn Tổng Hợp 1','Khách Đích Tổng Hợp 1'],
+ ['0900000072','Khách Nguồn Tổng Hợp 2','Khách Đích Tổng Hợp 2'],
+] .map(([phone,source,existing])=>({phone,source,existing}));
+for(const {phone,source,existing} of syntheticAliases){
+ assert.equal(confirmedHairRemovalName(source,phone,syntheticAliases),existing);
+ assert.equal(confirmedHairRemovalName(source,'0900000088',syntheticAliases),source);
+ assert.equal(confirmedHairRemovalName('Unknown customer',phone,syntheticAliases),'Unknown customer');
  state.Customer.push({_id:new mongoose.Types.ObjectId().toString(),spaId,name:existing,phone});
- const aliasInput=parseOpening({...timeRaw,customers:[{...timeRaw.customers[0],phone,name:confirmedHairRemovalName(source,phone)}]});
+ const aliasInput=parseOpening({...timeRaw,customers:[{...timeRaw.customers[0],phone,name:confirmedHairRemovalName(source,phone,syntheticAliases)}]});
  const aliasReport=await inspectOpening(state.User[0],aliasInput);
  assert.deepEqual(aliasReport.errors,[]);
  assert.ok(aliasReport.customers[0].customerId);

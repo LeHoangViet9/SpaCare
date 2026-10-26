@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -6,6 +7,7 @@ import {createHash,randomUUID} from 'node:crypto';
 let temporary;
 try {
  const exe=process.argv[2], uri=process.env.MONGODB_URI||'';
+ assertDatabaseTarget(uri, process.env, 'backup');
  const target=new URL(uri);
  if(!exe||!fs.existsSync(exe)||!['mongodb:','mongodb+srv:'].includes(target.protocol)||target.pathname!=='/spacare_live'||process.env.VERCEL) throw Error();
  const folder=path.resolve('outputs/backups'); fs.mkdirSync(folder,{recursive:true});

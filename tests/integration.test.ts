@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import { migratePackageInvoiceIndex } from '../src/lib/package-invoice-indexes';
 import { parseOpening, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
 import { ServiceGroup } from '../src/lib/models';
@@ -31,8 +32,8 @@ import { migrateUserIndexes } from '../src/lib/user-indexes';
 
 test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và chốt ngày', async t => {
   const uri = process.env.MONGODB_URI || '';
-  assert.equal(new URL(uri).pathname, '/spacare_test', 'Chỉ chạy trên database riêng tên spacare_test.');
-  await connect();
+  assertDatabaseTarget(uri, process.env, 'test');
+  await connect('test');
   let spaId: mongoose.Types.ObjectId | undefined;
   const extraSpaIds: mongoose.Types.ObjectId[] = [];
   try {
@@ -61,6 +62,23 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     assert.equal(filteredDays.todayDay!.status, 'OPEN');
     const customer = await call('customer', { name: 'Khách test', phone: '0900000000' });
     const service = await call('service', { name: 'Dịch vụ test', price: 350000, duration: 60 });
+    await t.test('invoice embedded snapshots preserve abort error and roll back database writes',async()=>{
+      for(const path of ['treatmentSessions','packageItems','productItems']) {
+        const id=()=>new mongoose.Types.ObjectId();
+        const item=path==='treatmentSessions'?{treatmentId:id(),treatmentUseId:id(),name:'Rollback'}:
+          path==='packageItems'?{treatmentId:id(),serviceId:service.id,name:'Rollback',total:100}:
+          {productId:id(),name:'Rollback',quantity:1,unitPrice:100,total:100};
+        const record=new Invoice({spaId,customerId:customer.id,total:100,[path]:[item]});
+        const original=new Error('EMBEDDED_ROLLBACK_SENTINEL');
+        await assert.rejects(mongoose.connection.transaction(async session=>{
+          await record.save({session});
+          assert.ok(await Invoice.exists({_id:record._id}).session(session));
+          throw original;
+        }),error=>error===original);
+        assert.equal(await Invoice.exists({_id:record._id}),null);
+        assert.equal(record.isNew,true);
+      }
+    });
     await t.test('open day preview includes all cash and reversals, excludes bank and rejects stale closing',async()=>{
       const spa=await Spa.create({name:'Day preview test'});extraSpaIds.push(spa._id);
       const owner=await User.create({spaId:spa._id,name:'Day owner',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'OWNER'});
@@ -562,7 +580,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const timePlan=await Treatment.findById(secondPlan!._id);assert.equal(timePlan!.packageType,'TIME');assert.equal(timePlan!.remaining,undefined);assert.equal(timePlan!.durationMonths,24);
       await Commission.create({spaId,staffId:staff._id,staffName:'Staff',serviceId:service.id,customerId:customer.id,invoiceId:secondInvoice!._id,sourceType:'INVOICE',sourceId:secondInvoice!._id,amount:0,earnedAt:new Date()});
       const secondFresh=await Invoice.findById(secondInvoice!._id);
-      await assert.rejects(call('updateInvoice',{...secondPayload,expectedUpdatedAt:secondFresh!.updatedAt.toISOString()}),/lịch sử giao dịch/);
+      await assert.rejects(call('updateInvoice',{...secondPayload,expectedUpdatedAt:secondFresh!.updatedAt.toISOString()}),
+        (error:any)=>error.status===409 && /đã có hoa hồng/.test(error.message));
+      assert.equal((await Invoice.findById(secondInvoice!._id))!.updatedAt.toISOString(),secondFresh!.updatedAt.toISOString());
+      assert.equal(await Commission.countDocuments({spaId,invoiceId:secondInvoice!._id}),1);
       const other=await Spa.create({name:'Edit isolation'});extraSpaIds.push(other._id);
       const foreign=await Invoice.create({spaId:other._id,customerId:new mongoose.Types.ObjectId(),description:'foreign',total:1,paid:0,kind:'SERVICE'});
       await assert.rejects(call('updateInvoice',{id:String(foreign._id),expectedUpdatedAt:foreign.updatedAt.toISOString(),description:'bad',total:2,reason:'test'}),/Không tìm thấy/);
@@ -636,15 +657,24 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await assert.rejects(operate(employee, 'customer', { name: 'Denied', phone: '0911111111' }, randomUUID()));
     await call('userStatus', { id: String(staff._id), active: true });
     await assert.rejects(call('userStatus', { id: actor.id, active: false }));
-    await call('serviceStatus', { id: service.id, active: false });
-    await assert.rejects(call('invoice', { customerId: customer.id, serviceId: service.id }));
-    await call('serviceStatus', { id: service.id, active: true });
+    // Earlier scenarios retain CONFIRMED visits; test deactivation with its own service.
+    const statusService=await call('service',{name:'Service status fixture',price:100000});
+    const statusVisit=await call('appointment',{customerId:customer.id,serviceId:statusService.id,staffId:String(staff._id),startAt:spaDay(new Date(Date.now()+86400000))+'T10:00:00+07:00'});
+    await assert.rejects(call('serviceStatus',{id:statusService.id,active:false}),
+      (error:any)=>error.status===409 && /lịch hẹn chưa xử lý/.test(error.message));
+    assert.equal((await Service.findById(statusService.id))!.active,true);
+    await call('appointmentStatus',{id:statusVisit.id,status:'CANCELLED',reason:'Kết thúc lịch test trước khi ngừng dịch vụ'});
+    await call('serviceStatus', { id: statusService.id, active: false });
+    await assert.rejects(call('invoice', { customerId: customer.id, serviceId: statusService.id }));
+    await call('serviceStatus', { id: statusService.id, active: true });
     // Arrival-only scheduling preserves postponed history and authorization without interval blocking.
     const at = (hours: number) => {
       if (hours < 0) return new Date(Date.now() + hours * 3600000).toISOString();
       const day = spaDay(new Date(Date.now() + Math.floor(hours / 24) * 86400000));
       return new Date(`${day}T${String(9 + hours % 12).padStart(2, '0')}:00:00+07:00`).toISOString();
     };
+    // Earlier payment scenarios share this spa; scheduling must preserve their ledger.
+    const cashBeforeScheduling = await CashEntry.find({ spaId }).sort({ _id: 1 }).lean();
     const firstTime = at(24), laterTime = at(27);
     const bookingData = { customerId: customer.id, serviceId: service.id, staffId: String(staff._id) };
     const a = await call('appointment', { ...bookingData, startAt: firstTime });
@@ -685,7 +715,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await call('appointmentStatus', { id: a.id, status: 'CANCELLED', reason: 'Khách hủy' });
     await assert.rejects(call('rescheduleAppointment', move));
     await call('appointmentStatus', { id: b.id, status: 'CANCELLED', reason: 'Dọn fixture' });
-    assert.equal(await CashEntry.countDocuments({ spaId }), 0);
+    assert.deepEqual(await CashEntry.find({ spaId }).sort({ _id: 1 }).lean(), cashBeforeScheduling);
     // Completing a single-service appointment creates exactly one unpaid invoice atomically.
     const past = new Date(Date.now() - 2 * 3600000);
     const makePast = async () => Appointment.create({ spaId, customerId: customer.id, serviceId: service.id, staffId: staff._id, startAt: past, endAt: new Date(past.getTime() + 3600000), status: 'CONFIRMED' });
@@ -706,7 +736,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     assert.equal((await Appointment.findById(billable._id))!.status, 'COMPLETED');
     const retried = await call('completeAppointment', { id: String(billable._id) });
     assert.equal(retried.invoiceId, completed[0].invoiceId);
-    assert.equal(await CashEntry.countDocuments({ spaId }), 0);
+    assert.deepEqual(await CashEntry.find({ spaId }).sort({ _id: 1 }).lean(), cashBeforeScheduling);
     const manualInvoice = await call('invoice', { customerId: customer.id, serviceId: service.id });
     const legacy = await makePast();
     await Appointment.updateOne({ _id: legacy._id, spaId }, { status: 'COMPLETED' }); // legacy fixture from before automatic billing
@@ -734,15 +764,16 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const invoice = await call('invoice', { customerId: customer.id, serviceId: service.id });
     const key = randomUUID();
     const payload = { customerId: customer.id, amount: 500000, method: 'CASH' };
+    const depositCashBefore = await CashEntry.countDocuments({ spaId, kind: 'DEPOSIT' });
     const receipts = await Promise.all([call('deposit', payload, key), call('deposit', payload, key)]);
     assert.equal(receipts[0].id, receipts[1].id);
-    assert.equal(await CashEntry.countDocuments({ spaId, kind: 'DEPOSIT' }), 1);
+    assert.equal(await CashEntry.countDocuments({ spaId, kind: 'DEPOSIT' }), depositCashBefore + 1);
     await assert.rejects(call('deposit', { ...payload, amount: 500001 }, key));
     const allocations = await Promise.allSettled([1, 2].map(() => call('allocate', { depositId: receipts[0].id, invoiceId: invoice.id, amount: 350000, reason: 'Chuyển dịch vụ' })));
     assert.equal(allocations.filter(r => r.status === 'fulfilled').length, 1);
     assert.equal((await Deposit.findById(receipts[0].id))!.balance, 150000);
     assert.equal((await Invoice.findById(invoice.id))!.paid, 350000);
-    assert.equal(await CashEntry.countDocuments({ spaId }), 1);
+    assert.equal(await CashEntry.countDocuments({ spaId }), cashBeforeScheduling.length + 1);
     await assert.rejects(operate(employee, 'cash', { direction: 'IN', amount: 1000, method: 'CASH', note: 'Không được phép' }, randomUUID()));
     await assert.rejects(call('invoice', { customerId: String(new mongoose.Types.ObjectId()), serviceId: service.id }));
     const treatment = await call('treatment', { invoiceId: invoice.id, name: 'Gói một buổi', totalSessions: 1 });

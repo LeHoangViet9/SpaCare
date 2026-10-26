@@ -1,3 +1,4 @@
+import { assertDatabaseTarget } from '../src/lib/production-safety.mjs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve, extname } from 'node:path';
@@ -56,7 +57,8 @@ async function main() {
   if (decodeURIComponent(uri.pathname.slice(1)) !== database) throw new SeedOwnerError('Tên database không khớp MONGODB_URI. Chưa ghi dữ liệu.');
   if (options.has('--dns')) dns.setServers(options.get('--dns')!.split(','));
   const owner = seedOwnerConfig(process.env);
-  await connect();
+  assertDatabaseTarget(process.env.MONGODB_URI || '', process.env, 'import');
+  await connect('import');
   const account = await User.findOne(owner.phone ? { phone: owner.phone } : { email: owner.email });
   if (!account) throw new SeedOwnerError('Không tìm thấy tài khoản chủ đã cấu hình.');
   const result = await importCatalog(String(account._id), owner.password, plan.entries);
