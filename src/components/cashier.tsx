@@ -1,4 +1,5 @@
 'use client';
+import AppointmentCheckoutPicker from './appointment-checkout-picker';
 import {useCallback,useEffect,useState} from 'react';
 import {packageLabel,timedPackage,treatmentDay,packageExpiry} from '@/lib/treatment-rules';
 import {formatCurrency,parseMoney} from '@/lib/currency';
@@ -14,9 +15,10 @@ import {TreatmentConfirmations} from './treatment-selection';
 type Row=Record<string,any>;
 const money=formatCurrency;
 const amountOf=(value:string)=>{try{return parseMoney(value);}catch{return 0;}};
-export default function Cashier({data,busy,initialMode,initialCustomer,onSubmit,onInvoices,onNewCustomer}:{
- data:Row;busy:boolean;initialMode:CashierMode;initialCustomer?:Row|null;onSubmit:(action:string,values:Row)=>void;onInvoices:()=>void;onNewCustomer:()=>void;
+export default function Cashier({data,busy,initialMode,initialCustomer,initialAppointmentId,onInvoice,onSubmit,onInvoices,onNewCustomer}:{
+ data:Row;busy:boolean;initialMode:CashierMode;initialCustomer?:Row|null;initialAppointmentId?:string;onInvoice?:(id:string)=>void;onSubmit:(action:string,values:Row)=>void;onInvoices:()=>void;onNewCustomer:()=>void;
 }){
+ const [appointment,setAppointment]=useState<Row|null>(null);
  const [browseMode,setBrowseMode]=useState<CashierMode>(initialMode);
  const [customer,setCustomer]=useState<Row|null>(null);
  const [serviceItems,setServiceItems]=useState<Row[]>([]);
@@ -37,7 +39,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,onSubmit,
  const previewCard=useCallback((value:number)=>setCardPreview({context:cardContext,amount:value}),[cardContext]);
  const appliedCard=cardEligible && cardPreview.context===cardContext ? cardPreview.amount:0;
  const basketCount=serviceItems.length+sessionItems.length+productItems.length+packageItems.length;
- function resetSelection(){setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
+ function resetSelection(){setAppointment(null);setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
  useEffect(()=>{if(initialCustomer){setCustomer(initialCustomer);resetSelection();setCatalogPage(1);}},[initialCustomer?._id]);
  const allCatalog=cashierCatalog({services:data.services,products:data.products || [],packageTemplates:data.packageTemplates || [],treatments:data.treatments},browseMode,customer?._id || '',search);
  const categoryOf=(row:Row)=>browseMode==='product' ? data.productGroups?.find((group:Row)=>group._id===row.groupId)?.name : browseMode==='service' ? row.category : data.services.find((service:Row)=>service._id===row.serviceId)?.category;
@@ -69,7 +71,8 @@ export default function Cashier({data,busy,initialMode,initialCustomer,onSubmit,
      const cardValue=fd.get('cashCard');
      const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate,signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
      const date=issuedOn?{issuedOn}:{};
-     if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date});
+     if(appointment)onSubmit('checkout',{customerId:customer._id,appointmentId:appointment.appointment._id,actions,...date});
+     else if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date});
      else onSubmit('checkout',{customerId:customer._id,actions,...date});
    }catch(e){setError((e as Error).message);}
  }
@@ -77,6 +80,14 @@ export default function Cashier({data,busy,initialMode,initialCustomer,onSubmit,
  <section className="panel panel-padded cashier-customer">
    <div className="section-head"><h3>1. Khách hàng</h3><div className="actions"><button type="button" disabled={busy} onClick={onNewCustomer}>+ Khách mới</button><button type="button" onClick={onInvoices}>Danh sách hóa đơn</button></div></div>
    <CustomerPicker label="Khách hàng" value={customer?._id || ''} onChange={()=>{}} onCustomerChange={row=>{setCustomer(row);resetSelection();}} required disabled={busy}/>
+   <AppointmentCheckoutPicker customerId={customer?._id} initialId={initialAppointmentId} selectedId={appointment?.appointment?._id} busy={busy} onSelect={detail=>{
+     resetSelection();if(!detail)return;
+     setCustomer(detail.customer);setAppointment(detail);
+     if(detail.invoice)return;
+     setServiceItems(detail.services.map((row:Row)=>({...row,total:String(row.price)})));
+     setSessionItems(detail.treatments);setPerformerId(detail.appointment.staffId || '');
+   }}/>
+   {appointment?.invoice && <p>Điểm hẹn đã có hóa đơn. <button type="button" onClick={()=>onInvoice?.(appointment.invoice._id)}>Mở hóa đơn</button></p>}
  </section>
  <section className="panel panel-padded cashier-catalog">
    <h3>2. Thêm vào giỏ</h3><p>Có thể tích nhiều mục ở từng danh mục. Chuyển danh mục vẫn giữ toàn bộ giỏ.</p>
@@ -117,7 +128,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,onSubmit,
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
    <label>Ngày hóa đơn (để trống: hôm nay)<input type="date" max={data.today} value={issuedOn} disabled={busy} onChange={e=>setIssuedOn(e.target.value)}/></label>
    {error && <p className="negative" role="alert">{error}</p>}
-   <button type="submit" className="primary cashier-save" disabled={busy || !customer || !basketCount}>{busy?'Đang lưu…':'Lưu toàn bộ giỏ'}</button>
+   <button type="submit" className="primary cashier-save" disabled={busy || !customer || !basketCount || !!appointment?.invoice || (!!appointment && !['CONFIRMED','COMPLETED'].includes(appointment.appointment.status))}>{busy?'Đang lưu…':appointment?'Hoàn thành lịch & lưu hóa đơn':'Lưu toàn bộ giỏ'}</button>
    <small>Tiền chưa thu có thể thanh toán trên từng hóa đơn sau khi lưu. Gói đã mua không thu lại tiền buổi.</small>
  </section>
  </ValidatedForm>;

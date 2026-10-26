@@ -1,3 +1,4 @@
+import { coversVisit } from './appointment-checkout';
 import { invoiceDeletionBlock, repriceInvoiceItems } from './invoice-correction';
 import { sequenceInvoiceCode } from './invoice-code';
 import { queueInvoiceNotifications } from './notification-events';
@@ -70,7 +71,8 @@ const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
 
 const schemas = {
-  checkout: z.object({customerId:objectId,actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
+  linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
+  checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
   productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).min(1).max(30)}),
   serviceGroup: z.object({name:z.string().transform(serviceGroupName).pipe(z.string().min(1,'Nhập tên nhóm dịch vụ.').max(100))}),
   ...cashCardInputs,
@@ -167,7 +169,7 @@ export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
   'serviceGroup',
-  'updateInvoice', 'cancelInvoice', 'deleteInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
+  'linkAppointmentInvoice', 'updateInvoice', 'cancelInvoice', 'deleteInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
   'packageTemplate', 'updatePackageTemplate', 'packageTemplateStatus',
   'pauseTreatment', 'extendTreatmentHold', 'resumeTreatment',
@@ -234,6 +236,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         );
         return previous.result;
       }
+      let checkoutAppointmentId: string | undefined;
       const createdInvoiceIds: string[] = [];
       const create = async (model: mongoose.Model<any>, values: Record<string, unknown>) => {
         if (model === Invoice) {
@@ -376,7 +379,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         ensure(candidates.every(value=>JSON.stringify(value)===JSON.stringify(candidates[0])), 'Một hóa đơn chỉ dùng một chữ ký chung.');
         return candidates[0];
       };
-      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId?: string, staffId = d.staffId || actor.id, sharedInvoice?: any) => {
+      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId: string | undefined = checkoutAppointmentId, staffId = d.staffId || actor.id, sharedInvoice?: any) => {
         ensure(!d.staffId || d.staffId === actor.id || actor.role === 'OWNER' || actor.cashier, 'Chỉ chủ spa hoặc thu ngân được chọn nhân viên thực hiện khác.', 403);
         const treatment = await get(Treatment, d.treatmentId);
         ensure(treatmentAvailable(treatment), 'Gói chưa đến ngày dùng, đã hết hạn, bảo lưu hoặc hết buổi.');
@@ -469,9 +472,38 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       let treatmentUseId: string | undefined;
       let replacementAppointmentId: string | undefined;
       let financialBefore: Record<string, unknown> | undefined;
+      const linkVisit = async (appointment:any,invoice:any,reason:string) => {
+        ensure(['CONFIRMED','COMPLETED'].includes(appointment.status),'Lịch đã hủy hoặc hoãn, không thể lập hóa đơn.',409);
+        ensure(appointment.startAt <= new Date(),'Chưa tới thời gian thực hiện lịch.');
+        ensure(String(invoice.customerId)===String(appointment.customerId),'Hóa đơn phải đúng khách của lịch.');
+        ensure((!invoice.kind || ['SERVICE','SESSION'].includes(invoice.kind)) && !invoice.openingBalance && !invoice.giftOfInvoiceId && !invoice.refunded,'Chỉ liên kết hóa đơn dịch vụ/buổi thực hiện phù hợp.');
+        ensure(!invoice.appointmentId || String(invoice.appointmentId)===String(appointment._id),'Hóa đơn đã liên kết lịch khác.',409);
+        const existing=await Invoice.findOne({...scope,appointmentId:appointment._id}).session(session);
+        ensure(!existing || String(existing._id)===String(invoice._id),'Lịch đã có hóa đơn. Mở hóa đơn đã liên kết.',409);
+        const uses=await TreatmentUse.find({...scope,checkoutInvoiceId:invoice._id}).session(session);
+        const serviceIds=(invoice.serviceItems?.length ? invoice.serviceItems.filter((line:any)=>invoice.kind!=='SESSION' || line.total>0).map((line:any)=>String(line.serviceId)) : invoice.serviceId ? [String(invoice.serviceId)] : []);
+        // Session service lines may share a serviceId with standalone work; the
+        // explicit checkout selection is checked before creation as well.
+        ensure(coversVisit(appointment,serviceIds,uses.map(use=>String(use.treatmentId))),'Hóa đơn chưa đủ dịch vụ/liệu trình của lịch.');
+        ensure(uses.every(use=>!use.appointmentId || String(use.appointmentId)===String(appointment._id)),'Buổi đã liên kết lịch khác.',409);
+        ensure(invoice.performedAt && invoice.performedBy,'Hóa đơn chưa ghi nhận người thực hiện.');
+        ensure(!appointment.staffId || String(appointment.staffId)===String(invoice.performedBy),'Nhân viên thực hiện không khớp lịch.');
+        const before={appointment:appointment.toObject(),invoiceAppointmentId:invoice.appointmentId};
+        invoice.appointmentId=appointment._id;await invoice.save({session});
+        if(uses.length && !uses.some(use=>use.appointmentId)) {uses[0].appointmentId=appointment._id;await uses[0].save({session});}
+        appointment.staffId=invoice.performedBy;appointment.status='COMPLETED';await appointment.save({session});
+        await create(Audit,{actorId:actor.id,action:'linkAppointmentInvoice',targetId:appointment._id,details:{before,after:appointment.toObject(),invoiceId:invoice._id,reason}});
+      };
       const execute = async (op:Operation,data:any) => {
       target=undefined;appointmentBefore=undefined;linkedInvoiceId=undefined;treatmentUseId=undefined;replacementAppointmentId=undefined;financialBefore=undefined;
       switch (op) {
+        case 'linkAppointmentInvoice': {
+          const d=schemas.linkAppointmentInvoice.parse(data);
+          target=await get(Appointment,d.appointmentId);
+          const invoice=await get(Invoice,d.invoiceId);
+          await linkVisit(target,invoice,d.reason);
+          return {id:String(target._id),invoiceId:String(invoice._id),message:'Đã liên kết lịch và hóa đơn.'};
+        }
         case 'productGroup':
         case 'updateProductGroup': {
           const d = schemas[op].parse(data);
@@ -1494,6 +1526,22 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       if(op==='checkout'){
         const batch=schemas.checkout.parse(data);
         const results=[];
+        const appointment=batch.appointmentId ? await get(Appointment,batch.appointmentId) : undefined;
+        if(appointment) {
+          ensure(['CONFIRMED','COMPLETED'].includes(appointment.status),'Lịch đã hủy hoặc hoãn, không thể thu ngân.',409);
+          ensure(String(appointment.customerId)===batch.customerId,'Lịch không đúng khách.');
+          ensure(appointment.startAt<=new Date(),'Chưa tới thời gian thực hiện lịch.');
+          ensure(!await Invoice.exists({...scope,appointmentId:appointment._id}).session(session),'Lịch đã có hóa đơn. Mở hóa đơn đã liên kết.',409);
+          ensure(!await TreatmentUse.exists({...scope,appointmentId:appointment._id}).session(session),'Lịch đã ghi buổi. Cần đối chiếu hóa đơn trước.',409);
+          const base=batch.actions.find(line=>['invoice','serviceInvoice'].includes(line.action));
+          ensure(base,'Chọn đủ dịch vụ/liệu trình đã thực hiện trong lịch.');
+          const values:any=schemas[base!.action].parse({...base!.data,customerId:batch.customerId});
+          const services=(values.items || values.additionalServices || (!values.treatmentId && !values.treatments?.length && values.serviceId ? [{serviceId:values.serviceId}] : [])).map((item:any)=>String(item.serviceId));
+          const treatments=(values.treatments || (values.treatmentId ? [{treatmentId:values.treatmentId}] : [])).map((item:any)=>String(item.treatmentId));
+          ensure(coversVisit(appointment,services,treatments),'Chọn đủ dịch vụ/liệu trình của lịch trước khi lưu.');
+          ensure(!appointment.staffId || String(appointment.staffId)===values.staffId,'Nhân viên thực hiện không khớp lịch.');
+          checkoutAppointmentId=String(appointment._id);
+        }
         const kinds=batch.actions.map(line=>line.action==='sellPackage' ? 'package:'+String(line.data.templateId).toLowerCase() : 'base');
         ensure(new Set(kinds).size===kinds.length,'Không chọn trùng gói mới hoặc tạo lặp hóa đơn dịch vụ/sản phẩm trong giỏ.');
         for(const line of batch.actions){
@@ -1505,6 +1553,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         for(const item of results){
           const invoice=await get(Invoice,item.invoiceId || item.id);
           invoices.push({id:String(invoice._id),code:invoice.code,total:invoice.total});
+        }
+        if(appointment) {
+          const baseIndex=batch.actions.findIndex(line=>['invoice','serviceInvoice'].includes(line.action));
+          const item=results[baseIndex];
+          await linkVisit(appointment,await get(Invoice,item.invoiceId || item.id),'Hoàn thành lịch qua thu ngân');
         }
         const total=money(invoices.reduce((sum,item)=>sum+item.total,0),true);
         result={id:invoices[0].id,invoiceId:invoices[0].id,invoiceIds:invoices.map(item=>item.id),invoices,total,message:'Đã lưu '+invoices.length+' hóa đơn trong cùng lần thu ngân.'};

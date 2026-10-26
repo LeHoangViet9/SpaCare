@@ -527,3 +527,40 @@ toán, hoa hồng, thực hiện hay ngày bắt đầu/hết hạn liệu trìn
 các trường liệu trình vẫn theo form sửa riêng. Giữ transaction, kiểm phiên active,
 cùng spa, OWNER, expectedUpdatedAt, idempotency và audit trước/sau. Không backfill
 hoặc sửa dữ liệu thật; không schema/index mới.
+
+## Lịch hẹn và thu ngân dùng chung lần thực hiện — 26/10/2026
+
+CONFIRMED theo yêu cầu triển khai: khi đã đặt lịch, hoàn thành qua thu ngân hoặc
+chọn lịch trong thu ngân phải dùng một hóa đơn dịch vụ/buổi cho lần làm. Lưu thành
+công mới hoàn thành lịch; đã liên kết thì mở hóa đơn, không tạo lại. Hóa đơn có thể
+còn nợ sau khi lịch hoàn thành. Khách không đặt lịch vẫn lập hóa đơn riêng. Gói mới
+mua thêm giữ hóa đơn riêng như quy tắc checkout hiện có. OWNER có thể đối chiếu và
+liên kết hóa đơn đã lập rời với lịch, không tự ghép bằng khách/ngày.
+
+PROPOSED kỹ thuật: checkout nhận appointmentId?; active OWNER/thu ngân, cùng spa và
+khách, lịch CONFIRMED hoặc COMPLETED/đã tới giờ/chưa có hóa đơn và chưa ghi buổi, đủ các serviceIds và treatmentIds
+của lịch. Người thực hiện phải khớp người được phân công (lịch chưa giao lấy người
+thực hiện trên hóa đơn). Thêm dịch vụ/sản phẩm/gói mới vẫn theo checkout. Một hóa đơn
+SERVICE/SESSION cho phần thực hiện; mua gói mới vẫn tách chứng từ. Transaction Control
+chung ghi tuần tự hóa đơn, trừ buổi, kho, hoa hồng, lịch, audit, thông báo và idempotency;
+lỗi bất kỳ rollback. Không tự ghi Payment hay thu tiền khi đánh dấu hoàn thành.
+
+recordUse của checkout lịch nhận appointmentId vào snapshot của buổi đầu, buổi sau
+vẫn dùng liên kết xác nhận hiện có. completeAppointment/completeTreatmentAppointment
+sau đó dùng lại invoice/use đã liên kết. Retry cùng key trả kết quả cũ, key khác hoặc
+hai lần thu ngân cạnh tranh không lập thêm hóa đơn cho cùng lịch.
+
+POST /api/operations linkAppointmentInvoice {appointmentId,invoiceId,reason}: chỉ OWNER,
+cùng spa/khách, lịch CONFIRMED hoặc COMPLETED đã tới giờ, hóa đơn SERVICE/SESSION đã
+có performedBy/performedAt, đủ dịch vụ và buổi thực hiện, không mở đầu/quà/hoàn tiền,
+không liên kết lịch khác. Kiểm người thực hiện khớp; buổi không thuộc lịch khác.
+Chỉ gắn tham chiếu và hoàn thành lịch, không trừ buổi/cộng hoa hồng/thu tiền lần nữa;
+giữ snapshot và chữ ký ban đầu, audit ghi lý do cùng trạng thái trước/sau. Hóa đơn
+chưa ghi nhận thực hiện cần hoàn thành dịch vụ trước khi liên kết theo luồng này.
+
+GET /api/appointments/checkout: active OWNER/thu ngân; query customerId và page (20
+lịch/trang, CONFIRMED/COMPLETED), hoặc appointmentId với customerId tùy chọn để lấy
+chi tiết đúng spa/khách. Trả lịch, dấu hiệu hóa đơn đã liên kết; chi tiết trả khách,
+dịch vụ, liệu trình để điền giỏ. no-store; không thay endpoint đặt lịch công khai.
+UI hỗ trợ phân trang, không giới hạn lịch sử ở trang đầu. Không schema/index/migration
+mới, không tự liên kết dữ liệu cũ hay chạy ghi dữ liệu thật khi triển khai code.
