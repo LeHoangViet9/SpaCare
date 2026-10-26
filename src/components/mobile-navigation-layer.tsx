@@ -6,5 +6,5 @@ import {createPortal} from 'react-dom';
 export default function MobileNavigationLayer({children}:{children:ReactNode}){
  const [mounted,setMounted]=useState(false);
  useEffect(()=>setMounted(true),[]);
- return mounted ? createPortal(children,document.body) : null;
+ return mounted ? createPortal(<div className="workspace-navigation-layer">{children}</div>,document.body) : null;
 }

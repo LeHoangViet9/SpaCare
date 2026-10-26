@@ -563,3 +563,16 @@ chi tiết đúng spa/khách. Trả lịch, dấu hiệu hóa đơn đã liên k
 dịch vụ, liệu trình để điền giỏ. no-store; không thay endpoint đặt lịch công khai.
 UI hỗ trợ phân trang, không giới hạn lịch sử ở trang đầu. Không schema/index/migration
 mới, không tự liên kết dữ liệu cũ hay chạy ghi dữ liệu thật khi triển khai code.
+
+## Mobile navigation viewport layer — 26/10/2026
+
+The workspace portal now owns a fixed, pointer-transparent viewport layer sized
+with 100dvh (100vh fallback). Its bottom bar, backdrop and panel are positioned
+absolutely within this layer; navigation no longer uses a transformed fixed bar.
+Interactive navigation children restore pointer events; dialogs retain their
+higher z-index. Existing safe-area padding and content bottom spacing remain.
+Chrome desktop checks on a long-page CSS fixture kept the bar at the viewport
+bottom at scroll 0/700/2500 and after viewport height changes, with no horizontal
+overflow or obstruction of content controls. Selenium's mobile case also checks
+portal placement and a shorter viewport. Physical Android/iOS browser behavior
+has not been verified; no claim of device-level acceptance is made.

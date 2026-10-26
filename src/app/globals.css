@@ -2027,20 +2027,38 @@ label textarea { margin-top: 8px; }
 .appointment-service-choices button,.session-extra-services .cashier-cards button { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; min-height:76px; padding:14px; text-align:left; white-space:normal; line-height:1.5; }
 .appointment-service-choices button[aria-pressed="true"],.session-extra-services button[aria-pressed="true"] { border-color:var(--green); background:var(--sage); }
 
-/* Workspace navigation is portaled to body, anchored independently of page scroll. */
+/* One dynamic-viewport layer owns navigation; page scrolling never positions it. */
+.workspace-navigation-layer { display: contents; }
 @media (max-width: 700px) {
-  .mobile-bottom-nav {
+  .workspace-navigation-layer {
+    display: block;
     position: fixed;
-    top: auto;
-    right: 0;
-    bottom: 0;
-    left: 0;
+    inset: 0 0 auto;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 60;
+    pointer-events: none;
+    isolation: isolate;
+  }
+  .workspace-navigation-layer .mobile-bottom-nav {
+    position: absolute;
+    inset: auto 0 0;
     margin: 0;
     width: 100%;
     box-sizing: border-box;
-    transform: translate3d(0, 0, 0);
+    transform: none;
     background: #fff;
-    isolation: isolate;
+    pointer-events: auto;
+  }
+  .workspace-navigation-layer .mobile-menu-backdrop {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+  }
+  .workspace-navigation-layer .mobile-menu-panel {
+    position: absolute;
+    pointer-events: auto;
   }
   .mobile-bottom-nav small { font-size: 12px; line-height: 1.45; }
   .app { padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }

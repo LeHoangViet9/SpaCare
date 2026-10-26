@@ -283,6 +283,11 @@ try {
     await check();
     await driver.executeScript('window.scrollTo(0,document.body.scrollHeight)');
     await check();
+    assert.equal(await driver.executeScript("return document.querySelector('.workspace-navigation-layer')?.parentElement===document.body"),true);
+    await driver.manage().window().setRect({width:390,height:650});
+    await check();
+    await driver.manage().window().setRect({width:390,height:844});
+    await check();
     await (await visible(By.xpath("//nav[@aria-label='Menu chính trên điện thoại']/button[.//small[normalize-space(.)='Vận hành']]"))).click();
     await visible(css('section[aria-label="Điều hướng di động"]'));
     await (await visible(css('section[aria-label="Điều hướng di động"] a[href="/workspace/customers"]'))).click();
