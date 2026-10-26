@@ -590,3 +590,7 @@ Control transaction, idempotency fingerprint và audit metadata trước/sau cù
 do được giữ. UI có nút Sửa ngày hóa đơn tại danh sách/chi tiết; Sửa hóa đơn trên
 buổi liệu trình/đã thanh toán mở form chỉ gồm ngày và lý do. Không schema/index hay
 migration mới, không xóa/tạo lại hóa đơn hoặc bút toán để thay ngày.
+
+
+## Một điểm vào sửa hóa đơn — 26/10/2026
+Theo yêu cầu mới nhất, bỏ nút Sửa ngày hóa đơn riêng ở danh sách/chi tiết. Chỉ dùng Sửa hóa đơn; ngày nằm trong form sửa. Với hóa đơn đã thực hiện/đã thanh toán hoặc có buổi liệu trình/sản phẩm, form chỉ cho đổi ngày và nhập lý do qua correctInvoiceDate. Hóa đơn còn đủ điều kiện sửa nội dung/giá dùng updateInvoice như trước. Giữ nguyên phân quyền, kiểm sổ, transaction, idempotency và audit của cả hai action.

@@ -11,7 +11,7 @@ import { auditActions } from '@/lib/audit-view';
 import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
-export default function InvoiceDetail({ onCorrectDate, onLinkAppointment, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { onCorrectDate?:(invoice:Row)=>void; onLinkAppointment?:(values:Row)=>Promise<void>; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
+export default function InvoiceDetail({ onLinkAppointment, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { onLinkAppointment?:(values:Row)=>Promise<void>; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
@@ -25,7 +25,6 @@ export default function InvoiceDetail({ onCorrectDate, onLinkAppointment, record
   }, [record.id, record.kind, page, historyKind, revision]);
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
-    {record.kind === 'invoice' && data && !error && onCorrectDate && !data.invoice.openingBalance && data.invoice.status!=='CANCELLED' && <button type="button" onClick={()=>onCorrectDate(data.invoice)}>Sửa ngày hóa đơn</button>}
     {record.kind === 'invoice' && data && !error && onLinkAppointment && <InvoiceAppointmentLink invoice={data.invoice} onLink={onLinkAppointment}/>}
     {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button></div>}
     {record.kind === 'invoice' && data && !error && <InvoiceCorrectionMenu invoice={data.invoice} onCancel={onCancel} onDelete={onDelete}/>}
