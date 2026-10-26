@@ -402,9 +402,9 @@ export default function Workspace() {
   const correctInvoiceDate = (invoice:Row) => {
     setDetail(null);
     open('Sửa hóa đơn','correctInvoiceDate',[
-      {key:'issuedOn',label:'Ngày hóa đơn',type:'date'},reasonField
+      {key:'issuedOn',label:'Ngày hóa đơn',type:'date'},...(invoice.paid>0 ? [{key:'adjustPaymentDates',label:'Điều chỉnh cả ngày thu tiền',type:'checkbox',optional:true,hint:'Chỉ tích nếu TẤT CẢ khoản tiền mặt/chuyển khoản của hóa đơn thực tế đã thu ngày đã chọn. Không chuyển ngày tiền cọc hoặc thẻ. Sổ ngày thu cũ và ngày mới phải đang mở.'}] : []),reasonField
     ],{id:invoice._id,expectedUpdatedAt:invoice.updatedAt,issuedOn:invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}) : ''},
-    'Chỉ đổi ngày hiển thị và tra cứu hóa đơn. Giữ nguyên số tiền, ngày thu tiền, buổi đã dùng, chữ ký và hoa hồng. Ngày cũ và ngày mới phải chưa chốt sổ hoặc đã được mở lại.');
+    'Mặc định chỉ đổi ngày hóa đơn. Nếu đã thu tiền vào ngày này nhưng quên nhập, tích Điều chỉnh cả ngày thu tiền để chuyển khoản thu về đúng ngày. Giữ nguyên số tiền, buổi đã dùng, chữ ký và hoa hồng. Các ngày liên quan phải chưa chốt sổ hoặc đã mở lại.');
   };
   const editInvoice = (invoice:Row,plan:Row|null) => {
     if(invoice.kind==='SESSION' || invoice.treatmentUseId || invoice.treatmentId || invoice.paid>0 || invoice.productItems?.length){correctInvoiceDate(invoice);return;}

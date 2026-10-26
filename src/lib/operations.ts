@@ -71,7 +71,7 @@ const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
 
 const schemas = {
-  correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,reason:text}).strict(),
+  correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,adjustPaymentDates:z.boolean().default(false),reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
   productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).min(1).max(30)}),
@@ -509,12 +509,32 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           for(const day of new Set([oldDay,d.issuedOn])) {
             ensure(!await Day.exists({...scope,day,status:'CLOSED'}).session(session),'Ngày '+day+' đã chốt sổ. Chủ spa cần mở lại trước khi sửa ngày hóa đơn.',409);
           }
+          const receiptChanges: {receiptId:string;paymentId:string;amount:number;method:string;before:string;after:string}[]=[];
+          if(d.adjustPaymentDates) {
+            ensure(!invoice.refunded,'Hóa đơn đã hoàn tiền cần đối soát riêng trước khi sửa ngày thu.');
+            const payments=await Payment.find({...scope,invoiceId:invoice._id,reversed:{$ne:true}}).session(session);
+            ensure(payments.length>0,'Hóa đơn không có khoản thu trực tiếp để điều chỉnh ngày. Tiền cọc và thẻ không được chuyển ngày.');
+            for(const payment of payments) {
+              const receipt=await get(CashEntry,String(payment.receiptId));
+              ensure(receipt.kind==='PAYMENT' && receipt.direction==='IN' && !receipt.reversed && receipt.amount===payment.amount,'Khoản thu không còn nguyên trạng, cần đối soát riêng.',409);
+              ensure(!await CashEntry.exists({...scope,originalId:receipt._id}).session(session),'Khoản thu đã có giao dịch đảo, cần đối soát riêng.',409);
+              ensure(!await Payment.exists({...scope,receiptId:receipt._id,_id:{$ne:payment._id}}).session(session),'Khoản thu dùng chung cần đối soát riêng.',409);
+              if(receipt.day!==d.issuedOn) receiptChanges.push({receiptId:String(receipt._id),paymentId:String(payment._id),amount:receipt.amount,method:receipt.method,before:receipt.day,after:d.issuedOn});
+            }
+            for(const day of new Set(receiptChanges.flatMap(change=>[change.before,change.after]))) {
+              const book=await Day.findOneAndUpdate({...scope,day,status:'OPEN'},{$inc:{revision:1}},{session,returnDocument:'after'});
+              ensure(book,'Sổ ngày '+day+' chưa mở hoặc đã chốt. Chủ spa cần mở/mở lại sổ trước khi sửa ngày thu.',409);
+            }
+            for(const change of receiptChanges) {
+              await CashEntry.updateOne({...scope,_id:change.receiptId,day:change.before},{$set:{day:change.after}},{session});
+            }
+          }
           const before={createdAt:invoice.createdAt,recordedAt:invoice.recordedAt};
           const createdAt=d.issuedOn===oldDay ? invoice.createdAt : new Date(d.issuedOn+'T12:00:00+07:00');
           const recordedAt=invoice.recordedAt || invoice.createdAt;
           await Invoice.updateOne({...scope,_id:invoice._id},{$set:{createdAt,recordedAt,updatedAt:new Date()}},{session,timestamps:false,overwriteImmutable:true});
-          await create(Audit,{actorId:actor.id,action:op,targetId:invoice._id,details:{reason:d.reason,before,after:{createdAt,recordedAt}}});
-          return {id:String(invoice._id),invoiceId:String(invoice._id),message:'Đã điều chỉnh ngày hóa đơn. Giữ nguyên tiền và lịch sử thực hiện.'};
+          await create(Audit,{actorId:actor.id,action:op,targetId:invoice._id,details:{reason:d.reason,adjustPaymentDates:d.adjustPaymentDates,receiptChanges,before,after:{createdAt,recordedAt}}});
+          return {id:String(invoice._id),invoiceId:String(invoice._id),message:d.adjustPaymentDates ? 'Đã điều chỉnh ngày hóa đơn và ngày thu tiền. Số tiền không đổi.' : 'Đã điều chỉnh ngày hóa đơn. Giữ nguyên tiền và lịch sử thực hiện.'};
         }
         case 'linkAppointmentInvoice': {
           const d=schemas.linkAppointmentInvoice.parse(data);

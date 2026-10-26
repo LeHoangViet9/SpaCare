@@ -488,6 +488,34 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(JSON.stringify(await Payment.find({spaId,invoiceId:paid.invoiceId}).lean()),payments);
       assert.equal(JSON.stringify(await CashEntry.find({spaId}).lean()),cash);
     });
+    await t.test('explicit receipt date correction requires open books, preserves money and retries once',async()=>{
+      const sale=await call('serviceInvoice',{customerId:customer.id,staffId:actor.id,items:[{serviceId:service.id,total:350000}]});
+      await call('payment',{invoiceId:sale.invoiceId,amount:150000,method:'CASH',receivedConfirmation:true,note:'Actual receipt'});
+      await call('payment',{invoiceId:sale.invoiceId,amount:200000,method:'BANK_TRANSFER',receivedConfirmation:true,note:'Actual receipt'});
+      const before=await Invoice.findById(sale.invoiceId).lean();
+      const payments=await Payment.find({spaId,invoiceId:sale.invoiceId}).lean();const ids=payments.map(p=>p.receiptId);
+      const cashBefore=await CashEntry.find({spaId,_id:{$in:ids}}).lean();
+      const input={id:sale.invoiceId,expectedUpdatedAt:before!.updatedAt.toISOString(),issuedOn:'2000-01-04',reason:'Forgot to enter yesterday',adjustPaymentDates:true};
+      await assert.rejects(operate(employee,'correctInvoiceDate',input,randomUUID()),/Chỉ chủ spa/);
+      await assert.rejects(call('correctInvoiceDate',input),/chưa mở/);
+      assert.equal(spaDay((await Invoice.findById(sale.invoiceId))!.createdAt),spaDay(before!.createdAt));
+      await Day.create({spaId,day:input.issuedOn,opening:0,status:'CLOSED'});
+      await assert.rejects(call('correctInvoiceDate',input),/đã chốt sổ/);
+      await Day.updateOne({spaId,day:input.issuedOn},{$set:{status:'OPEN'}});
+      await call('correctInvoiceDate',{...input,adjustPaymentDates:false});
+      input.expectedUpdatedAt=(await Invoice.findById(sale.invoiceId))!.updatedAt.toISOString();
+      const revision=(await Day.findOne({spaId,day:spaDay()}))!.revision;
+      const key=randomUUID();await call('correctInvoiceDate',input,key);await call('correctInvoiceDate',input,key);
+      const after=await Invoice.findById(sale.invoiceId).lean();assert.equal(after!.paid,before!.paid);assert.equal(after!.total,before!.total);
+      assert.deepEqual(await Payment.find({spaId,invoiceId:sale.invoiceId}).lean(),payments);
+      const receipts=await CashEntry.find({spaId,_id:{$in:ids}}).lean();
+      assert.equal(receipts.reduce((sum,r)=>sum+(r.day===input.issuedOn?r.amount:0),0),350000);
+      assert.equal(receipts.filter(r=>r.day===spaDay()).length,0);
+      for(const original of cashBefore) assert.equal(receipts.find(r=>String(r._id)===String(original._id))!.createdAt.toISOString(),original.createdAt.toISOString());
+      assert.equal((await Day.findOne({spaId,day:spaDay()}))!.revision,revision+1);
+      assert.equal((await Day.findOne({spaId,day:input.issuedOn}))!.revision,1);
+      const audit=await Audit.findOne({spaId,targetId:before!._id,'details.adjustPaymentDates':true}).lean();assert.equal(audit!.details.receiptChanges.length,2);
+    });
     await t.test('owner edits untouched invoices and linked package atomically; history, stale writes and staff are protected', async()=>{
       const template=await call('packageTemplate',{serviceId:service.id,name:'Gói sửa test',totalSessions:5,price:500000});
       const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});

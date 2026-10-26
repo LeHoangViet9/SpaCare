@@ -594,3 +594,10 @@ migration mới, không xóa/tạo lại hóa đơn hoặc bút toán để thay
 
 ## Một điểm vào sửa hóa đơn — 26/10/2026
 Theo yêu cầu mới nhất, bỏ nút Sửa ngày hóa đơn riêng ở danh sách/chi tiết. Chỉ dùng Sửa hóa đơn; ngày nằm trong form sửa. Với hóa đơn đã thực hiện/đã thanh toán hoặc có buổi liệu trình/sản phẩm, form chỉ cho đổi ngày và nhập lý do qua correctInvoiceDate. Hóa đơn còn đủ điều kiện sửa nội dung/giá dùng updateInvoice như trước. Giữ nguyên phân quyền, kiểm sổ, transaction, idempotency và audit của cả hai action.
+
+
+### Điều chỉnh ngày thu khi nhập hóa đơn muộn (2026-10-26)
+
+CONFIRMED theo yêu cầu chủ spa: trong Sửa hóa đơn, tùy chọn Điều chỉnh cả ngày thu tiền gửi correctInvoiceDate.adjustPaymentDates: true (mặc định false). OWNER đang hoạt động được chuyển CashEntry.day của tất cả khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực về ngày hóa đơn đã chọn, khi thực tế mọi khoản này đã thu ngày đó. Đây là ngoại lệ cho quy tắc trước đó chỉ sửa ngày hóa đơn. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
+
+Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không được CLOSED. Backend kiểm tra cùng spa, phiên/quyền, phiên bản hóa đơn, liên kết Payment–CashEntry; chặn khoản đảo/dùng chung và hóa đơn đã hoàn tiền. Ghi tuần tự trong transaction, tăng Day.revision cho các ngày thay đổi, giữ idempotency và Audit.details gồm adjustPaymentDates, receiptChanges (receiptId, paymentId, amount, method, before, after), lý do và ngày hóa đơn trước/sau. Không tạo khoản thu mới; tổng toàn kỳ không đổi, thực thu theo ngày chuyển theo CashEntry.day.
