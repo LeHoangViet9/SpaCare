@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { connect } from './db';
 import { Session, User } from './models';
 import { ensure } from './rules';
+import { isTrustedRequestOrigin } from './request-origin';
 
 export type Actor = {
   id: string;
@@ -69,9 +70,8 @@ export async function maybeActor(): Promise<Actor | null> {
 }
 
 export function checkOrigin(request: Request) {
-  const configured = process.env.APP_ORIGIN;
   ensure(
-    configured && request.headers.get('origin') === new URL(configured).origin,
+    isTrustedRequestOrigin(request.headers.get('origin')),
     'Nguồn yêu cầu không hợp lệ.',
     403,
   );

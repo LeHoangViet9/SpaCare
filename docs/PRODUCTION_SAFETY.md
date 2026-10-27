@@ -66,3 +66,10 @@ Script bổ sung quyền lợi giữ tên lệnh cũ để tương thích, nhưn
 Bảng ánh xạ khách của import triệt lông được đọc từ imports/hair-removal-aliases.private.json (array {phone,source,existing}); thiếu hoặc sai file phải dừng, không đoán ánh xạ. Hai trường phone và tên NFC phải cùng khớp. Các input vận hành đã có được bảo toàn ở file ignored trên máy; không đưa vào commit. Log script bổ sung chỉ báo số lượng, không in tên/điện thoại/hồ sơ chi tiết. Ví dụ tổng hợp: docs/examples/supplement.synthetic.json và docs/examples/aliases.synthetic.json. Không dùng ví dụ để nhập dữ liệu thật.
 
 Các dữ liệu cá nhân đã có ở HEAD được loại khỏi working tree và fixture. Lịch sử Git chưa được rewrite; đánh giá xóa lịch sử/phạm vi đã chia sẻ trong công việc riêng, không force-push từ PR này. Quét working tree không thay thế kiểm tra lịch sử hoặc quyền Atlas/Vercel.
+
+
+## CSRF Origin cho Vercel Preview — 27/10/2026
+
+POST /api/auth/login gọi checkOrigin trước parse input/kết nối DB. Production và local giữ allowlist APP_ORIGIN chính xác; cấu hình phải là HTTP(S) origin hợp lệ. Preview được nhận diện bởi VERCEL=1, VERCEL_ENV=preview và VERCEL_TARGET_ENV nếu có phải là preview: chỉ chấp nhận HTTPS origin khớp chính xác VERCEL_URL hoặc VERCEL_BRANCH_URL do Vercel cung cấp. Không dùng APP_ORIGIN Production làm fallback cho Preview, không tự tin VERCEL_PROJECT_PRODUCTION_URL, Host, X-Forwarded-Host, request URL hay wildcard *.vercel.app. Thiếu/sai Origin vẫn 403; metadata Preview thiếu/mâu thuẫn không mở allowlist. Các route dùng checkOrigin chung được cùng bảo vệ; SameSite=Strict và cookie httpOnly/secure không đổi.
+
+Cần bật System Environment Variables để các giá trị Vercel có ở runtime. Không tự điền URL từ request vào biến môi trường. Alias tùy ý ngoài hai system URL không được tự chấp nhận. Production Safety Guards không thay đổi: Preview cấu hình SPACARE_ENV=test, SPACARE_TARGET_DATABASE=spacare_test và credentials riêng chỉ có quyền DB test. Origin hợp lệ không cấp quyền truy cập live. Không cần đổi cấu hình Production.
