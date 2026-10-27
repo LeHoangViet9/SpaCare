@@ -16,9 +16,25 @@ const safeErrorNames=new Set(['TimeoutError','ScriptTimeoutError','NoSuchElement
 function safeError(error){return safeErrorNames.has(error?.name)?error.name:'UNCLASSIFIED_ERROR';}
 function diagnosticError(code){const error=new Error();error.safeCode=code;return error;}
 async function visible(selector){return driver.wait(async()=>{
- for(const el of await driver.findElements(By.css(selector)))try{if(await el.isDisplayed()&&await el.isEnabled())return el;}catch{}
+ for(const el of await driver.findElements(By.css(selector)))try{if(await el.isDisplayed()&&await el.isEnabled())return el;}catch(error){
+  if(error?.name!=='StaleElementReferenceError')throw error;
+ }
  return false;
 },25000);}
+async function prepareLogoutPage(){
+ const current=new URL(await driver.getCurrentUrl());
+ diagnostic={phase:'logout-page',httpStatus:null,errorCode:null,
+  pageBeforeLogout:['/workspace','/workspace/staff','/login','/'].includes(current.pathname)?current.pathname:'other'};
+ if(current.origin!==PREVIEW_ORIGIN){diagnostic.errorCode='LOGOUT_ORIGIN_BLOCKED';throw diagnosticError(diagnostic.errorCode);}
+ // Direct-URL authorization leaves STAFF on a denied section without the app shell.
+ // Restore an approved workspace page; do not re-login or alter the denial assertion.
+ await driver.get(PREVIEW_ORIGIN+'/workspace');
+ const restored=new URL(await driver.getCurrentUrl());
+ if(restored.origin!==PREVIEW_ORIGIN||restored.pathname!=='/workspace'){
+  diagnostic.errorCode='LOGOUT_WORKSPACE_NOT_RESTORED';throw diagnosticError(diagnostic.errorCode);
+ }
+ diagnostic.workspaceRestored=true;
+}
 async function api(route,{requireJson=true,timeoutMs=5000}={}){
  let result;
  try{result=await driver.executeAsyncScript(`const done=arguments[arguments.length-1],comparisonId=arguments[1];
@@ -43,7 +59,8 @@ async function api(route,{requireJson=true,timeoutMs=5000}={}){
  return result;
 }
 async function uiLogout(){
- diagnostic={phase:'logout-button-find',httpStatus:null,errorCode:null};
+ await prepareLogoutPage();
+ diagnostic.phase='logout-button-find';
  let button;
  try{button=await visible('button[aria-label="\u0110\u0103ng xu\u1ea5t"]');}
  catch(error){diagnostic.errorCode='LOGOUT_BUTTON_NOT_AVAILABLE';throw error;}
