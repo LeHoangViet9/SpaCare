@@ -20,6 +20,8 @@
     "test:integration": "tsx --env-file=.env.test.local --test tests/integration.test.ts",
     "db:service-groups": "node --env-file=.env.local --import ./scripts/local-dns.mjs --import tsx scripts/setup-service-groups.ts",
     "db:cash-cards": "node --env-file=.env.local --import ./scripts/local-dns.mjs --import tsx scripts/setup-cash-cards.ts",
+    "db:preview:check": "tsx scripts/seed-preview.ts --check",
+    "db:preview:seed": "tsx scripts/seed-preview.ts --write",
     "db:setup": "tsx --env-file=.env.local scripts/setup.ts",
     "db:demo": "tsx --env-file-if-exists=.env.demo.local scripts/seed-demo.ts",
     "dev:demo": "tsx --env-file-if-exists=.env.demo.local scripts/dev-demo.ts",

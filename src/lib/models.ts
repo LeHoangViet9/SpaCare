@@ -1,3 +1,4 @@
+import { notificationPushEnvironment } from './push-safety.ts';
 import mongoose, { Schema, type Model } from 'mongoose';
 
 const id = { type: Schema.Types.ObjectId, required: true };
@@ -373,6 +374,7 @@ export const Migration =
   );
 
 export const Notification = model('Notification', {
+  pushEnvironment: { type: String, enum: ['PRODUCTION', 'QUARANTINED'], immutable: true, default: () => notificationPushEnvironment() },
   userId: id, appointmentId: id, title: String, body: String, url: String, readAt: Date,
   pushState: { type: String, enum: ['PENDING', 'SENT'], default: 'PENDING' },
   nextAttemptAt: { type: Date, default: Date.now }, attempts: { type: Number, default: 0 },
@@ -381,6 +383,7 @@ export const Notification = model('Notification', {
 
 // General events use their own outbox, preserving legacy booking notification indexes.
 export const ActivityNotification = model('ActivityNotification', {
+  pushEnvironment: { type: String, enum: ['PRODUCTION', 'QUARANTINED'], immutable: true, default: () => notificationPushEnvironment() },
   userId: id, eventKey: { type: String, required: true },
   kind: { type: String, enum: ['INVOICE_CREATED', 'DAY_CLOSE', 'APPOINTMENT_REMINDER'], required: true },
   invoiceId: optionalId, appointmentId: optionalId, appointmentStartAt: Date, day: String, title: String, body: String, url: String, readAt: Date,

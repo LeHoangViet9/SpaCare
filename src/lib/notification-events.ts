@@ -1,3 +1,4 @@
+import { notificationPushEnvironment } from './push-safety';
 import { invoiceCode } from './invoice-code';
 import { appointmentServiceName } from './appointment-services';
 import mongoose, { type ClientSession } from 'mongoose';
@@ -11,7 +12,7 @@ export async function queueInvoiceNotifications(invoice: any, session: ClientSes
   const customer = await Customer.findOne({ ...scope, _id: invoice.customerId }).session(session);
   const owners = await User.find({ ...scope, active: true, role: 'OWNER' }).session(session);
   for (const owner of owners) {
-    await ActivityNotification.create([{ ...scope, userId: owner._id, kind: 'INVOICE_CREATED',
+    await ActivityNotification.create([{ pushEnvironment: notificationPushEnvironment(), ...scope, userId: owner._id, kind: 'INVOICE_CREATED',
       eventKey: `invoice:${invoice._id}`, invoiceId: invoice._id,
       title: 'Hóa đơn mới ' + invoiceCode(invoice),
       body: `${customer?.name || 'Khách hàng'} · ${invoice.description || 'Dịch vụ'} · Tổng ${formatCurrency(invoice.total)} · Người lập: ${invoice.creatorName || 'SpaCare'}`,
@@ -44,7 +45,7 @@ export async function queueClosingReminders(now = new Date(), spaId?: string) {
         if (!owner) continue;
         const filter = { spaId, userId: person._id, eventKey: `day-close:${day}` };
         if (await ActivityNotification.exists(filter).session(session)) continue;
-        await ActivityNotification.create([{ ...filter, kind: 'DAY_CLOSE', day,
+        await ActivityNotification.create([{ pushEnvironment: notificationPushEnvironment(), ...filter, kind: 'DAY_CLOSE', day,
           title: 'Nhắc kiểm kê tiền và chốt sổ',
           body: `Đã đến 22h. Sổ ngày ${day.split('-').reverse().join('/')} ${closed ? 'chưa được chốt' : 'chưa được mở/chốt'}. Kiểm đếm tiền thực tế, đối chiếu thu chi và chốt sổ trên SpaCare.`,
           url: '/workspace/days',
@@ -84,7 +85,7 @@ export async function queueAppointmentReminders(now = new Date(), spaId?: string
       for (const person of people) {
         const filter = { ...scope, userId: person._id, eventKey: `appointment:${visit._id}:${startAt.toISOString()}` };
         if (await ActivityNotification.exists(filter).session(session)) continue;
-        await ActivityNotification.create([{ ...filter, kind: 'APPOINTMENT_REMINDER', appointmentId: visit._id, appointmentStartAt: startAt,
+        await ActivityNotification.create([{ pushEnvironment: notificationPushEnvironment(), ...filter, kind: 'APPOINTMENT_REMINDER', appointmentId: visit._id, appointmentStartAt: startAt,
           title: 'Sắp đến giờ đón khách',
           body: `${customer?.name || 'Khách hàng'}${customer?.phone ? ' - ' + customer.phone : ''} · ${services} · Giờ hẹn ${at}.`,
           url: `/workspace/appointments?search=${visit._id}`,

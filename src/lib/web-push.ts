@@ -1,3 +1,4 @@
+import { assertPushDelivery, type PushDeliveryContext } from './push-safety';
 // RFC 8291 (aes128gcm, single record) and RFC 8292 (VAPID ES256).
 // Uses Node's OpenSSL-backed primitives; no dependency on a background browser session.
 import { createECDH, createCipheriv, createHmac, createPrivateKey, randomBytes, sign } from 'node:crypto';
@@ -37,10 +38,12 @@ export function vapidAuthorization(endpoint: string, config: Vapid) {
   const signature = sign('sha256', Buffer.from(unsigned), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   return `vapid t=${unsigned}.${signature}, k=${config.publicKey}`;
 }
-export async function sendPush(subscription: Subscription, payload: string, config: Vapid, ttl = 3600) {
+export async function sendPush(subscription: Subscription, payload: string, config: Vapid, ttl = 3600, context?: PushDeliveryContext) {
+  assertPushDelivery(context);
   if (!Number.isSafeInteger(ttl) || ttl < 1 || ttl > 86400) throw new Error('Invalid push TTL');
   if (!allowedPushEndpoint(subscription.endpoint)) throw new Error('Unsupported push endpoint');
   const encrypted = encryptPush(subscription, payload);
+  assertPushDelivery(context);
   const response = await fetch(subscription.endpoint, { method: 'POST', redirect: 'error',
     signal: AbortSignal.timeout(8000), headers: { Authorization: vapidAuthorization(subscription.endpoint, config),
       TTL: String(ttl), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream' },

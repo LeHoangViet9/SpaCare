@@ -40,8 +40,19 @@ reads=[];writes=[];role='OWNER';const owner=await (await GET()).json();assert.eq
 assert.ok(reads.some(item=>item.source==='ActivityNotification'));await POST(request({action:'readAll'}));assert.equal(writes.length,2);
 role='STAFF';writes=[];
 const dh=createECDH('prime256v1');dh.generateKeys();process.env.VAPID_PUBLIC_KEY='public';process.env.VAPID_PRIVATE_KEY='private';process.env.VAPID_SUBJECT='https://example.test';
+// Test/Preview cannot register devices even when VAPID is present.
+assert.equal((await POST(request({action:'subscribe',subscription:{}}))).status,403);
+assert.equal(writes.length,0);
+const environmentBefore={...process.env};
+for(const key of Object.keys(process.env)) if(key.startsWith('VERCEL')) delete process.env[key];
+delete process.env.NODE_TEST_CONTEXT;delete process.env.SPACARE_ENV;delete process.env.SPACARE_TARGET_DATABASE;
+Object.assign(process.env,{NODE_ENV:'production',VERCEL:'1',VERCEL_ENV:'production',MONGODB_URI:'mongodb://127.0.0.1:1/spacare_live'});
+(mongoose.connection as any).name='spacare_live';
 assert.equal((await POST(request({action:'subscribe',subscription:{endpoint:'https://fcm.googleapis.com/fcm/send/fixture',keys:{p256dh:dh.getPublicKey().toString('base64url'),auth:randomBytes(16).toString('base64url')}}}))).status,200);
 assert.equal(writes[0].update.$set.spaId,spaId);assert.equal(writes[0].update.$set.userId,userId);
+for(const key of Object.keys(process.env)) if(!(key in environmentBefore))delete process.env[key];
+Object.assign(process.env,environmentBefore);
+(mongoose.connection as any).name='spacare_test';
 role='CUSTOMER';reads=[];assert.equal((await GET()).status,403);assert.equal(reads.length,0);assert.equal((await POST(request({action:'readAll'}))).status,403);
 role='STAFF';active=false;assert.equal((await GET()).status,401);
 const {GET:daily}=await import('../src/app/api/notifications/daily-close/route');

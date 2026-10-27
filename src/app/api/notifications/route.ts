@@ -1,3 +1,4 @@
+import { productionPushAllowed } from '@/lib/push-safety';
 import { queueAppointmentReminders, queueClosingReminders } from '@/lib/notification-events';
 import { actor, checkOrigin } from '@/lib/auth';
 import { ActivityNotification, Notification, PushDevice } from '@/lib/models';
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
       ensure(typeof body.id === 'string' && /^[a-f\d]{24}$/i.test(body.id), 'Thông báo không hợp lệ.');
       for (const model of models) await model.updateOne({ ...scope, ...(role === 'STAFF' && model === ActivityNotification ? { kind: 'APPOINTMENT_REMINDER' } : {}), _id: body.id, readAt: null }, { readAt: new Date() });
     } else if (body.action === 'subscribe') {
+      ensure(productionPushAllowed(), 'Web push bị tắt trong môi trường này.', 403);
       ensure(pushConfig(), 'Chưa cấu hình thông báo đẩy trên máy chủ.', 503);
       const subscription = pushInput.parse(body.subscription);
       await PushDevice.findOneAndUpdate({ endpoint: subscription.endpoint }, { $set: { ...scope, ...subscription } }, { upsert: true, runValidators: true });

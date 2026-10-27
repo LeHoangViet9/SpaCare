@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import assert from 'node:assert/strict';
 import { createECDH, createDecipheriv, createHmac, createPublicKey, randomBytes, verify } from 'node:crypto';
 import { encryptPush, vapidAuthorization, sendPush } from '../src/lib/web-push';
@@ -5,6 +6,14 @@ import { allowedPushEndpoint, pushInput } from '../src/lib/push-validation';
 import { ActivityNotification, Notification, PushDevice, User } from '../src/lib/models';
 import { dispatchNotifications } from '../src/lib/notifications';
 
+// Explicit simulated Production; HTTP and persistence are mocked below.
+for(const key of Object.keys(process.env)) if(key.startsWith('VERCEL')) delete process.env[key];
+delete process.env.NODE_TEST_CONTEXT;
+Object.assign(process.env,{NODE_ENV:'production',VERCEL:'1',VERCEL_ENV:'production',MONGODB_URI:'mongodb://127.0.0.1:1/spacare_live'});
+delete process.env.SPACARE_ENV;delete process.env.SPACARE_TARGET_DATABASE;
+(mongoose as any).connect=()=>assert.fail('No database connection allowed');
+(mongoose.connection as any).readyState=1;
+(mongoose.connection as any).name='spacare_live';
 const ua = createECDH('prime256v1'); ua.generateKeys();
 const vapid = createECDH('prime256v1'); vapid.generateKeys();
 const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/example',
@@ -52,8 +61,8 @@ globalThis.fetch = async (_url, options) => {
   assert.equal((options?.headers as any)['Content-Encoding'], 'aes128gcm');
   return new Response(null, { status: 410 });
 };
-await assert.rejects(sendPush(subscription, payload, config), (error: any) => error.statusCode === 410);
-await assert.rejects(sendPush({ ...subscription, endpoint: 'https://localhost/x' }, payload, config));
+await assert.rejects(sendPush(subscription, payload, config, 3600, {pushEnvironment:undefined}), (error: any) => error.statusCode === 410);
+await assert.rejects(sendPush({ ...subscription, endpoint: 'https://localhost/x' }, payload, config, 3600, {pushEnvironment:undefined}));
 assert.equal(calls, 1, 'Never contact a supplied private/arbitrary endpoint');
 
 process.env.VAPID_PUBLIC_KEY = config.publicKey; process.env.VAPID_PRIVATE_KEY = config.privateKey; process.env.VAPID_SUBJECT = config.subject;

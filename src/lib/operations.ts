@@ -71,7 +71,7 @@ const signature = z.custom<Signature>(isValidSignature, 'Khách cần ký trực
 const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
 
-const schemas = {
+export const schemas = {
   correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,adjustPaymentDates:z.boolean().default(false),reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),

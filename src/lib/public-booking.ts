@@ -1,3 +1,4 @@
+import { notificationPushEnvironment } from './push-safety';
 import { CUSTOMER_ACCESS_NOTICE } from './customer-access';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
@@ -65,7 +66,7 @@ export async function reservePublicBooking(raw: unknown, actor: Actor | null, ke
       await Audit.create([{ ...scope, actorId: currentUser?._id || customer._id, action: 'publicBooking', targetId: appointment._id,
         details: { source: 'PUBLIC_WEB', actorKind: currentUser ? 'USER' : 'GUEST_CUSTOMER', customerId: customer._id, staffId, startAt, requestedServices } }], { session });
       for (const owner of staff) {
-        await Notification.create([{ ...scope, userId: owner._id, appointmentId: appointment._id,
+        await Notification.create([{ pushEnvironment: notificationPushEnvironment(), ...scope, userId: owner._id, appointmentId: appointment._id,
           title: 'Lịch đặt online mới',
           body: `${customer.name || input.name} · ${input.phone} · ${serviceName} · ${startAt.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`,
           url: `/workspace/appointments?search=${appointment._id}`,
