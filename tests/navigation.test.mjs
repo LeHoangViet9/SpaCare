@@ -30,10 +30,13 @@ test('page access preserves owner and cashier boundaries', () => {
  // STAFF được xem danh sách sản phẩm (read-only); quản lý kho/nhóm vẫn chỉ OWNER
  assert.equal(canViewPage('products', { role: 'STAFF' }), true);
  assert.equal(canViewPage('products', { role: 'OWNER' }), true);
- for (const key of ['days', 'reports', 'cashier', 'cash_cards']) {
+ for (const key of ['days', 'cashier', 'cash_cards']) {
   assert.equal(canViewPage(key, { role: 'STAFF' }), false);
   assert.equal(canViewPage(key, { role: 'STAFF', cashier: true }), true);
  }
+ assert.equal(canViewPage('reports', { role: 'STAFF' }), false);
+ assert.equal(canViewPage('reports', { role: 'STAFF', cashier: true }), false);
+ assert.equal(canViewPage('reports', { role: 'OWNER' }), true);
  for (const key of ['overview', 'appointments', 'customers', 'packages', 'treatment_uses', 'invoices', 'deposits', 'cash']) assert.equal(canViewPage(key, { role: 'STAFF' }), true);
 });
 

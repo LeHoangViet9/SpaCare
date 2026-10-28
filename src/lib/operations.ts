@@ -180,6 +180,7 @@ const ownerActions = new Set<Operation>([
   'user',
   'reverseAllocation',
   'reverseCash',
+  'closeDay',
   'reopenDay',
 ]);
 const cashierActions = new Set<Operation>([
@@ -194,7 +195,6 @@ const cashierActions = new Set<Operation>([
   'treatment',
   'sellPackage',
   'openDay',
-  'closeDay',
 ]);
 
 const sha = (x: string) => createHash('sha256').update(x).digest('hex');

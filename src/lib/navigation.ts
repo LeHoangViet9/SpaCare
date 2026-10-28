@@ -24,6 +24,7 @@ export function canViewPage(key: string, user: { role: string; cashier?: boolean
   if (['salary', 'commission'].includes(key)) return ['OWNER', 'STAFF'].includes(user.role);
   if (['product_groups', 'inventory', 'services', 'staff', 'audit', 'package_catalog'].includes(key)) return user.role === 'OWNER';
   if (['products'].includes(key)) return ['OWNER', 'STAFF'].includes(user.role);
-  if (['days', 'reports', 'cashier', 'cash_cards'].includes(key)) return user.role === 'OWNER' || !!user.cashier;
+  if (key === 'reports') return user.role === 'OWNER';
+  if (['days', 'cashier', 'cash_cards'].includes(key)) return user.role === 'OWNER' || !!user.cashier;
   return true;
 }

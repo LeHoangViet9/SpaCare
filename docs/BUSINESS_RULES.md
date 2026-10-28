@@ -717,3 +717,11 @@ Giữ ngày bắt đầu/hạn/số buổi và khuyến mãi từng gói; quỹ 
 ## Ẩn liệu trình đã hủy khỏi vận hành — 26/10/2026
 
 CONFIRMED theo phản hồi người dùng: gói đã hủy do hóa đơn nhập nhầm không còn xuất hiện trong Gói của khách hoặc tab liệu trình của hồ sơ khách. Lọc tại backend trước đếm/phân trang, kể cả khi tìm theo khách hoặc lọc quà tặng. Giữ bản ghi nội bộ và audit để đối chiếu điều chỉnh tài chính; không xóa lịch sử liên quan hoặc khôi phục quyền lợi đã hủy. Công cụ bổ sung Hương Lan KL chỉ kiểm trùng các gói chưa CANCELLED, nên gói nhập nhầm đã hủy không chặn việc thêm quyền lợi lịch sử đúng; không sửa hoặc xóa gói đã hủy. Gói còn ACTIVE/PAUSED/COMPLETED khác ngày vẫn chặn để đối soát. Không migration hay sửa dữ liệu thật.
+
+## STAFF security release policy — 28/10/2026
+
+CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF cashier được openDay; chỉ OWNER được closeDay/reopenDay và xem Reports hoặc tổng tài chính toàn spa. Ca trong release này là ngày Việt Nam; không xây hệ thống ca mới. Cashier phải thu được nợ hóa đơn cũ hợp lệ cùng spa.
+
+PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn nợ chưa CANCELLED không giới hạn ngày tạo, hóa đơn tạo trong ngày, hóa đơn có Payment còn hiệu lực trong ngày và hóa đơn được phân công. Hóa đơn vừa tất toán vẫn tra được trong ngày thu; lịch sử đã tất toán không thuộc các phạm vi này không được mở rộng. Tìm khách cho OWNER/cashier giữ nguyên để phục vụ thu ngân; lịch sử hóa đơn áp dụng invoiceScope theo customerId cùng spa. Payment tiếp tục kiểm tài khoản active/cashier từ DB, cùng spa, hóa đơn chưa CANCELLED, số tiền không vượt nợ, sổ hôm nay OPEN, transaction/idempotency/audit. Không thay quyền allocate theo phân công.
+
+STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.

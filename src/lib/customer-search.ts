@@ -1,10 +1,14 @@
+import { staffReadScope } from './staff-read-scope';
+import { ensure } from './rules';
 import mongoose from 'mongoose';
 import { Appointment, Customer } from './models';
 import type { Actor } from './auth';
 import { customerFilter, customerQuery } from './customer-query';
 
 export async function findCustomerPage(spaId: string, query: ReturnType<typeof customerQuery>, user?: Actor) {
-  const filter = customerFilter(spaId, query.search, query.id);
+  if (user) ensure(user.spaId === spaId, 'Forbidden', 403);
+  const access = user ? (await staffReadScope(user)).customers : { spaId };
+  const filter = { $and: [customerFilter(spaId, query.search, query.id), access], spaId };
   const readRows = (page: number) => Customer.find(filter).select('name phone notes consultantId createdAt updatedAt')
     .sort({ createdAt: -1, _id: -1 }).skip((page - 1) * query.pageSize).limit(query.pageSize).lean();
   const [total, requestedRows] = await Promise.all([Customer.countDocuments(filter), readRows(query.page)]);

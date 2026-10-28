@@ -1,3 +1,4 @@
+import { readReport } from '../src/lib/report-read';
 import { migratePackageInvoiceIndex } from '../src/lib/package-invoice-indexes';
 import { parseOpening, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
 import { ServiceGroup } from '../src/lib/models';
@@ -51,6 +52,67 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const employee: Actor = { ...actor, id: String(staff._id), role: 'STAFF', cashier: false };
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
+    await t.test('STAFF security: old debt collection, day permissions and assigned customer/package/use reads', async () => {
+      const spa = await Spa.create({ name: 'STAFF security ' + randomUUID() }); extraSpaIds.push(spa._id);
+      const scope = { spaId: spa._id };
+      await Control.create(scope);
+      const owner = await User.create({ ...scope, name: 'Owner', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'OWNER' });
+      const cashier = await User.create({ ...scope, name: 'Cashier', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'STAFF', cashier: true });
+      const staff = await User.create({ ...scope, name: 'Staff', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'STAFF', cashier: false });
+      const who = (u: any): Actor => ({ id: String(u._id), spaId: String(spa._id), name: u.name, role: u.role, cashier: u.cashier });
+      const perform = (u: any, action: string, data: unknown, key = randomUUID()) => operate(who(u), action, data, key);
+      const denied = (e: any) => e.status === 403;
+      await assert.rejects(perform(staff, 'openDay', { day: spaDay(), opening: 0 }), denied);
+      await perform(cashier, 'openDay', { day: spaDay(), opening: 0 });
+      const customer = await Customer.create({ ...scope, name: 'Assigned customer', phone: '0900000001' });
+      const other = await Customer.create({ ...scope, name: 'Unassigned customer', phone: '0900000002' });
+      const old = await Invoice.create({ ...scope, customerId: other._id, total: 100, paid: 0, createdAt: new Date('2020-01-01') });
+      assert.equal((await readInvoice(who(cashier), String(old._id))).invoice.total, 100);
+      await assert.rejects(readInvoice(who(staff), String(old._id)), (e: any) => e.status === 404);
+      await assert.rejects(perform(staff, 'payment', { invoiceId: String(old._id), amount: 100, method: 'CASH', receivedConfirmation: true }), denied);
+      const key = randomUUID(), payload = { invoiceId: String(old._id), amount: 100, method: 'CASH', receivedConfirmation: true };
+      const paid = await perform(cashier, 'payment', payload, key);
+      assert.deepEqual(await perform(cashier, 'payment', payload, key), paid);
+      assert.equal((await readInvoice(who(cashier), String(old._id))).invoice.paid, 100);
+      assert.equal((await readInvoice(who(owner), String(old._id))).invoice.paid, 100);
+      await assert.rejects(readInvoice(actor, String(old._id)), (e: any) => e.status === 404);
+      const historicalPaid = await Invoice.create({ ...scope, customerId: other._id, total: 100, paid: 100, createdAt: new Date('2020-01-01') });
+      await assert.rejects(readInvoice(who(cashier), String(historicalPaid._id)), (e: any) => e.status === 404);
+      const cancelled = await Invoice.create({ ...scope, customerId: other._id, total: 100, paid: 0, status: 'CANCELLED', createdAt: new Date('2020-01-01') });
+      await assert.rejects(readInvoice(who(cashier), String(cancelled._id)), (e: any) => e.status === 404);
+      await assert.rejects(perform(cashier, 'payment', { ...payload, invoiceId: String(cancelled._id) }), (e: any) => e.status === 409);
+      assert.equal(await Payment.countDocuments({ ...scope, invoiceId: old._id }), 1);
+      const receipt = await CashEntry.findOne({ ...scope, kind: 'PAYMENT' });
+      assert.equal(receipt!.day, spaDay()); assert.equal(String(receipt!.actorId), String(cashier._id));
+      const ownBill = await Invoice.create({ ...scope, customerId: customer._id, total: 0, paid: 0 });
+      const service = await Service.create({ ...scope, name: 'STAFF fixture service', price: 100, duration: 30 });
+      const own = await Treatment.create({ ...scope, customerId: customer._id, invoiceId: ownBill._id, serviceId: service._id, totalSessions: 2, remaining: 2 });
+      const hidden = await Treatment.create({ ...scope, customerId: customer._id, invoiceId: old._id, totalSessions: 2, remaining: 2 });
+      const visit = new Appointment({ ...scope, customerId: customer._id, serviceId: service._id, staffId: staff._id, treatmentId: own._id, startAt: new Date(), status: 'CONFIRMED' });
+      assert.ifError(visit.validateSync());
+      await visit.save();
+      await TreatmentUse.create({ ...scope, customerId: customer._id, treatmentId: own._id, actorId: staff._id, staffId: staff._id });
+      await TreatmentUse.create({ ...scope, customerId: other._id, treatmentId: hidden._id, actorId: owner._id, staffId: owner._id });
+      const customers = await findCustomerPage(String(spa._id), { search: '', page: 1, pageSize: 20 }, who(staff));
+      assert.deepEqual(customers.customers.map(c => String(c._id)), [String(customer._id)]);
+      await assert.rejects(readCustomerHistory(who(staff), String(other._id), 'treatments', 1), (e: any) => e.status === 404);
+      const history = await readCustomerHistory(who(staff), String(customer._id), 'treatments', 1);
+      assert.deepEqual(history.rows.map(r => String(r._id)), [String(own._id)]);
+      for (const section of ['packages', 'treatment_uses']) {
+        const data = await readWorkspace(who(staff), workspaceQuery(new URLSearchParams({ section })));
+        assert.ok(!data.treatments.some(p => String(p._id) === String(hidden._id)));
+        assert.ok(data.uses.every(u => String(u.actorId) === String(staff._id)));
+      }
+      for (const u of [staff, cashier]) {
+        await assert.rejects(readReport(who(u), workspaceQuery(new URLSearchParams({ section: 'reports' }))), denied);
+        const overview = await readWorkspace(who(u), workspaceQuery(new URLSearchParams()));
+        for (const field of ['debt', 'credit', 'inflow', 'outflow']) assert.equal(overview.totals[field as keyof typeof overview.totals], 0);
+        await assert.rejects(perform(u, 'closeDay', { day: spaDay(), counted: 100 }), denied);
+      }
+      await perform(owner, 'closeDay', { day: spaDay(), counted: 100 });
+      for (const u of [staff, cashier]) await assert.rejects(perform(u, 'reopenDay', { day: spaDay(), reason: 'Denied' }), denied);
+      await perform(owner, 'reopenDay', { day: spaDay(), reason: 'Synthetic regression' });
+    });
     const originalDay = await Day.findOne({ spaId, day: spaDay() });
     const reusedDay = await call('openDay', { day: spaDay(), opening: 999999 });
     assert.equal(reusedDay.id, String(originalDay!._id));
@@ -1253,8 +1315,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await read({ section: 'invoices', status: 'PAID' })).pages.invoices.total, 505);
       const profile = await readCustomerHistory(pagingActor, String(fixtures[0]._id), 'invoices', 1);
       assert.equal(profile.summary.invoices, 505); assert.equal(profile.summary.debt, 0);
-      const unauthorizedProfile = await readCustomerHistory({ ...pagingActor, role: 'STAFF', id: String(new mongoose.Types.ObjectId()) }, String(fixtures[0]._id), 'invoices', 1);
-      assert.equal(unauthorizedProfile.summary.invoices, 0); assert.equal(unauthorizedProfile.summary.credit, null);
+      await assert.rejects(readCustomerHistory({ ...pagingActor, role: 'STAFF', id: String(new mongoose.Types.ObjectId()) }, String(fixtures[0]._id), 'invoices', 1), status(404));
       const cashSearch = await read({ section: 'cash', search: 'Oldest ledger [VIP].*' });
       assert.equal(cashSearch.pages.cash.total, 1);
       assert.equal(String(cashSearch.pages.cash.rows[0]._id), String(entries[0]._id));

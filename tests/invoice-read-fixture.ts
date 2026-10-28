@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
-import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa } from '../src/lib/models';
+import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa, Appointment, Payment } from '../src/lib/models';
 import { invoiceExport } from '../src/lib/export-read';
 import { readTreatmentSignature } from '../src/lib/treatment-signature';
 import { readInvoice } from '../src/lib/invoice-read';
@@ -14,12 +14,14 @@ function query(result: any) {
 }
 mock.method(Invoice, 'findOne', () => query(invoice));
 mock.method(Invoice, 'find', () => query([]));
+mock.method(Payment, 'find', () => query([]));
 mock.method(Customer, 'findOne', () => query({ name: 'Customer', phone: '0329357116' }));
 mock.method(Spa, 'findById', () => query({ name: 'SpaCare' }));
 mock.method(Treatment, 'find', () => query([{ _id: packageId, name: 'Package' }]));
 mock.method(TreatmentUse, 'countDocuments', async (filter: any) => { queried = filter; return 7; });
 mock.method(TreatmentUse, 'find', () => query([{ _id: 'use', treatmentId: packageId, actorId, signature, sessionNumber: 2, performedAt: new Date() }]));
 mock.method(Audit, 'find', () => query([]));
+mock.method(Appointment, 'find', () => query([{ _id: 'appointment', staffId: actorId, status: 'COMPLETED', treatmentId: 'treatment' }]));
 const owner: Actor = { id: actorId, spaId, name: 'Owner', role: 'OWNER', cashier: true };
 const result = await readInvoice(owner, id, 99);
 assert.equal(result.signaturePage, 2);

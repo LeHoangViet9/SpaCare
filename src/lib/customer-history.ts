@@ -1,3 +1,4 @@
+import { staffReadScope } from './staff-read-scope';
 import { appointmentServiceName } from './appointment-services';
 import { availableTreatmentFilter } from './treatment-rules';
 import { Appointment, Customer, Deposit, Invoice, Service, Treatment, User } from './models';
@@ -7,11 +8,12 @@ import type { Actor } from './auth';
 export async function readCustomerHistory(user: Actor, id: string, kind: 'invoices' | 'appointments' | 'treatments', requested: number) {
   ensure(/^[a-f\d]{24}$/i.test(id), 'ID không hợp lệ.');
   const scope = { spaId: user.spaId };
-  const customer = await Customer.findOne({ ...scope, _id: id }).select('name phone notes consultantId createdAt').lean();
+  const access = await staffReadScope(user);
+  const customer = await Customer.findOne({ $and: [access.customers, { _id: id }] }).select('name phone notes consultantId createdAt').lean();
   ensure(customer, 'Không tìm thấy khách hàng.', 404);
   const invoiceFilter = { ...await invoiceScope(user), customerId: id };
   const appointmentsFilter = { ...scope, customerId: id, ...(user.role !== 'OWNER' && !user.cashier ? { staffId: user.id } : {}) };
-  const treatmentFilter = { ...scope, customerId: id, status:{$ne:'CANCELLED'} };
+  const treatmentFilter = { $and: [access.treatments, { customerId: id, status: { $ne: 'CANCELLED' } }] };
   const models = { invoices: Invoice, appointments: Appointment, treatments: Treatment };
   const filter = kind === 'invoices' ? invoiceFilter : kind === 'appointments' ? appointmentsFilter : treatmentFilter;
   const total = await models[kind].countDocuments(filter);

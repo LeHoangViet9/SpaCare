@@ -1,16 +1,25 @@
 import { readTreatmentSignature } from './treatment-signature';
+import { Payment } from './models';
 import { CashCard } from './models';
 import { Appointment, Audit, Customer, Invoice, Treatment, TreatmentUse, User } from './models';
-import { ensure } from './rules';
+import { ensure, spaDay } from './rules';
 import type { Actor } from './auth';
 
 export async function invoiceScope(user: Actor) {
   const scope = { spaId: user.spaId };
-  if (user.role === 'OWNER' || user.cashier) return scope;
+  if (user.role === 'OWNER') return scope;
+  const today = spaDay();
+  const shiftStart = new Date(`${today}T00:00:00+07:00`);
+  const shiftEnd = new Date(shiftStart.getTime() + 86_400_000);
   const visits = await Appointment.find({ ...scope, staffId: user.id, status: { $in: ['CONFIRMED', 'COMPLETED'] } }).select('_id treatmentId treatmentIds').lean();
   const packages = await Treatment.find({ ...scope, _id: { $in: visits.flatMap(v => v.treatmentIds?.length ? v.treatmentIds : [v.treatmentId]).filter(Boolean) } }).select('invoiceId').lean();
   const uses = await TreatmentUse.find({ ...scope, $or: [{ actorId: user.id }, { staffId: user.id }] }).select('_id').lean();
-  return { ...scope, $or: [{ appointmentId: { $in: visits.map(v => v._id) } }, { _id: { $in: packages.map(p => p.invoiceId) } }, { treatmentUseId: { $in: uses.map(u => u._id) } }] };
+  const permitted = { ...scope, $or: [{ appointmentId: { $in: visits.map(v => v._id) } }, { _id: { $in: packages.map(p => p.invoiceId) } }, { treatmentUseId: { $in: uses.map(u => u._id) } }] };
+  if (user.cashier) {
+    const collected = await Payment.find({ ...scope, createdAt: { $gte: shiftStart, $lt: shiftEnd }, reversed: false }).select('invoiceId').lean();
+    return { ...scope, $or: [{ status: { $ne: 'CANCELLED' }, $expr: { $gt: ['$total', '$paid'] } }, { createdAt: { $gte: shiftStart, $lt: shiftEnd } }, { _id: { $in: collected.map(p => p.invoiceId) } }, ...permitted.$or] };
+  }
+  return permitted;
 }
 
 export async function readInvoice(user: Actor, id: string, requestedSignaturePage = 1) {

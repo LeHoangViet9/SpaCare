@@ -96,3 +96,19 @@ test('parallel customer reads preserve last-page fallback and authenticated scop
   assert.equal(valid.customers.length, 1);
   assert.deepEqual(offsets, [10]);
 });
+
+test('cashier and staff invoice scope stays limited to assigned records or current shift', async t => {
+  const { Appointment, Treatment, TreatmentUse, Payment } = await tsImport('../src/lib/models.ts', import.meta.url);
+  const { invoiceScope } = await tsImport('../src/lib/invoice-read.ts', import.meta.url);
+  const staff = { id: 'a'.repeat(24), spaId: 'b'.repeat(24), name: 'Test', role: 'STAFF', cashier: false };
+  const cashier = { ...staff, cashier: true };
+  t.mock.method(Payment, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  t.mock.method(Appointment, 'find', () => ({ select: () => ({ lean: async () => [{ _id: 'b'.repeat(24), treatmentId: 'c'.repeat(24), treatmentIds: ['c'.repeat(24)] }] }) }));
+  t.mock.method(Treatment, 'find', () => ({ select: () => ({ lean: async () => [{ invoiceId: 'd'.repeat(24) }] }) }));
+  t.mock.method(TreatmentUse, 'find', () => ({ select: () => ({ lean: async () => [{ _id: 'e'.repeat(24) }] }) }));
+  const staffScope = await invoiceScope(staff);
+  const cashierScope = await invoiceScope(cashier);
+  assert.ok(staffScope.$or.some((clause) => clause.appointmentId || clause._id || clause.treatmentUseId));
+  assert.ok(cashierScope.$or.some((clause) => clause.createdAt));
+  assert.equal(cashierScope.$or.filter((clause) => clause.createdAt).length, 1);
+});

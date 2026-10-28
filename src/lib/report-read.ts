@@ -10,7 +10,7 @@ export function reportDateRange(from: string, to: string) {
     ...(to ? { $lt: new Date(new Date(to + 'T00:00:00+07:00').getTime() + 86400000) } : {}) };
 }
 export async function readReport(user: Actor, query: ReturnType<typeof workspaceQuery>) {
-  ensure(user.role === 'OWNER' || user.role === 'STAFF' && user.cashier, 'Bạn không có quyền xem báo cáo.', 403);
+  ensure(user.role === 'OWNER', 'Chỉ chủ spa được xem báo cáo.', 403);
   const scope = { spaId: new mongoose.Types.ObjectId(user.spaId) };
   const range = reportDateRange(query.from, query.to);
   const dated = (field: string) => ({ ...scope, ...(Object.keys(range).length ? { [field]: range } : {}) });
