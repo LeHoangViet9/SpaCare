@@ -1,3 +1,4 @@
+import { canViewPage } from './navigation';
 import { Product, ProductGroup, StockMovement } from './models';
 import { canManageProducts, canViewProducts, productQuery } from './product-rules';
 import { literalPattern } from './workspace-query';
@@ -5,6 +6,7 @@ import { ensure } from './rules';
 import type { Actor } from './auth';
 export async function readProducts(user: Actor, q: ReturnType<typeof productQuery>) {
   ensure(canViewProducts(user), 'Không có quyền xem danh sách sản phẩm.', 403);
+  ensure(canViewPage(q.view, user), 'Bạn không có quyền mở mục này.', 403);
   const canManage = canManageProducts(user);
   const scope = { spaId: user.spaId };
   const groups = await ProductGroup.find(scope).select('name').sort({ name: 1, _id: 1 }).lean();
