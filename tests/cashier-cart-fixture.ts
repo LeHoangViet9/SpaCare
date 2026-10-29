@@ -17,5 +17,8 @@ assert.equal(mixed[0].action,'invoice');assert.equal(mixed[0].data.additionalPro
 assert.equal(mixed[0].data.additionalServices.length,1);assert.equal(mixed[0].data.treatments[0].remainingBefore,3);
 assert.equal(mixed[0].data.signature,undefined,'signature remains optional');
 assert.equal(cashierActions({...base,services:[{_id:'s1',total:'100'}]})[0].action,'serviceInvoice');
-assert.throws(()=>cashierActions({...base,services:[{_id:'s1',total:'100'}],staffId:''}),/nhân viên/);
+const perLine=cashierActions({...base,services:[{_id:'s1',total:'100',performerId:'staff-a'}],staffId:''});
+assert.equal(perLine[0].data.staffId,undefined);
+assert.equal(perLine[0].data.items[0].performerId,'staff-a');
+assert.throws(()=>cashierActions({...base,services:[],sessions:[{_id:'t1',serviceId:'s1',remaining:3}],staffId:''}),/nhân viên/);
 assert.throws(()=>cashierActions({...base,products:[],packages:[]}),/ít nhất/);
