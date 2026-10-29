@@ -1,5 +1,9 @@
 # SpaCare — Business Rules
 
+## BR-PERFORMER-001 — Performer theo từng dòng hóa đơn
+
+Dịch vụ lẻ trong cùng một hóa đơn có thể chọn `performerId` riêng cho từng dòng. Không chọn performer không tự lấy người tạo hóa đơn. Hoa hồng theo dòng được ghi vào ledger riêng; dữ liệu legacy vẫn giữ performer cấp hóa đơn để tương thích. Chỉ OWNER/thu ngân được chọn performer khác khi thao tác cho phép.
+
 Cập nhật: 21/10/2026.
 
 - CONFIRMED: có xác nhận nghiệp vụ hoặc yêu cầu rõ từ người dùng; ghi nguồn tại từng rule.
@@ -246,7 +250,7 @@ Cập nhật quyền theo yêu cầu tự tạo hóa đơn: completeAppointment 
 
 ## Cập nhật ưu tiên theo yêu cầu mới nhất — 21/10/2026
 
-Menu phân cấp có thể thu gọn/mở rộng, dùng chung cấu hình cây trên desktop và mobile. Tổng quan tại `/`; mỗi mục hoạt động mở trang riêng `/workspace/{section}`, hỗ trợ tải lại và Back/Forward. Server kiểm tra phiên và quyền: services/staff/audit chỉ OWNER, days/reports OWNER hoặc thu ngân. Không thay đổi quyền ghi tài chính hay phạm vi dữ liệu API workspace.
+Menu phân cấp có thể thu gọn/mở rộng, dùng chung cấu hình cây trên desktop và mobile. Tổng quan tại `/`; mỗi mục hoạt động mở trang riêng `/workspace/{section}`, hỗ trợ tải lại và Back/Forward. Server kiểm tra phiên và quyền: services/staff/audit/reports và tổng tài chính Dashboard chỉ OWNER; days vẫn OWNER/thu ngân. Chỉ OWNER được closeDay/reopenDay; cashier hiện vẫn được đọc sổ ngày và openDay. Phạm vi giao dịch STAFF theo ca là phần riêng, không được thay đổi ở đây.
 
 Yêu cầu này thay thế mô tả trước về trang Lương/Hoa hồng hiển thị sản lượng: chỉ tạo trang hoạt động khi nghiệp vụ được xác định. Hiện hai mục chỉ ghi “Chưa triển khai”, không liên kết, không có trang hoạt động, schema hoặc API lương/hoa hồng. Không tạo kỳ lương giả hay suy ra hoa hồng từ người ghi buổi. Khi triển khai: backend lấy spaId/actorId từ phiên, STAFF chỉ xem của mình, OWNER xem toàn spa. BR-OPEN-011 (công thức/thời điểm hoa hồng), BR-OPEN-012 (quyền quản lý xem nhân viên khác), BR-OPEN-013 (quy chế và kỳ lương) giữ OPEN. Cấu hình route là thiết kế kỹ thuật; không chốt thêm chính sách tài chính.
 
@@ -350,7 +354,7 @@ BR-PRODUCT-IMAGE-001 CONFIRMED: OWNER tải ảnh qua thư viện/camera; khách
 
 
 ## Báo cáo và nhân viên — 23/10/2026
-PROPOSED kỹ thuật theo yêu cầu tiếp tục: báo cáo tách giá trị hóa đơn (ngày tạo, thanh toán hiện tại), thu chi (ngày ghi sổ), kết quả nhân viên (ngày phát sinh). Không chốt doanh thu kế toán BR-OPEN-006. OWNER xem nhân viên; OWNER/thu ngân xem báo cáo tài chính. Tổng hợp toàn bộ bộ lọc cùng spa trước phân trang; CSV chỉ xuất tổng hợp.
+PROPOSED kỹ thuật theo yêu cầu tiếp tục: báo cáo tách giá trị hóa đơn (ngày tạo, thanh toán hiện tại), thu chi (ngày ghi sổ), kết quả nhân viên (ngày phát sinh). Không chốt doanh thu kế toán BR-OPEN-006. CONFIRMED theo yêu cầu 28/10/2026: chỉ OWNER xem báo cáo tài chính toàn spa, tổng tài chính Dashboard và tab nhân viên. STAFF cashier không nhận aggregate tài chính từ API overview. Tổng hợp toàn bộ bộ lọc cùng spa trước phân trang; CSV chỉ xuất tổng hợp.
 GET /api/payroll view=salary thêm salarySummary: [{_id: DRAFT|APPROVED|PAID, count, total}] theo tháng/nhân viên trên toàn bộ dữ liệu. STAFF chỉ xem mình; danh sách nhân sự không gồm CUSTOMER. Không thay schema hoặc action chi lương. Buổi thiếu staffId không suy người thực hiện từ actorId. UI chung thẻ tổng hợp và liên kết Nhân viên/Bảng lương/Hoa hồng, thẻ mobile hai cột. Hai URL EasySalon chưa truy cập được trong phiên này.
 
 
@@ -393,7 +397,7 @@ CONFIRMED theo yêu cầu mới nhất: bỏ trường nhập tham chiếu ảnh
 
 
 ## Trạng thái sổ hôm nay và mở sổ lặp — 23/10/2026
-PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở sổ báo đã tồn tại: GET workspace thêm todayDay cho OWNER/thu ngân, query trực tiếp cùng spa/ngày Việt Nam và độc lập bộ lọc/phân trang. Trang days không áp dụng từ khóa search vì không có ô tìm kiếm; vẫn giữ lọc trạng thái/khoảng ngày. UI hiển thị rõ hôm nay chưa mở/đang mở/đã chốt; đã mở không hiện nút tạo thêm, đã chốt chỉ OWNER có Mở lại với lý do. openDay trên sổ OPEN trả sổ hiện có, không đổi tiền đầu ngày, không tạo sổ thứ hai; sổ CLOSED trả 409 và không tự mở lại. Giữ transaction, idempotency và audit snapshot thực tế. Không thay chính sách ai được mở/chốt/mở lại hoặc ghi đè dữ liệu lịch sử.
+PROPOSED kỹ thuật theo yêu cầu sửa lỗi danh sách trống nhưng mở sổ báo đã tồn tại: GET workspace thêm todayDay cho OWNER/thu ngân, query trực tiếp cùng spa/ngày Việt Nam và độc lập bộ lọc/phân trang. Trang days không áp dụng từ khóa search vì không có ô tìm kiếm; vẫn giữ lọc trạng thái/khoảng ngày. UI hiển thị rõ hôm nay chưa mở/đang mở/đã chốt; chỉ OWNER có nút chốt hoặc mở lại. openDay vẫn OWNER/thu ngân; trên sổ OPEN trả sổ hiện có, không đổi tiền đầu ngày, không tạo sổ thứ hai; sổ CLOSED trả 409 và không tự mở lại. Chốt/mở lại giữ transaction, idempotency và audit snapshot thực tế. STAFF cashier hiện vẫn đọc được toàn bộ dữ liệu trang days; phạm vi này chưa được thay đổi trong bản sửa giới hạn quyền chốt sổ.
 
 
 ## Xuất PDF hóa đơn và hoa hồng - 23/10/2026
@@ -731,3 +735,29 @@ PROPOSED kỹ thuật: ba embedded snapshot Invoice.treatmentSessions/packageIte
 
 ### PR 1: fail-closed và input riêng — 26/10/2026
 PROPOSED kỹ thuật theo yêu cầu người dùng: tín hiệu Vercel thiếu/mâu thuẫn bị chặn trước kết nối, không suy Production từ NODE_ENV. Dữ liệu khách và bảng ánh xạ vận hành chỉ nằm trong input imports/ bị ignore; fixture/tài liệu dùng dữ liệu tổng hợp. Script bổ sung bắt buộc --file, giữ kiểm OWNER, batch/fingerprint, transaction và audit. Không đổi API nghiệp vụ, schema field/index, quyền hay quy tắc nhiều khách cùng giờ; không migration hoặc ghi dữ liệu thật. Chi tiết và giới hạn cloud identity tại PRODUCTION_SAFETY.md.
+
+## Kiểm toán quyền đọc kho — 28/10/2026
+
+PROPOSED kỹ thuật, đồng bộ quyền API với canViewPage hiện hành; không xác nhận thêm
+chính sách spa mới. Trang Kho hàng/nhóm sản phẩm dành OWNER; STAFF (kể cả thu ngân)
+không được gọi chế độ quản lý tương ứng qua URL API. STAFF vẫn được xem danh sách
+sản phẩm read-only theo quyền hiện có. Quyền OWNER lập phiếu nhập/xuất thủ công đã
+CONFIRMED ở mục Đơn giản phiếu kho; không đổi quyền xuất kho do bán hàng hợp lệ.
+
+Sửa thiếu kiểm tra view ở readProducts: inventory, inventory&history=yes và
+product_groups trả 403 cho STAFF trước mọi truy vấn Product/ProductGroup/StockMovement.
+actor lấy phiên còn hạn và User active cùng spa; không tin role/spaId từ query.
+
+notFound của App Router có thể đi cùng HTTP 200 khi đã streaming; đó không phải
+quyền xem kho. Test phải xác nhận UI Not Found, không có Workspace/Kho hàng và API
+bị từ chối, thay vì chỉ so sánh status document với 404. Không nới API 403, quyền
+ghi, transaction/idempotency/audit hoặc production safety guard.
+
+
+## STAFF security release policy — 28/10/2026
+
+CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF cashier được openDay; chỉ OWNER được closeDay/reopenDay và xem Reports hoặc tổng tài chính toàn spa. Ca trong release này là ngày Việt Nam; không xây hệ thống ca mới. Cashier phải thu được nợ hóa đơn cũ hợp lệ cùng spa.
+
+PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn nợ chưa CANCELLED không giới hạn ngày tạo, hóa đơn tạo trong ngày, hóa đơn có Payment còn hiệu lực trong ngày và hóa đơn được phân công. Hóa đơn vừa tất toán vẫn tra được trong ngày thu; lịch sử đã tất toán không thuộc các phạm vi này không được mở rộng. Tìm khách cho OWNER/cashier giữ nguyên để phục vụ thu ngân; lịch sử hóa đơn áp dụng invoiceScope theo customerId cùng spa. Payment tiếp tục kiểm tài khoản active/cashier từ DB, cùng spa, hóa đơn chưa CANCELLED, số tiền không vượt nợ, sổ hôm nay OPEN, transaction/idempotency/audit. Không thay quyền allocate theo phân công.
+
+STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.

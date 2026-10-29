@@ -139,7 +139,7 @@ export const Appointment = model(
 const saleParticipantSchema = new Schema({ staffId: id, staffName: { type: String, required: true } },
   { _id: false, versionKey: false, strict: 'throw' });
 
-const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, required: true }, total: amount, commission: amount },
+const serviceItemSchema = new Schema({ lineId: { type: Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() }, serviceId: id, name: { type: String, required: true }, total: amount, commission: amount, performerId: optionalId },
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
@@ -307,6 +307,13 @@ export const Commission = model('Commission', {
   sourceId: id, amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
 }, [[{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, invoiceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
 
+export const InvoiceLineCommission = model('InvoiceLineCommission', {
+  cancelledAt: Date, staffId: id, staffName: String, serviceId: optionalId, serviceName: String, customerId: id,
+  invoiceId: id, lineId: id, category: { type: String, enum: ['SERVICE'], default: 'SERVICE' },
+  sourceType: { type: String, enum: ['INVOICE_LINE'], required: true }, sourceId: id,
+  amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
+}, [[{ spaId: 1, invoiceId: 1, lineId: 1, category: 1 }, { unique: true }], [{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
+
 export const SaleCommission = model('SaleCommission', {
   staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
   category: {type:String, default:'PACKAGE_SALE'}, sourceType:String, sourceId:id,
@@ -421,6 +428,7 @@ export const allModels = [
   Treatment,
   TreatmentUse,
   Commission,
+  InvoiceLineCommission,
   Payroll,
   StaffLeave,
   Workday,

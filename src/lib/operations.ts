@@ -40,7 +40,7 @@ import {
   Day,
   Audit,
   Idempotency,
-  Commission,
+  Commission, InvoiceLineCommission,
   Payroll,
   StaffLeave,
   Workday, SaleCommission, SharedSaleCommission,
@@ -124,8 +124,8 @@ export const schemas = {
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).max(30).optional(),
-    customerId: objectId, staffId: objectId, dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
-    items: z.array(z.object({ serviceId: objectId, total: moneySchema.optional() })).min(1).max(30)
+    customerId: objectId, staffId: objectId.optional(), dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
+    items: z.array(z.object({ serviceId: objectId, total: moneySchema.optional(), performerId: objectId.optional() })).min(1).max(30)
       .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
   }),
   invoice: z.object({
@@ -180,6 +180,7 @@ const ownerActions = new Set<Operation>([
   'user',
   'reverseAllocation',
   'reverseCash',
+  'closeDay',
   'reopenDay',
 ]);
 const cashierActions = new Set<Operation>([
@@ -194,7 +195,6 @@ const cashierActions = new Set<Operation>([
   'treatment',
   'sellPackage',
   'openDay',
-  'closeDay',
 ]);
 
 const sha = (x: string) => createHash('sha256').update(x).digest('hex');
@@ -351,9 +351,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const pendingCommissions = async (staffId: string, month: string) => {
         const filter = {...scope,staffId,payrollId:{$exists:false},earnedAt:{$lt:monthBounds(month).end}};
         const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
+        const line = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         const shared = await SharedSaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
-        return [...service,...sale,...shared];
+        return [...service,...line,...sale,...shared];
       };
       const attendanceFor = async (staffId:string,month:string,confirmed:boolean) => {
         const staff = await User.findOne({...scope,_id:staffId}).select('+salaryPolicy').session(session);
@@ -1247,8 +1248,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'serviceInvoice': {
           const d = schemas.serviceInvoice.parse(data);
           await get(Customer, d.customerId);
-          const performer = await get(User, d.staffId);
-          ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Nhân viên thực hiện không hợp lệ hoặc đã ngừng hoạt động.');
+          const performer = d.staffId ? await get(User, d.staffId) : undefined;
+          ensure(!performer || (performer.active && ['OWNER', 'STAFF'].includes(performer.role)), 'Nhân viên thực hiện không hợp lệ hoặc đã ngừng hoạt động.');
           if (d.dueDate) dayBounds(d.dueDate);
           const serviceItems = [];
           // Sequential reads/writes inside this transaction preserve rollback and session semantics.
@@ -1257,18 +1258,26 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ensure(service.active, 'Dịch vụ đã ngừng hoạt động.');
             const total = invoiceCharge(service.price, item.total, false);
             ensure(total > 0, 'Giá dịch vụ lẻ phải lớn hơn 0.');
-            serviceItems.push({ serviceId: service._id, name: service.name, total, commission: service.commission || 0 });
+            const linePerformer = item.performerId ? await get(User, item.performerId) : undefined;
+            ensure(!linePerformer || (linePerformer.active && ['OWNER', 'STAFF'].includes(linePerformer.role)), 'Nhân viên thực hiện dòng không hợp lệ hoặc đã ngừng hoạt động.');
+            const legacyPerformer = !d.items.some(entry => entry.performerId) ? performer : undefined;
+            serviceItems.push({ serviceId: service._id, name: service.name, total, commission: (linePerformer || legacyPerformer) ? service.commission || 0 : 0, ...(linePerformer ? {performerId:linePerformer._id} : {}) });
           }
           const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0));
           const commission = money(serviceItems.reduce((sum, item) => sum + item.commission, 0), true);
           target = await create(Invoice, { customerId: d.customerId, kind: 'SERVICE', serviceItems,
             ...(serviceItems.length === 1 ? { serviceId: serviceItems[0].serviceId } : {}),
             description: serviceItems.map(item => item.name).join(' + '), total, paid: 0, commission,
-            ...(d.dueDate ? { dueDate: d.dueDate } : {}), performedBy: performer._id, performedAt: new Date() });
-          await create(Commission, { staffId: performer._id, staffName: performer.name,
+            ...(d.dueDate ? { dueDate: d.dueDate } : {}), ...(performer ? {performedBy: performer._id, performedAt: new Date()} : {}) });
+          if (performer && d.items.every(item => !item.performerId)) await create(Commission, { staffId: performer._id, staffName: performer.name,
             ...(serviceItems.length === 1 ? { serviceId: serviceItems[0].serviceId } : {}),
             serviceName: target.description, customerId: target.customerId, invoiceId: target._id,
             sourceType: 'INVOICE', sourceId: String(target._id), amount: commission, earnedAt: target.performedAt });
+          for (const item of target.serviceItems || []) if (item.performerId && item.commission) {
+            const staff = await get(User, String(item.performerId));
+            const lineId = item.lineId || new mongoose.Types.ObjectId();
+            await create(InvoiceLineCommission, { staffId: staff._id, staffName: staff.name, serviceId: item.serviceId, serviceName: item.name, customerId: target.customerId, invoiceId: target._id, lineId, sourceType: 'INVOICE_LINE', sourceId: lineId, amount: item.commission, earnedAt: new Date() });
+          }
           if(d.additionalProducts?.length){ensure(!d.cashCard,'Thẻ tiền chỉ dùng cho hóa đơn chỉ có dịch vụ lẻ.',409);await addProducts(target,d.additionalProducts);}
           if (d.cashCard) await redeemCard({ ...d.cashCard, invoiceId: String(target._id) });
           linkedInvoiceId = String(target._id);
