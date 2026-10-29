@@ -1,0 +1,17 @@
+{
+  "collection": "invoicelinecommissions",
+  "indexes": [
+    {
+      "key": { "spaId": 1, "invoiceId": 1, "lineId": 1, "category": 1 },
+      "unique": true
+    },
+    {
+      "key": { "spaId": 1, "sourceType": 1, "sourceId": 1 },
+      "unique": true
+    },
+    {
+      "key": { "spaId": 1, "staffId": 1, "earnedAt": -1 },
+      "unique": false
+    }
+  ]
+}

@@ -138,17 +138,17 @@ export const Appointment = model(
 const saleParticipantSchema = new Schema({ staffId: id, staffName: { type: String, required: true } },
   { _id: false, versionKey: false, strict: 'throw' });
 
-const serviceItemSchema = new Schema({ serviceId: id, name: { type: String, required: true }, total: amount, commission: amount },
+const serviceItemSchema = new Schema({ lineId: optionalId, serviceId: id, name: { type: String, required: true }, total: amount, commission: amount, performerId: optionalId },
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
-  treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,strict:'throw'})],default:undefined},
-  packageItems: {type:[new Schema({templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,promotion:String,giftCashCardAmount:Number},{_id:false,strict:'throw'})],default:undefined},
+  treatmentSessions: {type:[new Schema({lineId:optionalId,treatmentId:id,treatmentUseId:id,name:String,performerId:optionalId,total:amount,paid:{...amount,default:0}},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
+  packageItems: {type:[new Schema({lineId:optionalId,templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,paid:{...amount,default:0},promotion:String,giftCashCardAmount:Number,performerId:optionalId},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
-  productItems: {type:[new Schema({productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount},{_id:false,strict:'throw'})],default:undefined},
-  serviceItems: { type: [serviceItemSchema], default: undefined },
+  productItems: {type:[new Schema({lineId:optionalId,productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount,paid:{...amount,default:0}},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
+  serviceItems: { type: [new Schema({ lineId: optionalId, serviceId: id, name: { type: String, required: true }, total: amount, paid: { ...amount, default: 0 }, commission: amount, performerId: optionalId }, { _id: false, versionKey: false, strict: 'throw' })], default: undefined },
   openingBalance: Boolean, openingDate: String,
   saleParticipants: [saleParticipantSchema],
   sellerId: optionalId, sellerName: String, saleCommissionVersion: Number, saleCommissionAccrued: Number, refunded: { type: Number, default: 0 },
@@ -193,6 +193,7 @@ export const CashCard = model('CashCard', {
 export const CashCardUse = model('CashCardUse', {
   reversedAt:Date,
   cardId: id, customerId: id, invoiceId: id, amount, balanceBefore: amount, balanceAfter: amount, actorId: id,
+  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, strict: 'throw' })], default: undefined },
 }, [[{ spaId: 1, customerId: 1, createdAt: -1 }], [{ spaId: 1, invoiceId: 1 }], [{ spaId: 1, cardId: 1, createdAt: -1 }]]);
 
 export const Deposit = model('Deposit', {
@@ -207,6 +208,7 @@ export const Allocation = model('Allocation', {
   depositId: id,
   invoiceId: id,
   amount,
+  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, strict: 'throw' })], default: undefined },
   reason: String,
   approvedBy: id,
   reversed: { type: Boolean, default: false },
@@ -217,6 +219,7 @@ export const Payment = model('Payment', {
   receivedConfirmation: Boolean,
   invoiceId: id,
   amount,
+  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, strict: 'throw' })], default: undefined },
   receiptId: id,
   reversed: { type: Boolean, default: false },
 });
@@ -305,6 +308,15 @@ export const Commission = model('Commission', {
   sourceType: { type: String, enum: ['APPOINTMENT', 'TREATMENT_USE', 'INVOICE', 'PACKAGE_PAYMENT', 'PACKAGE_ADJUSTMENT'], required: true },
   sourceId: id, amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
 }, [[{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, invoiceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
+
+// Additive per-line ledger. Legacy Commission keeps its production unique
+// invoice index; new line rows use a separate collection and stable identity.
+export const InvoiceLineCommission = model('InvoiceLineCommission', {
+  cancelledAt: Date, staffId: id, staffName: String, serviceId: optionalId, serviceName: String, customerId: id,
+  invoiceId: id, lineId: id, category: { type: String, enum: ['SERVICE'], default: 'SERVICE' },
+  sourceType: { type: String, enum: ['INVOICE_LINE', 'TREATMENT_USE_LINE', 'APPOINTMENT_LINE'], required: true },
+  sourceId: id, amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
+}, [[{ spaId: 1, invoiceId: 1, lineId: 1, category: 1 }, { unique: true }], [{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
 
 export const SaleCommission = model('SaleCommission', {
   staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
@@ -417,7 +429,7 @@ export const allModels = [
   CashEntry,
   Treatment,
   TreatmentUse,
-  Commission,
+  Commission, InvoiceLineCommission,
   Payroll,
   StaffLeave,
   Workday,
