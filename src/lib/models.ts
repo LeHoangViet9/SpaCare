@@ -193,7 +193,7 @@ export const CashCard = model('CashCard', {
 export const CashCardUse = model('CashCardUse', {
   reversedAt:Date,
   cardId: id, customerId: id, invoiceId: id, amount, balanceBefore: amount, balanceAfter: amount, actorId: id,
-  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, strict: 'throw' })], default: undefined },
+  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, versionKey: false, strict: 'throw' })], default: undefined },
 }, [[{ spaId: 1, customerId: 1, createdAt: -1 }], [{ spaId: 1, invoiceId: 1 }], [{ spaId: 1, cardId: 1, createdAt: -1 }]]);
 
 export const Deposit = model('Deposit', {
@@ -208,7 +208,7 @@ export const Allocation = model('Allocation', {
   depositId: id,
   invoiceId: id,
   amount,
-  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, strict: 'throw' })], default: undefined },
+  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, versionKey: false, strict: 'throw' })], default: undefined },
   reason: String,
   approvedBy: id,
   reversed: { type: Boolean, default: false },
@@ -219,7 +219,7 @@ export const Payment = model('Payment', {
   receivedConfirmation: Boolean,
   invoiceId: id,
   amount,
-  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, strict: 'throw' })], default: undefined },
+  lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, versionKey: false, strict: 'throw' })], default: undefined },
   receiptId: id,
   reversed: { type: Boolean, default: false },
 });

@@ -1,5 +1,9 @@
 # SpaCare — Data Model
 
+Khắc phục phân bổ 29/10/2026: Payment.lineAllocations lưu riêng tiền thu trực tiếp/thu thêm sau thẻ; Allocation.lineAllocations lưu tiền cọc; CashCardUse.lineAllocations chỉ lưu tiền trừ thẻ. Backend cập nhật Invoice.*Items[].paid và ledger cùng transaction, kiểm tổng paid cấp dòng so với hóa đơn trước thu mới. Chỉ tham chiếu treatmentSessions 0đ trùng lineId với serviceItems được bỏ khỏi phép cộng; vẫn giữ snapshot liên kết. Các sub-schema lineAllocations đặt versionKey:false như schema cha để Mongoose rollback không lỗi __v. Không thêm index, migration hoặc backfill dữ liệu vận hành.
+
+Kiểm toán 29/10/2026: sửa hóa đơn có mã dòng giữ `performerId` trống nếu chưa chọn; không lấy `performedBy` cấp hóa đơn cho dòng mới hoặc dòng cũ. Dòng không có performer giữ commission bằng 0. Không thay schema/index hoặc backfill.
+
 Cập nhật: 20/10/2026. Mô tả code `src/lib/models.ts` và `src/lib/operations.ts` hiện tại; không phải bằng chứng chính sách đã được spa duyệt.
 
 ## Quy ước

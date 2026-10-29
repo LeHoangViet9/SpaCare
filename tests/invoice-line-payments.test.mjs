@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyInvoiceLinePayment } from '../src/lib/invoice-line-payments.ts';
+import { applyInvoiceLinePayment, resolveInvoiceLineAllocations } from '../src/lib/invoice-line-payments.ts';
 const service = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const packageId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const product = 'cccccccccccccccccccccccc';
@@ -11,6 +11,19 @@ const lines = () => [
   { lineId: product, total: 100000, paid: 0 },
   { lineId: session, total: 0, paid: 0, performerId: 'staff-b' },
 ];
+
+test('ambiguous partial receipts require explicit lines; full and single balances resolve exactly',()=>{
+  assert.throws(()=>resolveInvoiceLineAllocations(lines(),undefined,100000,0),/phân bổ/);
+  assert.deepEqual(resolveInvoiceLineAllocations(lines(),undefined,2400000,0),[
+    {lineId:service,amount:300000},{lineId:packageId,amount:2000000},{lineId:product,amount:100000}
+  ]);
+  assert.deepEqual(resolveInvoiceLineAllocations([lines()[0]],undefined,100000,0),[{lineId:service,amount:100000}]);
+  assert.throws(()=>resolveInvoiceLineAllocations(lines(),[{lineId:service,amount:100000}],100000,1),/đối soát/);
+  assert.equal(resolveInvoiceLineAllocations([],undefined,100000,0),undefined);
+  assert.throws(()=>resolveInvoiceLineAllocations([],[{lineId:service,amount:1}],1,0),/Hóa đơn cũ/);
+  assert.throws(()=>resolveInvoiceLineAllocations([...lines(),{lineId:'',total:1,paid:0}],undefined,1,0),/thiếu mã dòng/);
+  assert.equal(resolveInvoiceLineAllocations(lines(),undefined,1,1,'REVERSE'),undefined);
+});
 
 test('partial payment funds only explicitly selected lines and preserves performer snapshots', () => {
   const original = lines();

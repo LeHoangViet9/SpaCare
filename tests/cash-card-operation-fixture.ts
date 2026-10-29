@@ -139,12 +139,19 @@ await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'serviceInvo
 let bundleBefore=clone(state);failModel='InvoiceLineCommission';await assert.rejects(call('serviceInvoice',bundleInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore);
 const bundleCard=await call('sellCashCard',{...sale,amount:800000});
 const bundlePay={...bundleInput,cashCard:{cardId:bundleCard.id,amount:400000,additionalAmount:100000,method:'CASH',receivedConfirmation:true}};
-const cardBundleKey=randomUUID(),paidBundle=await call('serviceInvoice',bundlePay,cardBundleKey);await call('serviceInvoice',bundlePay,cardBundleKey);
+bundleBefore=clone(state);await assert.rejects(call('serviceInvoice',bundlePay),/phân bổ/);assert.deepEqual(state,bundleBefore);
+const paidBundle=await call('serviceInvoice',bundleInput);
+const paymentLines=state.Invoice.find(row=>row._id===paidBundle.id).serviceItems;
+const bundleRedemption={...bundlePay.cashCard,invoiceId:paidBundle.id,lineAllocations:[{lineId:paymentLines[0].lineId,amount:350000},{lineId:paymentLines[1].lineId,amount:50000}],additionalLineAllocations:[{lineId:paymentLines[1].lineId,amount:100000}]};
+const cardBundleKey=randomUUID();await call('redeemCashCard',bundleRedemption,cardBundleKey);await call('redeemCashCard',bundleRedemption,cardBundleKey);
 assert.equal(state.Invoice.find(v=>v._id===paidBundle.id).paid,500000);
 assert.equal(state.CashCard.find(v=>v._id===bundleCard.id).balance,400000);
 assert.equal(state.CashCardUse.filter(v=>v.invoiceId===paidBundle.id).length,1);
 assert.equal(state.Payment.filter(v=>v.invoiceId===paidBundle.id).length,1);
-for(const model of ['Payment','Audit']) { bundleBefore=clone(state);failModel=model;await assert.rejects(call('serviceInvoice',bundlePay),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore); }
+const rollbackBundle=await call('serviceInvoice',bundleInput);
+const rollbackLines=state.Invoice.find(row=>row._id===rollbackBundle.id).serviceItems;
+const rollbackRedemption={...bundleRedemption,invoiceId:rollbackBundle.id,lineAllocations:[{lineId:rollbackLines[0].lineId,amount:350000},{lineId:rollbackLines[1].lineId,amount:50000}],additionalLineAllocations:[{lineId:rollbackLines[1].lineId,amount:100000}]};
+for(const model of ['Payment','Audit']) { bundleBefore=clone(state);failModel=model;await assert.rejects(call('redeemCashCard',rollbackRedemption),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore); }
 
 
 // Completing a public multi-service visit cannot silently bill only its first service.
@@ -339,7 +346,7 @@ assert.equal(state.CashCard.filter(row=>row.sourceInvoiceId===grouped.invoiceId)
 assert.equal(state.CashCard.find(row=>row.sourceInvoiceId===grouped.invoiceId).balance,300000);
 assert.equal(state.CashEntry.length,snapshot.CashEntry.length,'sale is not receipt confirmation');
 state.Day[0].status='OPEN';
-const payKey=randomUUID(),payInput={invoiceId:grouped.invoiceId,amount:1000000,method:'CASH',receivedConfirmation:true};
+const payKey=randomUUID(),payInput={invoiceId:grouped.invoiceId,amount:1000000,method:'CASH',receivedConfirmation:true,lineAllocations:[{lineId:groupBill.packageItems[0].lineId,amount:1000000}]};
 await call('payment',payInput,payKey);await call('payment',payInput,payKey);
 assert.equal(state.Invoice.find(row=>row._id===grouped.invoiceId).paid,1000000);
 assert.equal(state.SaleCommission.filter(row=>row.invoiceId===grouped.invoiceId).reduce((n,row)=>n+row.amount,0),50000,'5% of the combined amount received, once');

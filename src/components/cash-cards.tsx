@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import MoneyInput from './money-input';
+import InvoiceLineAllocationFields, { readLineAllocationFields } from './invoice-line-allocation-fields';
 import ValidatedForm from './validated-form';
 import { formatCurrency as money, parseMoney } from '@/lib/currency';
 type Row = Record<string, any>;
@@ -37,7 +38,7 @@ export default function CashCards({ customerId, invoice, onChanged, cardId, hide
   }
   function redeem(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if(!selected || !invoice)return;
-    try { void run('redeemCashCard',{cardId:selected._id,invoiceId:invoice._id,amount:parseMoney(used),additionalAmount:parseMoney(additional),method,receivedConfirmation:confirmed}); }catch(e){setError((e as Error).message);}
+    try { const fields=new FormData(e.currentTarget); void run('redeemCashCard',{cardId:selected._id,invoiceId:invoice._id,amount:parseMoney(used),additionalAmount:parseMoney(additional),method,receivedConfirmation:confirmed,lineAllocations:readLineAllocationFields(fields),additionalLineAllocations:readLineAllocationFields(fields,'additionalLineAllocations')}); }catch(e){setError((e as Error).message);}
   }
   return <section className="cash-card-panel">
     <h3>Thẻ tiền mặt</h3><p>Chỉ dùng cho dịch vụ lẻ · Không hết hạn · Không hoàn hoặc đổi tiền mặt.</p>
@@ -64,6 +65,8 @@ export default function CashCards({ customerId, invoice, onChanged, cardId, hide
         <label>Thu thêm (VNĐ)<MoneyInput required min={0} max={due} value={additional} onValueChange={value=>{setAdditional(value);setConfirmed(false);}}/></label>
         {additionalValue>0 && <><label>Phương thức thu thêm<select value={method} onChange={e=>{setMethod(e.target.value);setConfirmed(false);}}><option value="CASH">Tiền mặt</option><option value="BANK_TRANSFER">Chuyển khoản</option></select></label><label><input type="checkbox" required checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>Đã kiểm tra và thực nhận phần tiền thu thêm</label></>}
         <p>Chỉ trừ thẻ sau khi bấm xác nhận. Số dư và công nợ được kiểm tra lại khi lưu.</p>
+        <InvoiceLineAllocationFields key={invoice._id+':card:'+selected._id} invoice={invoice} title="Phân bổ phần trừ thẻ"/>
+        {additionalValue>0 && <InvoiceLineAllocationFields key={invoice._id+':extra:'+selected._id} invoice={invoice} name="additionalLineAllocations" title="Phân bổ phần thu thêm"/>}
         <button type="submit" disabled={busy || additionalValue>0&&!confirmed}>Xác nhận thanh toán</button><button type="button" onClick={()=>setSelected(null)}>Hủy</button>
       </fieldset></ValidatedForm>}
       <h4>Lịch sử sử dụng thẻ</h4>{data.uses.map((use:Row)=><p key={use._id}>{new Date(use.createdAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · Thẻ #{use.cardId.slice(-6)} · HĐ #{use.invoiceId.slice(-6)} · Trừ {money(use.amount)} · Còn {money(use.balanceAfter)}</p>)}

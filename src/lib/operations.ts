@@ -11,7 +11,7 @@ import { invoiceCardInput, cashCardInputs, cardPayment, ensureCardService } from
 import { nextSessionNumber, timedPackage, treatmentAvailable, useToken, packageSnapshot, packageStartOnPurchase } from './treatment-rules';
 import { leavesOverlap, summarizeLeave, attendanceSalary, dayUnits, leaveDays } from './leave-rules';
 import { packageCommissionDelta, sharedCommissionDeltas } from './sale-commission';
-import { applyInvoiceLinePayment } from './invoice-line-payments';
+import { applyInvoiceLinePayment, resolveInvoiceLineAllocations } from './invoice-line-payments';
 import { isValidSignature, type Signature } from './signature';
 import mongoose from 'mongoose';
 import { staffPhone } from './login-identity';
@@ -292,16 +292,22 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         await invoice.save({ session });
       };
       const updateLinePaid = async (invoice: any, allocations: { lineId: string; amount: number }[] | undefined, amount: number, direction: 'PAY' | 'REVERSE' = 'PAY') => {
-        if (!allocations) return;
         const groups = ['serviceItems', 'treatmentSessions', 'packageItems', 'productItems'] as const;
-        const flattened = groups.flatMap(group => (invoice[group] || []).map((line: any) => ({ ...line.toObject?.() || line, lineId: String(line.lineId || ''), paid: line.paid || 0 })));
-        ensure(flattened.length > 0 && flattened.every(line => /^[a-f\d]{24}$/i.test(line.lineId)), 'Hóa đơn cũ chưa có mã dòng để phân bổ thanh toán.', 409);
-        const updated = applyInvoiceLinePayment(flattened, allocations, amount, direction);
+        const flattened = groups.flatMap(group => (invoice[group] || []).filter((line:any)=>group !== 'treatmentSessions' || !invoice.serviceItems?.some((item:any)=>item.lineId && String(item.lineId)===String(line.lineId) && item.total===0 && line.total===0)).map((line: any) => ({ ...line.toObject?.() || line, lineId: String(line.lineId || ''), paid: line.paid || 0 })));
+        let resolved;
+        let updated;
+        try {
+          resolved = resolveInvoiceLineAllocations(flattened, allocations?.map(line=>({lineId:String(line.lineId),amount:line.amount})), amount, invoice.paid, direction);
+          if (!resolved) return;
+          ensure(flattened.reduce((sum,line)=>sum+line.total,0)===invoice.total,'Tổng tiền theo dòng không khớp hóa đơn; cần đối soát.',409);
+          updated = applyInvoiceLinePayment(flattened, resolved, amount, direction);
+        } catch (error) { ensure(false, (error as Error).message, 409); }
         const byId = new Map(updated.map(line => [line.lineId.toLowerCase(), line]));
         for (const group of groups) for (const line of invoice[group] || []) {
           const next = byId.get(String(line.lineId).toLowerCase());
           if (next) line.paid = next.paid;
         }
+        return [...resolved];
       };
       // Ordinary staff may collect/apply credit only for invoices attached to their visits.
       const assignedInvoice = async (invoice: any) => {
@@ -326,12 +332,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           card.balance = next.balance;
           await card.save({ session });
           invoice.cardPaid = money((invoice.cardPaid || 0) + d.amount, true);
-          await updateLinePaid(invoice, d.lineAllocations, d.amount);
-          await updatePaid(invoice, next.settled);
+          ensure(d.additionalAmount || !d.additionalLineAllocations, 'Không phân bổ tiền thu thêm khi số thu thêm bằng 0.');
+          d.lineAllocations = await updateLinePaid(invoice, d.lineAllocations, d.amount);
+          await updatePaid(invoice, d.amount);
           const use = await create(CashCardUse, { cardId: card._id, customerId: invoice.customerId, invoiceId: invoice._id, amount: d.amount, balanceBefore: before, balanceAfter: next.balance, actorId: actor.id, ...(d.lineAllocations ? {lineAllocations:d.lineAllocations} : {}) });
           if (d.additionalAmount) {
+            const additionalLineAllocations = await updateLinePaid(invoice, d.additionalLineAllocations, d.additionalAmount);
+            await updatePaid(invoice, d.additionalAmount);
             const entry = await receipt({ customerId: invoice.customerId, amount: d.additionalAmount, method: d.method!, kind: 'PAYMENT', direction: 'IN', note: 'Thu thêm sau khi dùng thẻ tiền' });
-            await create(Payment, { invoiceId: invoice._id, amount: d.additionalAmount, receiptId: entry._id, receivedConfirmation: true });
+            await create(Payment, { invoiceId: invoice._id, amount: d.additionalAmount, receiptId: entry._id, receivedConfirmation: true, ...(additionalLineAllocations ? {lineAllocations:additionalLineAllocations} : {}) });
           }
           return use;
       };
@@ -1277,7 +1286,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               // Keep the original fixed rate when the service is unchanged.
               const previous=target.serviceItems?.find((old:any)=>String(old.serviceId)===item.serviceId);
               const rate=previous?.commission ?? (String(target.serviceId)===item.serviceId ? target.commission : undefined) ?? service.commission ?? 0;
-              items.push({serviceId:service._id,name:service.name,total:item.total,commission:rate,lineId:previous?.lineId || newLineId(),...(previous?.performerId || target.performedBy ? {performerId:previous?.performerId || target.performedBy} : {})});
+              const performerId = previous?.performerId || (!target.serviceItems?.some((line:any)=>line.lineId) ? target.performedBy : undefined);
+              items.push({serviceId:service._id,name:service.name,total:item.total,commission:performerId ? rate : 0,lineId:previous?.lineId || newLineId(),...(performerId ? {performerId} : {})});
             }
             ensure(money(items.reduce((n,item)=>n+item.total,0))===d.total,'Tổng giá từng dịch vụ không khớp hóa đơn.');
             const amount=money(items.reduce((n,item)=>n+item.commission,0),true);
@@ -1427,7 +1437,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           allocationResult(deposit.balance, invoice.total - invoice.paid, d.amount);
           deposit.balance -= d.amount;
           await deposit.save({ session });
-          await updateLinePaid(invoice, d.lineAllocations, d.amount);
+          d.lineAllocations = await updateLinePaid(invoice, d.lineAllocations, d.amount);
           await updatePaid(invoice, d.amount);
           // No CashEntry here: allocation is not new money received.
           target = await create(Allocation, { ...d, approvedBy: actor.id });
@@ -1466,7 +1476,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             kind: 'PAYMENT',
             direction: 'IN',
           });
-          await updateLinePaid(invoice, d.lineAllocations, d.amount);
+          d.lineAllocations = await updateLinePaid(invoice, d.lineAllocations, d.amount);
           await updatePaid(invoice, d.amount);
           target = await create(Payment, {
             invoiceId: d.invoiceId,

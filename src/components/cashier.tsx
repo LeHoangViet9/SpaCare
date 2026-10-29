@@ -35,7 +35,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  const packageAmount=packageItems.reduce((n,item)=>n+amountOf(item.total),0);
  const amount=serviceAmount+productAmount+packageAmount;
  const cardContext=JSON.stringify([customer?._id,serviceItems.map(item=>[item._id,item.total])]);
- const cardEligible=serviceItems.length>0 && !sessionItems.length && !productItems.length;
+ const cardEligible=serviceItems.length===1 && !sessionItems.length && !productItems.length;
  const previewCard=useCallback((value:number)=>setCardPreview({context:cardContext,amount:value}),[cardContext]);
  const appliedCard=cardEligible && cardPreview.context===cardContext ? cardPreview.amount:0;
  const basketCount=serviceItems.length+sessionItems.length+productItems.length+packageItems.length;
@@ -123,6 +123,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    {basketCount>0 && <label>Hạn thanh toán{packageItems.length?'':' (nếu có)'}<input type="date" required={packageItems.length>0} min={packageItems.length?data.today:undefined} value={dueDate} onChange={e=>setDueDate(e.target.value)}/></label>}
    {sessionItems.length>0 && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
    {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard}/></section>}
+   {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ và phân bổ riêng tiền thẻ, tiền thu thêm cho từng dịch vụ.</p>}
    </fieldset>
    <div className="cashier-total"><span>Tổng giỏ</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}

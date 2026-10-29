@@ -1,5 +1,7 @@
 # SpaCare — Business Rules
 
+Kiểm toán 29/10/2026 — áp dụng BR-PERFORMER-001 cho sửa hóa đơn: hóa đơn có mã dòng không tự lấy người thực hiện cấp hóa đơn cho dòng chưa chọn, kể cả khi thêm dịch vụ. Giữ guard 409 nếu đã có ledger hoa hồng theo dòng; chưa triển khai luồng điều chỉnh performer riêng. Không chốt chính sách mới.
+
 Cập nhật: 21/10/2026.
 
 - CONFIRMED: có xác nhận nghiệp vụ hoặc yêu cầu rõ từ người dùng; ghi nguồn tại từng rule.
@@ -729,5 +731,9 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 Trạng thái: CONFIRMED theo thiết kế đã audit. Mỗi dòng dịch vụ hoặc lượt dùng liệu trình có thể lưu `performerId`; hệ thống không tự gán người tạo. Hoa hồng dịch vụ được ghi theo performer của từng dòng. Gói mua mới giữ hoa hồng 5% theo nhân viên tư vấn; lượt dùng gói 0đ không tự phát sinh hoa hồng khi chưa có cấu hình.
 
 Thanh toán một phần phải mang phân bổ tường minh theo mã dòng và tổng phân bổ phải bằng số tiền thực thu. Cọc chỉ giảm số dư cọc, không tạo CashEntry mới; thẻ tiền chỉ áp dụng cho dịch vụ lẻ theo các guard hiện hành. Đảo thanh toán/cọc phải đảo đúng ledger gốc trong cùng transaction và qua idempotency.
+
+Khắc phục 29/10/2026: nếu nhiều dòng còn nợ, thu một phần phải chỉ định từng dòng. Tiền trừ thẻ và tiền thu thêm có phân bổ độc lập, cùng transaction; đảo tiền thu thêm giữ nguyên tiền thẻ. Giao diện thu tiền/cọc và chi tiết thẻ gửi phân bổ này. Giỏ nhiều dịch vụ lưu hóa đơn trước rồi dùng thẻ tại chi tiết, để chọn mã dòng ổn định.
+
+PROPOSED kỹ thuật, không phải chính sách spa mới: khi chỉ một dòng còn nợ hoặc tất toán toàn bộ, backend có duy nhất một cách phân bổ và lưu tường minh vào ledger. Hóa đơn cũ hoàn toàn thiếu mã dòng giữ luồng tổng cũ. Hóa đơn có mã dòng nhưng số dư không khớp hoặc thiếu mã một phần bị chặn thu thêm để đối soát; không tự backfill hay chia tiền lịch sử. Đảo chứng từ cũ thiếu phân bổ giữ cách ghi tổng cũ.
 
 `performerId` đã dùng cho dòng có hoa hồng không được sửa khi Commission đã gắn payroll. OWNER chỉ được sửa trước khi chốt lương, với expected version, audit và đối soát lại ledger.
