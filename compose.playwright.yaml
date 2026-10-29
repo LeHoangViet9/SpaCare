@@ -1,0 +1,88 @@
+name: spacare-per-line-ui
+
+services:
+  mongo-ui:
+    image: mongo:8.0.16
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    networks: [ui_isolated]
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mongo-ui-init:
+    image: mongo:8.0.16
+    depends_on:
+      mongo-ui:
+        condition: service_healthy
+    networks: [ui_isolated]
+    entrypoint: ["mongosh", "--host", "mongo-ui:27017", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo-ui:27017'}]}) }"]
+
+  ui-fixture:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    depends_on:
+      mongo-ui-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://mongo-ui:27017/spacare_ui_test?replicaSet=rs0&directConnection=true
+    command: ["node", "scripts/test-per-line-performers-ui.mjs"]
+    networks: [ui_isolated]
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3219/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  egress-check:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    depends_on:
+      ui-fixture:
+        condition: service_healthy
+    environment:
+      SPACARE_UI_BASE_URL: http://ui-fixture:3219
+    command: ["node", "scripts/assert-playwright-egress.mjs"]
+    networks: [ui_isolated]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  ui-tests:
+    container_name: spacare-per-line-ui-tests
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    depends_on:
+      egress-check:
+        condition: service_completed_successfully
+    environment:
+      CI: "1"
+      SPACARE_UI_BASE_URL: http://ui-fixture:3219
+    command: ["sh", "-lc", "node scripts/assert-playwright-egress.mjs && node scripts/run-playwright-ui.mjs"]
+    networks: [ui_isolated]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ui_artifacts:/artifacts
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+networks:
+  ui_isolated:
+    internal: true
+
+volumes:
+  ui_artifacts:
