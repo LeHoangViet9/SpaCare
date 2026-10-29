@@ -5,11 +5,13 @@ import { seedOwnerConfig } from '../src/lib/seed-owner';
 import { openingOwner, checkOpeningTarget, openingKey, digest } from '../src/lib/opening-balances';
 import { ensureGroupedPackageIndex } from '../src/lib/package-invoice-indexes';
 import { DomainError, ensure } from '../src/lib/rules';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 
 const timeout=setTimeout(()=>{console.error('Kết nối quá thời gian. Chưa xác nhận được kết quả; chạy --check trước khi thử ghi lại.');process.exit(1);},30000);
 const source={name:'Hương Lan KL',phone:'0366575893',startsOn:'2025-06-17',expiresOn:'2028-06-17',services:['Triệt lông Nách','Triệt lông 1/2 chân','Triệt lông Bikini']};
 const batch='supplement-huong-lan-kl-20261026',key='opening-'+batch,fingerprint=digest(source);
 const mode=process.argv[2];
+assertWritesAllowed();
 async function inspect(owner:any,session:mongoose.ClientSession|null=null){
  const scope={spaId:owner.spaId};
  const customers=await Customer.find({...scope,phone:source.phone}).session(session);

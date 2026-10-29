@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Actor } from './auth';
 import { Appointment, Audit, Control, Customer, Idempotency, Service, User, Notification } from './models';
 import { ensure, withinArrivalHours } from './rules';
+import { assertWritesAllowed } from './write-freeze';
 
 export const publicBookingInput = z.object({
   serviceId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
@@ -17,6 +18,7 @@ export const publicBookingInput = z.object({
 }).refine(input => !!input.serviceId !== !!input.serviceIds, 'Chọn từ 1 đến 30 dịch vụ.');
 
 export async function reservePublicBooking(raw: unknown, actor: Actor | null, key: string) {
+  assertWritesAllowed();
   ensure(actor?.role !== 'CUSTOMER', CUSTOMER_ACCESS_NOTICE, 403);
   const input = publicBookingInput.parse(raw);
   ensure(z.string().uuid().safeParse(key).success, 'Mã yêu cầu đặt lịch không hợp lệ.');

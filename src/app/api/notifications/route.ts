@@ -6,6 +6,7 @@ import { failure } from '@/lib/http';
 import { pushInput } from '@/lib/push-validation';
 import { dispatchNotifications, pushConfig } from '@/lib/notifications';
 import { after } from 'next/server';
+import { assertWritesAllowed } from '@/lib/write-freeze';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -17,6 +18,7 @@ async function recipient() {
 }
 export async function GET() {
   try {
+    assertWritesAllowed();
     const { scope, role, models } = await recipient();
     // A visible owner workspace must not depend on the scheduler firing on time.
     // Queue before reading so this response already contains the reminder.
@@ -40,6 +42,7 @@ export async function GET() {
 }
 export async function POST(request: Request) {
   try {
+    assertWritesAllowed();
     checkOrigin(request);
     const { scope, role, models } = await recipient();
     const body = await request.json();

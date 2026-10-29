@@ -6,8 +6,10 @@ import { Service, Idempotency } from '../src/lib/models';
 import { seedOwnerConfig } from '../src/lib/seed-owner';
 import { DomainError, ensure } from '../src/lib/rules';
 import { parseOpening, openingSummary, checkOpeningTarget, openingOwner, checkOpeningIndexes, inspectOpening, writeOpening, openingKey } from '../src/lib/opening-balances';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 
 async function main(){
+  assertWritesAllowed();
   const args=process.argv.slice(2);
   ensure(args.length<=1 && args.every(a=>['--check','--write'].includes(a)), 'Use --check or --write.');
   const data=parseOpening(JSON.parse(fs.readFileSync('imports/hair-removal.opening.json','utf8')));

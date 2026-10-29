@@ -5,10 +5,12 @@ import { actor, checkOrigin } from '@/lib/auth';
 import { ensure } from '@/lib/rules';
 import { failure } from '@/lib/http';
 import { MAX_PRODUCT_IMAGE_BYTES, productImageType } from '@/lib/product-image';
+import { assertWritesAllowed } from '@/lib/write-freeze';
 
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
+    assertWritesAllowed();
     checkOrigin(request);
     const user = await actor();
     ensure(user.role === 'OWNER', 'Chỉ chủ spa được tải ảnh sản phẩm.', 403);

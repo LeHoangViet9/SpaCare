@@ -6,12 +6,14 @@ import { failure } from '@/lib/http';
 import { after } from 'next/server';
 import { dispatchNotifications } from '@/lib/notifications';
 import { Appointment } from '@/lib/models';
+import { assertWritesAllowed } from '@/lib/write-freeze';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
+    assertWritesAllowed();
     checkOrigin(request);
     const body = await request.json();
     await connect();

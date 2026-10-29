@@ -7,6 +7,7 @@ import { LoginAttempt, Session, User } from '@/lib/models';
 import { checkOrigin, hash, hashPassword, verifyPassword } from '@/lib/auth';
 import { ensure } from '@/lib/rules';
 import { failure } from '@/lib/http';
+import { assertWritesAllowed } from '@/lib/write-freeze';
 const dummyHash = hashPassword('dummy-password-for-timing-check');
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
   const started = Date.now();
   let stage = 'loginValidation';
   try {
+    assertWritesAllowed();
     checkOrigin(request);
     const { identity, password } = loginInput.parse(await request.json());
     stage = 'loginConnect';

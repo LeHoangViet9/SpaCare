@@ -4,6 +4,7 @@ import { connect } from '../src/lib/db';
 import { hashPassword } from '../src/lib/password';
 import { dayBounds, ensure, invoiceState, spaDay } from '../src/lib/rules';
 import { allModels, Spa, User, Control, Customer, Service, Appointment, Invoice, Deposit, Allocation, Payment, CashEntry, Treatment, TreatmentUse, Day, Audit, Idempotency } from '../src/lib/models';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 
 // Deliberately isolated: never seed a production DB or use the application's .env.local.
 const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/spacare_demo?replicaSet=rs0&directConnection=true';
@@ -19,6 +20,7 @@ const demoPassword = 'SpaCareDemo@2026';
 const ids = (name: string, count: number) => Array.from({ length: count }, (_, i) => oid(`${name}:${i}`));
 
 async function main() {
+  assertWritesAllowed();
   const checkOnly = process.argv.includes('--check');
   let checked = 0;
   if (!checkOnly) {

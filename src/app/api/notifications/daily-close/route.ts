@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { connect } from '@/lib/db';
 import { queueClosingReminders } from '@/lib/notification-events';
 import { dispatchNotifications } from '@/lib/notifications';
+import { assertWritesAllowed } from '@/lib/write-freeze';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,7 @@ export async function GET(request: Request) {
   if (!secret || Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)))
     return Response.json({ error: 'Không có quyền.' }, { status: 401 });
   try {
+    assertWritesAllowed();
     await connect();
     await queueClosingReminders();
     await dispatchNotifications();

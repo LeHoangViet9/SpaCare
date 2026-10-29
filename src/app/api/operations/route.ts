@@ -6,12 +6,14 @@ import { actor, checkOrigin } from '@/lib/auth';
 import { operate } from '@/lib/operations';
 import { failure } from '@/lib/http';
 import { ensure } from '@/lib/rules';
+import { assertWritesAllowed } from '@/lib/write-freeze';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 export async function POST(request: Request) {
   const started = Date.now();
   const context: LogContext = { requestId: requestId() };
   try {
+    assertWritesAllowed();
     checkOrigin(request);
     const user = await actor();
     ensure(['OWNER', 'STAFF'].includes(user.role), 'Bạn không có quyền thực hiện thao tác quản trị.', 403);

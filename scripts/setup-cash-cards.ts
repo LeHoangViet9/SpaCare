@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { CashCard, CashCardUse } from '../src/lib/models';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 try {
+  assertWritesAllowed();
   const uri = new URL(process.env.MONGODB_URI || '');
   if (process.env.VERCEL_ENV === 'production' || !['/spacare_dev', '/spacare_test'].includes(uri.pathname))
     throw new Error('BLOCKED_TARGET');

@@ -2,6 +2,7 @@ import { sendPush } from './web-push';
 import { ActivityNotification, Appointment, Day, Notification, PushDevice, User } from './models';
 import { spaDay } from './rules';
 import { allowedPushEndpoint } from './push-validation';
+import { assertWritesAllowed } from './write-freeze';
 
 export function pushConfig() {
   const publicKey = process.env.VAPID_PUBLIC_KEY;
@@ -18,6 +19,7 @@ export function notificationPayload(row: { _id: unknown; title?: string; body?: 
 
 // Leased outbox: commit business writes before network I/O; retain transient failures.
 export async function dispatchNotifications(scope?: { spaId: string; userId?: string }) {
+  assertWritesAllowed();
   const config = pushConfig();
   if (!config) return;
   const deadline = Date.now() + 20_000;

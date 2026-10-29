@@ -5,7 +5,9 @@ import { connect, DatabaseUnavailableError } from '../src/lib/db';
 import { SeedOwnerError, seedOwnerConfig } from '../src/lib/seed-owner';
 import { DomainError } from '../src/lib/rules';
 import { checkOpeningTarget, parseOpening, openingSummary, openingMapping, openingOwner, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 async function main(){
+  assertWritesAllowed();
   const options=new Map<string,string>(),flags=new Set<string>();const args=process.argv.slice(2);
   for(let i=0;i<args.length;i++){const a=args[i];if(['--check','--write','--app-ready'].includes(a)){if(flags.has(a))throw new Error('DUPLICATE_ARGUMENT');flags.add(a);}else if(['--file','--database','--mapping','--approve','--batch','--report'].includes(a)&&args[i+1]&&!args[i+1].startsWith('--')){if(options.has(a))throw new Error('DUPLICATE_ARGUMENT');options.set(a,args[++i]);}else throw new Error('INVALID_ARGUMENT');}
   const file=options.get('--file');if(!file)throw new Error('FILE_REQUIRED');

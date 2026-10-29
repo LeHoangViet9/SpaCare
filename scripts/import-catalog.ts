@@ -10,8 +10,10 @@ import { seedOwnerConfig, SeedOwnerError } from '../src/lib/seed-owner';
 import { planCatalog, type SheetRow } from '../src/lib/catalog-import-plan';
 import { importCatalog } from '../src/lib/catalog-import';
 import { DomainError } from '../src/lib/rules';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 
 async function main() {
+  assertWritesAllowed();
   const args = process.argv.slice(2);
   const options = new Map<string, string>();
   const flags = new Set<string>();

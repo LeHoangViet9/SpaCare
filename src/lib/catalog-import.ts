@@ -4,8 +4,10 @@ import { Audit, Control, Idempotency, PackageTemplate, Service, User } from './m
 import { ensure } from './rules';
 import { verifyPassword } from './password';
 import { catalogEntryInput, catalogFingerprint, catalogNameKey, catalogRowKey, type CatalogEntry } from './catalog-import-plan';
+import { assertWritesAllowed } from './write-freeze';
 
 export async function importCatalog(ownerId: string, password: string, raw: CatalogEntry[]) {
+  assertWritesAllowed();
   const entries = z.array(catalogEntryInput).min(1).max(1000).parse(raw);
   ensure(new Set(entries.map(catalogRowKey)).size === entries.length, 'File có dịch vụ trùng.');
   // The caller supplies an account ID, never a spa ID; scope and role come from the database.

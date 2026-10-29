@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { ActivityNotification, Notification, PushDevice } from '../src/lib/models';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 
 try {
+  assertWritesAllowed();
   await connect();
   for (const model of [Notification, ActivityNotification, PushDevice]) {
     await model.createCollection();

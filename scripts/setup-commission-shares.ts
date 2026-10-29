@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { SharedSaleCommission } from '../src/lib/models';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 try {
+  assertWritesAllowed();
   await connect();
   await SharedSaleCommission.createCollection();
   await SharedSaleCommission.createIndexes();

@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { connect } from '../src/lib/db';
 import { migrateUserIndexes } from '../src/lib/user-indexes';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 try {
+  assertWritesAllowed();
   await connect(); await migrateUserIndexes();
   console.log('Đã cập nhật indexes tài khoản cho số điện thoại; giữ nguyên toàn bộ tài khoản cũ.');
 } catch {

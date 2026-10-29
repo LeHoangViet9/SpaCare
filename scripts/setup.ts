@@ -5,8 +5,10 @@ import { allModels, Spa, User, Control, Migration, StaffLeave } from '../src/lib
 import { hashPassword } from '../src/lib/password';
 import { migrateUserIndexes } from '../src/lib/user-indexes';
 import { seedOwnerConfig, checkSeedOwnerMatches, SeedOwnerError } from '../src/lib/seed-owner';
+import { assertWritesAllowed } from '../src/lib/write-freeze.ts';
 let stage = 'validate-seed';
 async function setup() {
+  assertWritesAllowed();
   const owner = seedOwnerConfig(process.env);
   stage = 'connect';
   await connect();
