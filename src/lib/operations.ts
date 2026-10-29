@@ -126,7 +126,7 @@ const schemas = {
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).max(30).optional(),
-    customerId: objectId, staffId: objectId, dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
+    customerId: objectId, staffId: objectId.optional(), dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
     items: z.array(z.object({ serviceId: objectId, total: moneySchema.optional(), performerId: objectId.optional() })).min(1).max(30)
       .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
   }),
@@ -348,8 +348,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const lineSourceType = sourceType === 'TREATMENT_USE' ? 'TREATMENT_USE_LINE' : sourceType === 'APPOINTMENT' ? 'APPOINTMENT_LINE' : 'INVOICE_LINE';
         const commission = await create(ledger, { staffId, staffName: staff.name, serviceId: line?.serviceId || service._id, serviceName: line?.name || service.name,
           customerId: invoice.customerId, invoiceId: invoice._id, ...(lineLedger ? {lineId:line.lineId,category:'SERVICE'} : {}), sourceType: lineLedger ? lineSourceType : sourceType, sourceId, amount, earnedAt });
-        invoice.performedBy = staffId; invoice.performedAt = earnedAt;
-        await invoice.save({ session });
+        if (!lineLedger) {
+          invoice.performedBy = staffId; invoice.performedAt = earnedAt;
+          await invoice.save({ session });
+        }
         return commission;
       };
       const syncSaleCommission = async (invoice:any, sourceType:string, sourceId:string) => {
@@ -415,14 +417,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         ensure(candidates.every(value=>JSON.stringify(value)===JSON.stringify(candidates[0])), 'Một hóa đơn chỉ dùng một chữ ký chung.');
         return candidates[0];
       };
-      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId: string | undefined = checkoutAppointmentId, staffId = d.staffId || actor.id, sharedInvoice?: any) => {
+      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId: string | undefined = checkoutAppointmentId, staffId: string | null | undefined = d.staffId || actor.id, sharedInvoice?: any) => {
+        const resolvedStaffId = staffId || undefined;
         ensure(!d.staffId || d.staffId === actor.id || actor.role === 'OWNER' || actor.cashier, 'Chỉ chủ spa hoặc thu ngân được chọn nhân viên thực hiện khác.', 403);
         const treatment = await get(Treatment, d.treatmentId);
         ensure(treatmentAvailable(treatment), 'Gói chưa đến ngày dùng, đã hết hạn, bảo lưu hoặc hết buổi.');
         ensure(useToken(treatment) === d.remainingBefore, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
         const customer = await get(Customer, String(treatment.customerId));
-        const staff = await get(User, staffId);
-        ensure(staff.active && ['OWNER','STAFF'].includes(staff.role), 'Nhân viên thực hiện không hoạt động.');
+        const staff = resolvedStaffId ? await get(User, resolvedStaffId) : undefined;
+        ensure(!staff || staff.active && ['OWNER','STAFF'].includes(staff.role), 'Nhân viên thực hiện không hoạt động.');
         const performedAt = new Date();
         const signatureDigest = d.signature ? sha(JSON.stringify(d.signature)) : undefined;
         const confirmationUseId = sharedInvoice?.treatmentUseId;
@@ -430,35 +433,35 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const sessionNumber = nextSessionNumber(treatment);
         const snapshot = JSON.stringify({ treatmentId: d.treatmentId, ...(appointmentId ? { appointmentId } : {}),
           customerId: String(customer._id), customerName: customer.name, name: treatment.name,
-          staffId, staffName: staff.name, actorId: actor.id, sessionNumber, remainingBefore: useToken(treatment), packageType: treatment.packageType || 'SESSIONS', startsOn: treatment.startsOn, expiresOn: treatment.expiresOn,
+          ...(staff ? {staffId:resolvedStaffId, staffName: staff.name} : {}), actorId: actor.id, sessionNumber, remainingBefore: useToken(treatment), packageType: treatment.packageType || 'SESSIONS', startsOn: treatment.startsOn, expiresOn: treatment.expiresOn,
           performedAt: performedAt.toISOString(), method: confirmationMethod, signatureDigest, ...(confirmationUseId ? {confirmationUseId:String(confirmationUseId)} : {}),
           confirmationText: d.signature ? 'Khách ký chung xác nhận các dịch vụ đã thực hiện trên hóa đơn.' : 'Nhân viên ghi nhận đã thực hiện; không có chữ ký khách hàng.' });
         const recorded = await create(TreatmentUse, { treatmentId: d.treatmentId, ...(appointmentId && !sharedInvoice ? { appointmentId } : {}),
-          actorId: actor.id, staffId, customerId: customer._id, sessionNumber, method: confirmationMethod,
+          actorId: actor.id, ...(staff ? {staffId:resolvedStaffId} : {}), customerId: customer._id, sessionNumber, method: confirmationMethod,
           ...(confirmationUseId ? {confirmationUseId} : d.signature ? {signature:d.signature} : {}), signatureDigest, performedAt, snapshot, digest: sha(snapshot) });
         const purchase = await get(Invoice, String(treatment.invoiceId));
         const serviceId = treatment.serviceId || purchase.serviceId;
         const service = serviceId ? await get(Service, String(serviceId)) : null;
-        const line = { lineId: newLineId(), serviceId, name: treatment.name + ' · Buổi ' + sessionNumber, total: 0, commission: service?.commission || 0, performerId: staff._id };
+        const line = { lineId: newLineId(), serviceId, name: treatment.name + ' · Buổi ' + sessionNumber, total: 0, commission: staff ? service?.commission || 0 : 0, ...(staff ? {performerId:staff._id} : {}) };
         const sessionInvoice = sharedInvoice || await create(Invoice, { customerId: customer._id, ...(service ? { serviceId: service._id } : {}),
           ...(appointmentId ? { appointmentId } : {}), treatmentId: treatment._id, treatmentUseId: recorded._id,
           kind: 'SESSION', description: line.name, total: 0, paid: 0, status: 'PAID',
-          commission: line.commission, performedBy: staff._id, performedAt, serviceItems: service ? [line] : undefined,
+          commission: line.commission, ...(staff ? {performedBy:staff._id} : {}), performedAt, serviceItems: service ? [line] : undefined,
           ...(purchase.consultantId ? { consultantId: purchase.consultantId, consultantName: purchase.consultantName } : await consultant(customer)) });
-        const reference = {lineId:line.lineId,treatmentId:treatment._id,treatmentUseId:recorded._id,name:line.name,performerId:staff._id,total:0};
+        const reference = {lineId:line.lineId,treatmentId:treatment._id,treatmentUseId:recorded._id,name:line.name,...(staff ? {performerId:staff._id} : {}),total:0};
         if (sharedInvoice) {
           ensure(String(sharedInvoice.customerId) === String(customer._id), 'Các liệu trình phải thuộc cùng khách.');
           sessionInvoice.description += ' + ' + line.name;
           sessionInvoice.serviceItems.push(line);
           sessionInvoice.commission = money((sessionInvoice.commission || 0) + line.commission, true);
-          if (line.commission) await accrueCommission(sessionInvoice, String(staff._id), 'INVOICE', String(line.lineId), performedAt, line.commission, line);
+          if (staff && line.commission) await accrueCommission(sessionInvoice, String(staff._id), 'INVOICE', String(line.lineId), performedAt, line.commission, line);
         }
         sessionInvoice.treatmentSessions = [...(sessionInvoice.treatmentSessions || []),reference];
         await sessionInvoice.save({session});
         recorded.checkoutInvoiceId = sessionInvoice._id;
         await recorded.save({session});
         linkedInvoiceId = String(sessionInvoice._id);
-        if (!sharedInvoice && service && line.commission) await accrueCommission(sessionInvoice, staffId, 'TREATMENT_USE', String(line.lineId), performedAt, line.commission, line);
+        if (!sharedInvoice && service && staff && line.commission) await accrueCommission(sessionInvoice, String(staff._id), 'TREATMENT_USE', String(line.lineId), performedAt, line.commission, line);
         if (timedPackage(treatment)) treatment.usedSessions = sessionNumber;
         else { if(treatment.openingBalance) treatment.usedSessions=sessionNumber; treatment.remaining -= 1; if (!treatment.remaining) treatment.status = 'COMPLETED'; }
         await treatment.save({ session });
@@ -1308,8 +1311,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'serviceInvoice': {
           const d = schemas.serviceInvoice.parse(data);
           await get(Customer, d.customerId);
-          const performer = await get(User, d.staffId);
-          ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Nhân viên thực hiện không hợp lệ hoặc đã ngừng hoạt động.');
+          const invoicePerformer = d.staffId ? await performerFor(d.staffId, undefined) : undefined;
           if (d.dueDate) dayBounds(d.dueDate);
           const serviceItems = [];
           // Sequential reads/writes inside this transaction preserve rollback and session semantics.
@@ -1318,18 +1320,17 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ensure(service.active, 'Dịch vụ đã ngừng hoạt động.');
             const total = invoiceCharge(service.price, item.total, false);
             ensure(total > 0, 'Giá dịch vụ lẻ phải lớn hơn 0.');
-            const performer = await performerFor(item.performerId, d.staffId);
-            serviceItems.push({ lineId: newLineId(), serviceId: service._id, name: service.name, total, commission: service.commission || 0, performerId: performer._id });
+            const performer = item.performerId ? await performerFor(item.performerId, undefined) : undefined;
+            serviceItems.push({ lineId: newLineId(), serviceId: service._id, name: service.name, total, commission: performer ? service.commission || 0 : 0, ...(performer ? {performerId:performer._id} : {}) });
           }
           const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0));
           const commission = money(serviceItems.reduce((sum, item) => sum + item.commission, 0), true);
           target = await create(Invoice, { customerId: d.customerId, kind: 'SERVICE', serviceItems,
             ...(serviceItems.length === 1 ? { serviceId: serviceItems[0].serviceId } : {}),
             description: serviceItems.map(item => item.name).join(' + '), total, paid: 0, commission,
-            ...(d.dueDate ? { dueDate: d.dueDate } : {}), performedBy: performer._id, performedAt: new Date() });
+            ...(d.dueDate ? { dueDate: d.dueDate } : {}), ...(invoicePerformer ? {performedBy:invoicePerformer._id} : {}), performedAt: new Date() });
           for (const item of serviceItems) {
-            const staff = await get(User, String(item.performerId));
-            await accrueCommission(target, String(item.performerId), 'INVOICE', String(item.lineId), target.performedAt, item.commission, item);
+            if (item.performerId && item.commission) await accrueCommission(target, String(item.performerId), 'INVOICE', String(item.lineId), target.performedAt, item.commission, item);
           }
           if(d.additionalProducts?.length){ensure(!d.cashCard,'Thẻ tiền chỉ dùng cho hóa đơn chỉ có dịch vụ lẻ.',409);await addProducts(target,d.additionalProducts);}
           if (d.cashCard) await redeemCard({ ...d.cashCard, invoiceId: String(target._id) });
@@ -1352,7 +1353,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               const purchase = await get(Invoice,String(plan.invoiceId));
               ensure(String(plan.customerId) === d.customerId && (index > 0 || String(plan.serviceId || purchase.serviceId) === d.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
               const performerId = 'performerId' in item ? item.performerId : undefined;
-              const recorded = await recordUse(schemas.use.parse({...item,signature:invoiceSignature,staffId:performerId || d.staffId}),undefined,performerId || d.staffId || actor.id,combined);
+              const recorded = await recordUse(schemas.use.parse({...item,signature:invoiceSignature,...(performerId ? {staffId:performerId} : {})}),undefined,performerId || null,combined);
               treatmentUseId ||= String(recorded._id);
               combined = await get(Invoice,linkedInvoiceId!);
             }
@@ -1381,7 +1382,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ...await consultant(customer, d.consultantId), kind: 'SERVICE', commission: line.commission,
             description: d.description || service.name,
             total: line.total, serviceItems: [line],
-            paid: 0,
+            paid: 0, ...(performer ? {performedBy:performer._id,performedAt:new Date()} : {}),
           });
           if (cashCard) await redeemCard({ ...cashCard, invoiceId: String(target._id) });
           if (performer && line.commission) await accrueCommission(target, String(performer._id), 'INVOICE', String(line.lineId), new Date(), line.commission, line);

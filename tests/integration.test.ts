@@ -191,7 +191,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const one=await buy(a.id),two=await buy(b.id);
       const otherCustomer=await call('customer',{name:'Khách gói khác',phone:'0900012345'});
       const foreign=await buy(b.id,otherCustomer.id);
-      const uses=(left=5,right=5)=>[{treatmentId:String(one._id),remainingBefore:left,signature:signed},{treatmentId:String(two._id),remainingBefore:right,signature:signed}];
+      const uses=(left=5,right=5)=>[{treatmentId:String(one._id),remainingBefore:left,signature:signed,performerId:String(staff._id)},{treatmentId:String(two._id),remainingBefore:right,signature:signed,performerId:String(staff._id)}];
       const payload={customerId:customer.id,serviceId:svcA.id,staffId:String(staff._id),treatments:uses()};
       await assert.rejects(call('invoice',{...payload,treatments:[uses()[0],uses()[0]]}),/trùng/);
       await assert.rejects(call('invoice',{...payload,treatments:[uses()[0],{...uses()[1],treatmentId:String(foreign._id)}]}),/khớp khách/);
@@ -234,6 +234,41 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await TreatmentUse.countDocuments({spaId,checkoutInvoiceId:finished.invoiceId}),2);
       assert.equal((await Invoice.findById(finished.invoiceId))!.total,400000);
       assert.equal(await TreatmentUse.countDocuments({spaId,checkoutInvoiceId:finished.invoiceId,signature:{$exists:true}}),0);
+    });
+    await t.test('per-line performers stay optional without invoice staff or creator fallback',async()=>{
+      const firstService=await call('service',{name:'Per-line optional A',price:110000,commission:11000});
+      const secondService=await call('service',{name:'Per-line optional B',price:220000,commission:22000});
+      const lineInvoice=await call('serviceInvoice',{customerId:customer.id,items:[
+        {serviceId:firstService.id,performerId:String(staff._id)},
+        {serviceId:secondService.id},
+      ]});
+      const stored=await Invoice.findById(lineInvoice.id);
+      assert.equal(stored!.performedBy,undefined);
+      assert.equal(String(stored!.serviceItems[0].performerId),String(staff._id));
+      assert.equal(stored!.serviceItems[1].performerId,undefined);
+      assert.equal(stored!.serviceItems[0].commission,11000);
+      assert.equal(stored!.serviceItems[1].commission,0);
+      const lineRows=await InvoiceLineCommission.find({spaId,invoiceId:stored!._id});
+      assert.equal(lineRows.length,1);
+      assert.equal(String(lineRows[0].staffId),String(staff._id));
+
+      const legacyMetadata=await call('serviceInvoice',{customerId:customer.id,staffId:actor.id,items:[{serviceId:firstService.id}]});
+      const legacyStored=await Invoice.findById(legacyMetadata.id);
+      assert.equal(String(legacyStored!.performedBy),actor.id);
+      assert.equal(legacyStored!.serviceItems[0].performerId,undefined);
+      assert.equal(await InvoiceLineCommission.countDocuments({spaId,invoiceId:legacyStored!._id}),0);
+
+      const template=await call('packageTemplate',{serviceId:secondService.id,name:'Per-line optional package',price:600000,totalSessions:3});
+      const purchase=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay()});
+      const treatment=await Treatment.findOne({spaId,invoiceId:purchase.invoiceId});
+      const use=await call('invoice',{customerId:customer.id,serviceId:secondService.id,staffId:actor.id,treatments:[{treatmentId:String(treatment!._id),remainingBefore:3}]});
+      const useInvoice=await Invoice.findById(use.invoiceId);
+      const useRecord=await TreatmentUse.findOne({spaId,checkoutInvoiceId:useInvoice!._id});
+      assert.equal(useRecord!.staffId,undefined);
+      assert.equal(useInvoice!.performedBy,undefined);
+      assert.equal(useInvoice!.serviceItems[0].performerId,undefined);
+      assert.equal(useInvoice!.treatmentSessions[0].performerId,undefined);
+      assert.equal(await InvoiceLineCommission.countDocuments({spaId,invoiceId:useInvoice!._id}),0);
     });
     await t.test('checkout saves multiple products and packages atomically with one idempotency key',async()=>{
       const p1=await Product.create({spaId,name:'Cart product A',sku:randomUUID(),unit:'ml',price:80000,stock:5});
@@ -503,7 +538,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     });
     await t.test('scheduled checkout is atomic, scoped and never duplicates invoices or treatment uses',async()=>{
       const createVisit=async(extra:any={})=>Appointment.create({spaId,customerId:customer.id,serviceId:service.id,serviceIds:[service.id],staffId:owner._id,startAt:new Date(Date.now()-3600_000),endAt:new Date(Date.now()-1800_000),status:'CONFIRMED',...extra});
-      const base={action:'serviceInvoice',data:{staffId:actor.id,items:[{serviceId:service.id,total:350000}]}};
+      const base={action:'serviceInvoice',data:{staffId:actor.id,items:[{serviceId:service.id,total:350000,performerId:actor.id}]}};
       const visit=await createVisit();
       const data={customerId:customer.id,appointmentId:String(visit._id),actions:[base]};
       await assert.rejects(operate(employee,'checkout',data,randomUUID()),/thu ngân/);
@@ -536,7 +571,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const sale=await call('sellPackage',{customerId:customer.id,templateId:template.id,dueDate:spaDay(),gifts:[],promotion:''});
       const plan=await Treatment.findOne({spaId,invoiceId:sale.invoiceId});
       const packageVisit=await createVisit({serviceIds:[],treatmentId:plan!._id,treatmentIds:[plan!._id]});
-      const packageData={customerId:customer.id,appointmentId:String(packageVisit._id),actions:[{action:'invoice',data:{serviceId:service.id,staffId:actor.id,treatments:[{treatmentId:String(plan!._id),remainingBefore:5}]}}]};
+      const packageData={customerId:customer.id,appointmentId:String(packageVisit._id),actions:[{action:'invoice',data:{serviceId:service.id,staffId:actor.id,treatments:[{treatmentId:String(plan!._id),remainingBefore:5,performerId:actor.id}]}}]};
       const usesBefore=await TreatmentUse.countDocuments({spaId});
       await assert.rejects(call('checkout',{...packageData,actions:[...packageData.actions,{action:'sellPackage',data:{templateId:String(new mongoose.Types.ObjectId()),dueDate:spaDay(),gifts:[],promotion:''}}]}));
       assert.equal((await Treatment.findById(plan!._id))!.remaining,5);
@@ -549,7 +584,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await Invoice.findById(result.invoiceId))!.total,0);
       assert.equal((await call('completeTreatmentAppointment',{id:String(packageVisit._id)})).invoiceId,result.invoiceId);
       assert.equal((await Treatment.findById(plan!._id))!.remaining,4);
-      const loose=await call('serviceInvoice',{customerId:customer.id,staffId:actor.id,items:[{serviceId:service.id,total:350000}]});
+      const loose=await call('serviceInvoice',{customerId:customer.id,staffId:actor.id,items:[{serviceId:service.id,total:350000,performerId:actor.id}]});
       const toLink=await createVisit();const commissionCount=await Commission.countDocuments({spaId,invoiceId:loose.invoiceId});
       await assert.rejects(operate(employee,'linkAppointmentInvoice',{appointmentId:String(toLink._id),invoiceId:loose.invoiceId,reason:'Đối chiếu'},randomUUID()),/Chỉ chủ spa/);
       const linkKey=randomUUID();const link={appointmentId:String(toLink._id),invoiceId:loose.invoiceId,reason:'Đối chiếu đúng lần làm'};

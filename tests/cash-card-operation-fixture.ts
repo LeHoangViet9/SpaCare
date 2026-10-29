@@ -114,7 +114,7 @@ await assert.rejects(call('invoice',{...completedInput,staffId:'7'.repeat(24)}))
 // Multi-service checkout is one invoice, one summed performer commission, one card redemption.
 const secondServiceId='6'.repeat(24);
 state.Service.push({_id:secondServiceId,spaId,name:'Second service',price:150000,active:true,commission:10000});
-const bundleInput={customerId,staffId:performerId,items:[{serviceId,total:350000},{serviceId:secondServiceId}]};
+const bundleInput={customerId,staffId:performerId,items:[{serviceId,total:350000,performerId},{serviceId:secondServiceId,performerId}]};
 const bundleKey=randomUUID(),bundle=await call('serviceInvoice',bundleInput,bundleKey);
 await call('serviceInvoice',bundleInput,bundleKey);
 const bundleBill=state.Invoice.find(v=>v._id===bundle.id);
@@ -181,7 +181,7 @@ const purchaseA=invoice(0,'PACKAGE'),purchaseB=invoice(0,'PACKAGE');
 purchaseB.serviceId=secondServiceId;
 state.Treatment.push({_id:planA,spaId,customerId,invoiceId:purchaseA._id,serviceId,name:'Gội dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'},
  {_id:planB,spaId,customerId,invoiceId:purchaseB._id,serviceId:secondServiceId,name:'Triệt dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'});
-const selections=(a=5,b=5)=>[{treatmentId:planA,signature:signed,remainingBefore:a},{treatmentId:planB,signature:signed,remainingBefore:b}];
+const selections=(a=5,b=5)=>[{treatmentId:planA,signature:signed,remainingBefore:a,performerId},{treatmentId:planB,signature:signed,remainingBefore:b,performerId}];
 const multiple={customerId,serviceId,staffId:performerId,treatments:selections()};
 for(const bad of [[selections()[0],selections()[0]], selections(5,4), [selections()[0],{...selections()[1],signature:{version:1,strokes:[[[0.2,0.5],[0.4,0.3],[0.9,0.8]]]}}], [selections()[0],{...selections()[1],signature:{version:1,strokes:[]}}]]) {
  const before=clone(state);await assert.rejects(call('invoice',{...multiple,treatments:bad}));assert.deepEqual(state,before);
@@ -304,7 +304,7 @@ snapshot=clone(state);await assert.rejects(call('checkout',{...cart,actions:[car
 await assert.rejects(call('checkout',{...cart,actions:[cart.actions[0],{...cart.actions[1],data:{...cart.actions[1].data,customerId:'9'.repeat(24)}}]}),/cùng khách/);
 assert.deepEqual(state,snapshot);
 await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'checkout',cart,randomUUID()),error=>(error as any).status===403);
-const mixedServiceProduct=await call('serviceInvoice',{customerId,staffId:performerId,items:[{serviceId,total:100000}],additionalProducts:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
+const mixedServiceProduct=await call('serviceInvoice',{customerId,staffId:performerId,items:[{serviceId,total:100000,performerId}],additionalProducts:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
 assert.equal(state.Invoice.find(row=>row._id===mixedServiceProduct.id).total,150000);
 assert.equal(state.InvoiceLineCommission.find(row=>row.invoiceId===mixedServiceProduct.id).amount,999,'product has no service commission');
 
