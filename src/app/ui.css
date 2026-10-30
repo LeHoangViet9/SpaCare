@@ -129,7 +129,8 @@ form {
 .shared-brand svg { flex-shrink: 0; }
 
 [hidden] { display: none !important; }
-.shared-public-page { display: grid; gap: 28px; padding-top: 28px; padding-bottom: 40px; }
+.pub-page-wrapper { width: 100%; max-width: 100%; min-width: 0; }
+.shared-public-page { display: grid; gap: 28px; padding-top: 28px; padding-bottom: 40px; min-width: 0; max-width: 100%; }
 .ui-card { border-radius: var(--radius-ui); }
 .shared-home-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; padding: 28px; }
 .shared-home-intro h1 { font-size: 30px; line-height: 1.35; }
@@ -140,20 +141,24 @@ form {
 .shared-section-heading a { color: var(--green); }
 .shared-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
 .shared-section-heading h2 { margin: 0; font-size: 24px; }
-.shared-service-card { display: flex; flex-direction: column; gap: 16px; padding: 22px; min-width: 0; }
+.shared-service-card { display: flex; flex-direction: column; gap: 16px; padding: 22px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .shared-service-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--muted); }
 .shared-service-card h2 { font-size: 20px; line-height: 1.4; margin: 0; overflow-wrap: anywhere; }
 .shared-service-price { font-size: 23px; color: var(--green); }
-.shared-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+.shared-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; min-width: 0; }
 .shared-about, .shared-catalog-filters { padding: 24px; }
 .shared-search-form { gap: 8px; }
 .shared-search-form > div { display: flex; gap: 10px; }
 .shared-search-form input { flex: 1; min-width: 0; }
 .shared-search-form button { flex-shrink: 0; }
-.shared-category-links { display: flex; gap: 10px; overflow-x: auto; padding-top: 16px; }
+.shared-category-links { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-inline: contain; padding-top: 16px; max-width: 100%; min-width: 0; }
+.shared-category-links > * { flex: 0 0 auto; white-space: nowrap; }
+.shared-search-form, .shared-search-form > div { min-width: 0; max-width: 100%; }
+.shared-public-page .pub-service-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); min-width: 0; }
 @media (max-width: 700px) {
   .shared-brand { font-size: 24px; }
-  .shared-public-page { gap: 22px; padding-top: 20px; }
+  .shared-public-page { width: 100%; gap: 22px; padding-top: 20px; overflow-x: hidden; }
+  .shared-public-page .pub-service-grid { grid-template-columns: minmax(0, 1fr); }
   .shared-home-intro { grid-template-columns: minmax(0, 1fr); padding: 20px; gap: 18px; }
   .shared-home-intro h1 { font-size: 27px; }
   .shared-opening-hours { padding: 16px; }
