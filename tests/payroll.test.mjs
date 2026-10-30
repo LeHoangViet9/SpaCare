@@ -78,9 +78,19 @@ test('payroll approval needs expected amount and payout requires actual-payment 
   assert.deepEqual(payrollStaffScope({id,spaId,name:'Owner',role:'OWNER',cashier:false},id),{spaId,staffId:id});
  });
 
- test('every sale commission ledger receives identical staff, spa and date scopes', async () => {
+ test('every commission ledger receives identical staff, spa and date scopes', async () => {
   const { commissionPipeline }=await tsImport('../src/lib/payroll-read.ts',import.meta.url);
   const pipeline=commissionPipeline({spaId,staffId:id,earnedAt:{$gte:new Date('2026-10-01')}});
-  const unions=pipeline.filter(s=>s.$unionWith); assert.equal(unions.length,2);
+  const unions=pipeline.filter(s=>s.$unionWith); assert.equal(unions.length,3);
   for(const stage of unions) assert.deepEqual(stage.$unionWith.pipeline[0].$match,pipeline[0].$match);
+ });
+
+ test('legacy settled exclusions apply only to invoice-line commission union', async () => {
+  const { commissionPipeline }=await tsImport('../src/lib/payroll-read.ts',import.meta.url);
+  const legacy='e'.repeat(24);
+  const pipeline=commissionPipeline({spaId,payrollId:{$exists:false}},[legacy]);
+  assert.equal(pipeline[0].$match._id,undefined);
+  const line=pipeline.find(stage=>stage.$unionWith?.coll==='invoicelinecommissions');
+  assert.deepEqual(line.$unionWith.pipeline[0].$match._id,{$nin:[legacy]});
+  for(const stage of pipeline.filter(stage=>stage.$unionWith && stage!==line)) assert.equal(stage.$unionWith.pipeline[0].$match._id,undefined);
  });

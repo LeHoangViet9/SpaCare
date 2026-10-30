@@ -725,3 +725,17 @@ CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF ca
 PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn nợ chưa CANCELLED không giới hạn ngày tạo, hóa đơn tạo trong ngày, hóa đơn có Payment còn hiệu lực trong ngày và hóa đơn được phân công. Hóa đơn vừa tất toán vẫn tra được trong ngày thu; lịch sử đã tất toán không thuộc các phạm vi này không được mở rộng. Tìm khách cho OWNER/cashier giữ nguyên để phục vụ thu ngân; lịch sử hóa đơn áp dụng invoiceScope theo customerId cùng spa. Payment tiếp tục kiểm tài khoản active/cashier từ DB, cùng spa, hóa đơn chưa CANCELLED, số tiền không vượt nợ, sổ hôm nay OPEN, transaction/idempotency/audit. Không thay quyền allocate theo phân công.
 
 STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.
+
+## BR-PAY-002 — Toàn vẹn hoa hồng từng dòng và chứng từ — 30/10/2026
+
+CONFIRMED, ưu tiên mới nhất. Mỗi `InvoiceLineCommission` chỉ thuộc tối đa một payroll; duyệt payroll phải khóa toàn bộ ID của các ledger trong cùng transaction và rollback nếu không gắn đủ. Khoản đã thuộc payroll duyệt/đã chi là bất biến; sửa/hủy/vô hiệu hóa hóa đơn phải trả 409 cho đến khi có quy trình adjustment được phê duyệt.
+
+Không xóa cứng hóa đơn tài chính. Xử lý hóa đơn nhập nhầm giữ bản ghi gốc ở trạng thái CANCELLED, giữ mã và audit, đồng thời đảo tuần tự các khoản thu, cọc, thẻ, kho, quyền lợi và hoa hồng chưa chốt theo các guard hiện hành. Sửa hóa đơn nhiều dòng chỉ được giữ nguyên tập dịch vụ/người thực hiện/lineId khi đã có line commission; thay dòng hoặc đổi người thực hiện chưa có chính sách adjustment nên bị chặn.
+
+Ledger commission được xem là đã chốt khi có `payrollId` hoặc ID nằm trong snapshot tương ứng của payroll APPROVED/PAID cùng spa (`commissionIds`, `invoiceLineCommissionIds`, `saleCommissionIds`, `sharedSaleCommissionIds`; line ledger legacy cũng có thể nằm trong `commissionIds`). Hóa đơn có ledger như vậy không được sửa, hủy hay vô hiệu hóa khi chưa có adjustment được phê duyệt; không backfill payroll cũ. Invoice đã CANCELLED không được xử lý reversal lần hai. Retry cùng Idempotency-Key trả kết quả cũ, key mới trả 409.
+
+Khi void invoice, audit bất biến ghi snapshot before/after của cả bốn collection commission trong cùng transaction, bao gồm ledger ID, spaId, invoiceId, nhân viên hưởng, amount, trạng thái và liên kết nguồn. Dữ liệu ledger sau void có thể đặt amount=0 nhưng phải giữ cancelledAt, trong đó sale/shared dùng cùng semantics. Chỉ lưu customerId để liên kết, không thêm tên hoặc điện thoại khách vào snapshot.
+
+## Thông báo lịch hẹn nội bộ — 30/10/2026
+
+CONFIRMED: tạo lịch nội bộ gửi một thông báo đến từng OWNER đang hoạt động cùng spa và STAFF đang hoạt động được phân công; STAFF khác không nhận. Notification được ghi trong transaction tạo lịch, không chứa tên/số điện thoại khách và retry cùng Idempotency-Key không phát sinh bản sao. Notification Center đọc cả Notification lẫn ActivityNotification; reminder APPOINTMENT_REMINDER vẫn chỉ được tạo khi lịch CONFIRMED nằm trong cửa sổ tối đa 10 phút.

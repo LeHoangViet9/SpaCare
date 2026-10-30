@@ -5,7 +5,7 @@ export const auditActions: Record<string, string> = {
   linkAppointmentInvoice: 'Liên kết hóa đơn và hoàn thành lịch hẹn',
   serviceInvoice: 'Lập hóa đơn nhiều dịch vụ lẻ',
   importOpeningBalances:'Nhập quyền lợi và công nợ từ sổ cũ',
-  deleteInvoice: 'Xóa vĩnh viễn hóa đơn nhập nhầm',
+  deleteInvoice: 'Vô hiệu hóa hóa đơn nhập nhầm',
   cancelInvoice: 'Hủy hóa đơn chưa thanh toán', updateInvoice:'Sửa hóa đơn chưa giao dịch',
   recordStaffLeave:'Ghi / sửa nghỉ phép',reviewStaffLeave:'Duyệt / từ chối nghỉ',recordWorkday:'Ghi ngày công',setSalaryPolicy:'Cài chính sách lương',refundPackage:'Ghi nhận hoàn tiền gói theo ngoại lệ',
   product: 'Thêm sản phẩm', updateProduct: 'Sửa sản phẩm', productStatus: 'Đổi trạng thái sản phẩm', productGroup: 'Thêm nhóm sản phẩm', updateProductGroup: 'Sửa nhóm sản phẩm', stockMovement: 'Nhập / xuất kho', sellProduct: 'Bán sản phẩm',

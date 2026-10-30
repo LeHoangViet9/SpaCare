@@ -106,6 +106,7 @@ export const Product = model('Product', {
 }, [[{ spaId: 1, sku: 1 }, { unique: true }], [{ spaId: 1, groupId: 1, active: 1 }]]);
 export const StockMovement = model('StockMovement', {
   checkoutInvoiceId: optionalId,
+  reversalOf: optionalId,
   productId: id, productName: String, sku: String, unit: String, actorId: id, actorName: String,
   direction: { type: String, enum: ['IN', 'OUT'], required: true }, kind: { type: String, enum: ['MANUAL', 'SALE'], required: true },
   quantity: { type: Number, min: 1, max: 1_000_000_000, validate: Number.isSafeInteger, required: true },
@@ -142,12 +143,12 @@ const serviceItemSchema = new Schema({ lineId: { type: Schema.Types.ObjectId, de
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
-  treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,strict:'throw'})],default:undefined},
-  packageItems: {type:[new Schema({templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,promotion:String,giftCashCardAmount:Number},{_id:false,strict:'throw'})],default:undefined},
+  treatmentSessions: {type:[new Schema({treatmentId:id,treatmentUseId:id,name:String},{_id:false,strict:'throw',versionKey:false})],default:undefined},
+  packageItems: {type:[new Schema({templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,promotion:String,giftCashCardAmount:Number},{_id:false,strict:'throw',versionKey:false})],default:undefined},
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
-  productItems: {type:[new Schema({productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount},{_id:false,strict:'throw'})],default:undefined},
+  productItems: {type:[new Schema({productId:id,name:String,unit:String,quantity:Number,unitPrice:amount,total:amount},{_id:false,strict:'throw',versionKey:false})],default:undefined},
   serviceItems: { type: [serviceItemSchema], default: undefined },
   openingBalance: Boolean, openingDate: String,
   saleParticipants: [saleParticipantSchema],
@@ -314,12 +315,14 @@ export const InvoiceLineCommission = model('InvoiceLineCommission', {
 }, [[{ spaId: 1, invoiceId: 1, lineId: 1, category: 1 }, { unique: true }], [{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
 
 export const SaleCommission = model('SaleCommission', {
+  cancelledAt: Date,
   staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
   category: {type:String, default:'PACKAGE_SALE'}, sourceType:String, sourceId:id,
   amount: {...amount, min:-1_000_000_000_000}, earnedAt:Date, payrollId:optionalId,
 }, [[{spaId:1,sourceType:1,sourceId:1},{unique:true}], [{spaId:1,staffId:1,earnedAt:-1}]]);
 // Additive ledger: keeps the legacy single-seller unique index unchanged.
 export const SharedSaleCommission = model('SharedSaleCommission', {
+  cancelledAt: Date,
   staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
   category: { type: String, default: 'PACKAGE_SALE' }, sharedSale: { type: Boolean, default: true },
   sourceType: String, sourceId: id, shareCount: Number,
@@ -334,7 +337,7 @@ export const StaffLeave = model('StaffLeave', {
 export const Payroll = model('Payroll', {
   staffId: id, staffName: String, month: { type: String, required: true }, baseSalary: amount,
   commissionTotal: {...amount,min:-1_000_000_000_000}, commissionCount: Number, carryoverCount: Number,
-  attendanceDigest:String, earnedBase: Number, leaveDeduction:Number, attendanceConfirmed:Boolean, workdays:Number, leaveStats:Schema.Types.Mixed, salaryPolicy:Schema.Types.Mixed, advance:{...amount,default:0}, saleCommissionTotal:Number, serviceCommissionTotal:Number, saleCommissionIds:[{type:Schema.Types.ObjectId}], sharedSaleCommissionIds:[{type:Schema.Types.ObjectId}],
+  attendanceDigest:String, earnedBase: Number, leaveDeduction:Number, attendanceConfirmed:Boolean, workdays:Number, leaveStats:Schema.Types.Mixed, salaryPolicy:Schema.Types.Mixed, advance:{...amount,default:0}, saleCommissionTotal:Number, serviceCommissionTotal:Number, saleCommissionIds:[{type:Schema.Types.ObjectId}], sharedSaleCommissionIds:[{type:Schema.Types.ObjectId}], invoiceLineCommissionIds:[{type:Schema.Types.ObjectId}],
   bonus: { ...amount, default: 0 }, deductions: { ...amount, default: 0 }, total: amount, note: String,
   commissionIds: [{ type: Schema.Types.ObjectId }],
   status: { type: String, enum: ['DRAFT', 'APPROVED', 'PAID'], default: 'DRAFT' },

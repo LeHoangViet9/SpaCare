@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createECDH, createDecipheriv, createHmac, createPublicKey, randomBytes, verify } from 'node:crypto';
 import { encryptPush, vapidAuthorization, sendPush } from '../src/lib/web-push';
 import { allowedPushEndpoint, pushInput } from '../src/lib/push-validation';
-import { ActivityNotification, Notification, PushDevice, User } from '../src/lib/models';
+import { ActivityNotification, Day, Notification, PushDevice, User } from '../src/lib/models';
 import { dispatchNotifications } from '../src/lib/notifications';
 
 const ua = createECDH('prime256v1'); ua.generateKeys();
@@ -89,8 +89,9 @@ const activities:any[]=[{_id:'invoice-owner',spaId:'spa',userId:'owner',kind:'IN
 (Notification as any).updateOne=(filter:any,update:any)=>{saved.push({filter,update});return Promise.resolve({});};
 (ActivityNotification as any).updateOne=(filter:any,update:any)=>{saved.push({filter,update});return Promise.resolve({});};
 (User as any).exists=async(filter:any)=>{assert.equal(filter.active,true);return filter._id==='owner'||(filter._id==='staff'&&Array.isArray(filter.role?.$in)&&filter.role.$in.includes('STAFF'));};
-const {Day}=await import('../src/lib/models');
-(Day as any).exists=async()=>true;
+(Day as any).findOne=(filter:any)=>({
+ select:()=>({lean:async()=>filter.day===new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})?{status:'CLOSED'}:null})
+});
 (PushDevice as any).find=()=>({limit:async()=>[{_id:'device',...subscription}]});
 globalThis.fetch=async(_url,options)=>{
  const bytes=Buffer.from(options!.body as Uint8Array);const peer=bytes.subarray(21,21+bytes[20]);
@@ -105,12 +106,43 @@ await dispatchNotifications({spaId:'spa'});
 assert.equal(decoded.length,2);assert.equal(decoded[0].body,'Guest - 0912345678 - Service - 14:17');assert.equal(decoded[1].body,'Guest - Total 350.000');
 assert.notEqual(decoded[0].tag,decoded[1].tag);assert.ok(saved.find(item=>item.filter._id==='closed-day')?.update.readAt);
 
+// A stale open day is still pushed; closed books are suppressed and retry does not create duplicates.
+const closingDayRows:any[]=[
+ {_id:'old-open-day',spaId:'spa',userId:'owner',kind:'DAY_CLOSE',day:'2026-10-28',title:'Close Oct 28',body:'Book is still open',pushState:'PENDING'},
+ {_id:'old-closed-day',spaId:'spa',userId:'owner',kind:'DAY_CLOSE',day:'2026-10-27',title:'Close Oct 27',body:'Book already closed',pushState:'PENDING'}
+];
+const claimedClosingRows=new Set<string>();
+(ActivityNotification as any).findOneAndUpdate=async()=>{
+ const pending=closingDayRows.find(item=>item.pushState==='PENDING'&&!claimedClosingRows.has(item._id));
+ if(pending)claimedClosingRows.add(pending._id);
+ return pending||null;
+};
+(Day as any).findOne=(filter:any)=>({
+ select:()=>({lean:async()=>filter.day==='2026-10-27'?{status:'CLOSED'}:filter.day==='2026-10-28'?{status:'OPEN'}:null})
+});
+(ActivityNotification as any).updateOne=(filter:any,update:any)=>{
+ saved.push({filter,update});
+ const item=closingDayRows.find(row=>row._id===filter._id);
+ if(item)Object.assign(item,update);
+ return Promise.resolve({});
+};
+decoded.length=0;
+const recordCountBeforeRetry=closingDayRows.length;
+await dispatchNotifications({spaId:'spa',userId:'owner'});
+assert.deepEqual(decoded.map(item=>item.title),['Close Oct 28'],'An old OPEN day must still trigger push');
+assert.equal(closingDayRows.find(item=>item._id==='old-closed-day')?.readAt instanceof Date,true,'A CLOSED day is suppressed');
+assert.equal(closingDayRows.find(item=>item._id==='old-open-day')?.pushState,'SENT');
+await dispatchNotifications({spaId:'spa',userId:'owner'});
+assert.equal(decoded.length,1,'Retry must not push the same event again');
+assert.equal(closingDayRows.length,recordCountBeforeRetry,'Dispatch retries must not create duplicate notification records');
+
 
 // Reminders expire at arrival and cannot survive cancellation, rescheduling or reassignment.
 const {Appointment}=await import('../src/lib/models');
 const arrival=new Date(Date.now()+600000),changed=new Date(Date.now()+500000),pastArrival=new Date(Date.now()-60000);
 const reminder=(id:string,userId='staff',start=arrival)=>({_id:id,spaId:'spa',userId,kind:'APPOINTMENT_REMINDER',appointmentId:id,appointmentStartAt:start,title:'Upcoming',body:'Guest at 14:17',url:'/workspace/appointments'});
 activities.push(reminder('valid'),reminder('cancelled'),reminder('rescheduled'),reminder('expired','staff',pastArrival),reminder('reassigned'),reminder('owner-private','owner'));
+(ActivityNotification as any).findOneAndUpdate=async()=>activities.shift()||null;
 (Appointment as any).findOne=(filter:any)=>({select:()=>({lean:async()=>filter._id==='cancelled'?null:{startAt:filter._id==='rescheduled'?changed:filter._id==='expired'?pastArrival:arrival,bookingSource:['reassigned','owner-private'].includes(filter._id)?undefined:'PUBLIC_WEB',staffId:'different-staff'}})});
 decoded.length=0;saved.length=0;const ttls:number[]=[];const decryptingFetch=globalThis.fetch;
 globalThis.fetch=async(url,options)=>{ttls.push(Number((options!.headers as any).TTL));return decryptingFetch(url,options);};

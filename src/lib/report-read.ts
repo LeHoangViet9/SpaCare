@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Appointment, CashEntry, Commission, Customer, Invoice, TreatmentUse, User, SaleCommission, SharedSaleCommission } from './models';
+import { Appointment, CashEntry, Commission, InvoiceLineCommission, Customer, Invoice, TreatmentUse, User, SaleCommission, SharedSaleCommission } from './models';
 import { ensure } from './rules';
 import type { Actor } from './auth';
 import type { workspaceQuery } from './workspace-query';
@@ -33,7 +33,7 @@ export async function readReport(user: Actor, query: ReturnType<typeof workspace
     const [appointments, sessions, commissions, consulting, salesCommissions] = await Promise.all([
       Appointment.aggregate([{ $match: dated('startAt') }, { $group: { _id: '$staffId', appointments: { $sum: 1 }, completed: { $sum: { $cond: [{ $eq: ['$status', 'COMPLETED'] }, 1, 0] } }, cancelled: { $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] } } } }]),
       TreatmentUse.aggregate([{ $match: dated('performedAt') }, { $group: { _id: '$staffId', sessions: { $sum: 1 } } }]),
-      Commission.aggregate([{ $match: dated('earnedAt') }, { $group: { _id: '$staffId', commission: { $sum: '$amount' }, services: { $sum: 1 } } }]),
+      Commission.aggregate([{ $match: {...dated('earnedAt'),cancelledAt:{$exists:false}} },{$unionWith:{coll:InvoiceLineCommission.collection.name,pipeline:[{$match:{...dated('earnedAt'),cancelledAt:{$exists:false}}}]}}, { $group: { _id: '$staffId', commission: { $sum: '$amount' }, services: { $sum: 1 } } }]),
       Invoice.aggregate([{ $match: dated('createdAt') }, { $group: { _id: '$consultantId', invoices: { $sum: 1 }, sales: { $sum: '$total' } } }]),
       SaleCommission.aggregate([{$match:dated('earnedAt')},{$unionWith:{coll:SharedSaleCommission.collection.name,pipeline:[{$match:dated('earnedAt')}]}},{$group:{_id:'$staffId',saleCommission:{$sum:'$amount'}}}]),
     ]);

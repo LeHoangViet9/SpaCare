@@ -1,7 +1,7 @@
 import { invoiceCode } from './invoice-code';
 import { appointmentServiceName } from './appointment-services';
 import mongoose, { type ClientSession } from 'mongoose';
-import { ActivityNotification, Appointment, Control, Customer, Day, Service, User } from './models';
+import { ActivityNotification, Appointment, Control, Customer, Day, Notification, Service, User } from './models';
 import { spaDay } from './rules';
 import { formatCurrency } from './currency';
 
@@ -16,6 +16,35 @@ export async function queueInvoiceNotifications(invoice: any, session: ClientSes
       title: 'Hóa đơn mới ' + invoiceCode(invoice),
       body: `${customer?.name || 'Khách hàng'} · ${invoice.description || 'Dịch vụ'} · Tổng ${formatCurrency(invoice.total)} · Người lập: ${invoice.creatorName || 'SpaCare'}`,
       url: `/workspace/invoices?search=${invoice._id}`,
+    }], { session });
+  }
+}
+
+export async function queueAppointmentCreatedNotifications(appointment: any, session: ClientSession) {
+  const scope = { spaId: appointment.spaId };
+  const recipients = await User.find({
+    ...scope,
+    active: true,
+    $or: [{ role: 'OWNER' }, ...(appointment.staffId ? [{ _id: appointment.staffId, role: 'STAFF' }] : [])],
+  }).session(session);
+  const services = (appointment.requestedServices || []).map((item: { name?: string }) => item.name).filter(Boolean);
+  const startAt = new Date(appointment.startAt);
+  const time = startAt.toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  for (const recipient of recipients) {
+    await Notification.create([{
+      ...scope,
+      userId: recipient._id,
+      appointmentId: appointment._id,
+      title: 'Lịch hẹn mới được tạo',
+      body: `${services.join(' + ') || 'Dịch vụ đã đặt'} · ${time}`,
+      url: `/workspace/appointments?search=${appointment._id}`,
     }], { session });
   }
 }

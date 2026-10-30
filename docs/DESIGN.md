@@ -629,3 +629,9 @@ Bổ sung riêng Hương Lan KL theo xác nhận 26/10/2026: mua 17/06/2025, 3 g
 ## Ẩn liệu trình đã hủy khỏi vận hành — 26/10/2026
 
 CONFIRMED theo phản hồi người dùng: gói đã hủy do hóa đơn nhập nhầm không còn xuất hiện trong Gói của khách hoặc tab liệu trình của hồ sơ khách. Lọc tại backend trước đếm/phân trang, kể cả khi tìm theo khách hoặc lọc quà tặng. Giữ bản ghi nội bộ và audit để đối chiếu điều chỉnh tài chính; không xóa lịch sử liên quan hoặc khôi phục quyền lợi đã hủy. Công cụ bổ sung Hương Lan KL chỉ kiểm trùng các gói chưa CANCELLED, nên gói nhập nhầm đã hủy không chặn việc thêm quyền lợi lịch sử đúng; không sửa hoặc xóa gói đã hủy. Gói còn ACTIVE/PAUSED/COMPLETED khác ngày vẫn chặn để đối soát. Không migration hay sửa dữ liệu thật.
+
+## P0 financial ledger containment — 30/10/2026
+
+Payroll tách bốn danh sách ID theo collection; approval đối chiếu tập ID, gắn payrollId tuần tự và kiểm đủ matchedCount trước khi chuyển APPROVED. Commission views/PDF/report union thêm InvoiceLineCommission nhưng vẫn giữ scope spa/staff và lọc cancelledAt.
+
+Luồng xử lý hóa đơn sai giữ transaction Control/idempotency hiện có. Thay vì `Invoice.deleteOne`, backend đảo các ledger được hỗ trợ rồi tombstone Invoice thành CANCELLED và ghi audit before/after đủ bốn commission ledgers trong transaction. Snapshot liên kết từng ledger với spa, invoice, người hưởng và nguồn; amount gốc không bị mất khi ledger bị đặt về 0/cancelledAt. Mọi commission đã gắn hoặc thuộc legacy payroll APPROVED/PAID và thay đổi cấu trúc line commission chưa có adjustment policy đều fail-closed. UI dùng nhãn “Vô hiệu hóa hóa đơn nhập nhầm”, không tuyên bố xóa vĩnh viễn.

@@ -1,6 +1,5 @@
 import { sendPush } from './web-push';
 import { ActivityNotification, Appointment, Day, Notification, PushDevice, User } from './models';
-import { spaDay } from './rules';
 import { allowedPushEndpoint } from './push-validation';
 import { assertWritesAllowed } from './write-freeze';
 
@@ -37,8 +36,13 @@ export async function dispatchNotifications(scope?: { spaId: string; userId?: st
     const recipient = await User.exists({ _id: row.userId, spaId: row.spaId, active: true,
       role: source === Notification || row.kind === 'APPOINTMENT_REMINDER' ? { $in: ['OWNER', 'STAFF'] } : 'OWNER' });
     if (!recipient) { await source.updateOne({ _id: row._id }, { pushState: 'SENT' }); continue; }
-    if (row.kind === 'DAY_CLOSE' && (row.day !== spaDay() || await Day.exists({ spaId: row.spaId, day: row.day, status: 'CLOSED' }))) {
-      await source.updateOne({ _id: row._id }, { pushState: 'SENT', readAt: new Date() }); continue;
+    if (row.kind === 'DAY_CLOSE') {
+      const book = row.day
+        ? await Day.findOne({ spaId: row.spaId, day: row.day }).select('status').lean()
+        : null;
+      if (book?.status === 'CLOSED') {
+        await source.updateOne({ _id: row._id }, { pushState: 'SENT', readAt: new Date() }); continue;
+      }
     }
     let ttl = 3600;
     if (row.kind === 'APPOINTMENT_REMINDER') {

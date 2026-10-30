@@ -1,10 +1,12 @@
 import { salaryOverviewRows } from './salary-overview';
 import { summarizeLeave } from './leave-rules';
 import { z } from 'zod';
-import { Commission, Payroll, User, Service, StaffLeave, SaleCommission, Workday, Customer, SharedSaleCommission } from './models';
+import { Commission, InvoiceLineCommission, Payroll, User, Service, StaffLeave, SaleCommission, Workday, Customer, SharedSaleCommission } from './models';
 import { monthBounds, payrollMonth } from './payroll-rules';
 import { ensure } from './rules';
 import type { Actor } from './auth';
+import { legacySettledInvoiceLineIds } from './commission-settlement';
+import mongoose from 'mongoose';
 export function payrollQuery(params: URLSearchParams) {
   return z.object({ month: payrollMonth, employee: z.union([z.literal(''), z.string().regex(/^[a-f\d]{24}$/i)]).default(''),
     leavePage: z.coerce.number().int().min(1).max(1000000).default(1), workPage: z.coerce.number().int().min(1).max(1000000).default(1), view: z.enum(['salary', 'commission']).default('salary'), page: z.coerce.number().int().min(1).max(1000000).default(1) }).parse(Object.fromEntries(params));
@@ -18,9 +20,11 @@ export function payrollStaffScope(user: Actor, employee = '') {
 export function salaryStaffScope(scope: Record<string, any>, staffIds: string[]) {
   return { ...scope, staffId: { $in: staffIds.filter(id => !scope.staffId || String(scope.staffId) === id) } };
 }
-export function commissionPipeline(filter: Record<string, unknown>): any[] {
+export function commissionPipeline(filter: Record<string, unknown>, excludedInvoiceLineIds: unknown[] = []): any[] {
   const match = (Commission.find({...filter,cancelledAt:{$exists:false}}) as any).cast(Commission);
+  const lineMatch = excludedInvoiceLineIds.length ? { ...match, _id: { $nin: excludedInvoiceLineIds } } : match;
   return [{$match:match}, {$addFields:{category:{$ifNull:['$category','SERVICE']}}},
+    {$unionWith:{coll:InvoiceLineCommission.collection.name,pipeline:[{$match:lineMatch}]}},
     {$unionWith:{coll:SaleCommission.collection.name,pipeline:[{$match:match}]}},
     {$unionWith:{coll:SharedSaleCommission.collection.name,pipeline:[{$match:match}]}}];
 }
@@ -44,11 +48,12 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   const total = q.view === 'salary' ? selectedPeople.length : (await Commission.aggregate([...combinedFilter,{$count:'total'}]))[0]?.total || 0;
   const page = Math.min(q.page, Math.max(1, Math.ceil(total / 10)));
   const pagePeople = selectedPeople.slice((page-1)*10,page*10);
-  const rows = q.view === 'salary' ? await Payroll.find({...payrollFilter,staffId:{$in:pagePeople.map(p=>p._id)}}).select('-commissionIds -saleCommissionIds -sharedSaleCommissionIds').lean()
+  const rows = q.view === 'salary' ? await Payroll.find({...payrollFilter,staffId:{$in:pagePeople.map(p=>p._id)}}).select('-commissionIds -invoiceLineCommissionIds -saleCommissionIds -sharedSaleCommissionIds').lean()
     : await Commission.aggregate([...combinedFilter,{$sort:{earnedAt:-1,_id:-1}},{$skip:(page-1)*10},{$limit:10}]);
   let displayRows = q.view === 'commission' ? await commissionCustomers(user.spaId, rows) : rows;
   const summary = await Commission.aggregate([...combinedFilter,{$group:{_id:'$category',amount:{$sum:'$amount'},count:{$sum:1}}}]);
-  const unsettled = await Commission.aggregate([...combined({...scope,payrollId:{$exists:false},earnedAt:{$lt:end}}),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
+  const legacySettledLineIds = [...await legacySettledInvoiceLineIds({ ...scope, spaId: user.spaId })].map(id => new mongoose.Types.ObjectId(id));
+  const unsettled = await Commission.aggregate([...combined({...scope,payrollId:{$exists:false},earnedAt:{$lt:end}},legacySettledLineIds),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const salarySummary = q.view === 'salary' ? await Payroll.aggregate([
     { $match: (Payroll.find(payrollFilter) as any).cast(Payroll) },
     { $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: '$total' } } },
@@ -67,7 +72,7 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   const workdays = q.view === 'salary' ? await Workday.find(workFilter).sort({day:-1,_id:-1}).skip((workPage-1)*10).limit(10).lean() : [];
   const leaveSummary = people.filter(p=>!q.employee || String(p._id)===q.employee).map(p=>({staffId:p._id,...summarizeLeave(allLeaves.filter(r=>String(r.staffId)===String(p._id)),q.month)}));
   if(q.view === 'salary') {
-    const pending = await Commission.aggregate([...combined({...scope,staffId:{$in:pagePeople.map(p=>p._id)},payrollId:{$exists:false},earnedAt:{$lt:end}}),{$group:{_id:{staffId:'$staffId',category:'$category'},amount:{$sum:'$amount'}}}]);
+    const pending = await Commission.aggregate([...combined({...scope,staffId:{$in:pagePeople.map(p=>p._id)},payrollId:{$exists:false},earnedAt:{$lt:end}},legacySettledLineIds),{$group:{_id:{staffId:'$staffId',category:'$category'},amount:{$sum:'$amount'}}}]);
     displayRows=salaryOverviewRows(pagePeople,rows,pending,workSummary,leaveSummary,q.month);
   }
   return { workdays,workSummary,workTotal,workPage, leaves, leaveSummary, leaveTotal, leavePage, salarySummary, services, people: people.map(p => ({ _id: p._id, name: p.name, active: p.active, role: p.role, baseSalary: p.baseSalary ?? null, salaryPolicy:p.salaryPolicy })),

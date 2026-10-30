@@ -1,8 +1,9 @@
 import { ensureGroupedPackageIndex } from './package-invoice-indexes';
 import { coversVisit } from './appointment-checkout';
 import { invoiceDeletionBlock, repriceInvoiceItems } from './invoice-correction';
+import { hasSettledCommissionLedgers, legacySettledInvoiceLineIds } from './commission-settlement';
 import { sequenceInvoiceCode } from './invoice-code';
-import { queueInvoiceNotifications } from './notification-events';
+import { queueAppointmentCreatedNotifications, queueInvoiceNotifications } from './notification-events';
 import { appointmentServiceIds } from './appointment-services';
 import { ServiceGroup } from './models';
 import { serviceGroupName, serviceGroupKey } from './service-groups';
@@ -259,6 +260,39 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if(model === Invoice) ensure(doc.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể phát sinh thao tác mới.',409);
         return doc;
       };
+      const commissionLedgerSnapshot = async (invoiceIds: unknown[]) => {
+        const filter = { ...scope, invoiceId: { $in: invoiceIds } };
+        const snapshot = async (model: mongoose.Model<any>) => {
+          const rows = await model.find(filter).session(session).lean();
+          return rows.map((row: any) => ({
+            ledgerId: String(row._id),
+            spaId: String(row.spaId),
+            invoiceId: String(row.invoiceId),
+            staffId: String(row.staffId),
+            staffName: row.staffName,
+            amount: row.amount,
+            status: row.cancelledAt ? 'CANCELLED' : row.payrollId ? 'PAYROLL_ASSIGNED' : 'PENDING',
+            ...(row.cancelledAt ? { cancelledAt: row.cancelledAt } : {}),
+            ...(row.payrollId ? { payrollId: String(row.payrollId) } : {}),
+            ...(row.customerId ? { customerId: String(row.customerId) } : {}),
+            ...(row.serviceId ? { serviceId: String(row.serviceId) } : {}),
+            ...(row.serviceName ? { serviceName: row.serviceName } : {}),
+            ...(row.category ? { category: row.category } : {}),
+            ...(row.sourceType ? { sourceType: row.sourceType } : {}),
+            ...(row.sourceId ? { sourceId: String(row.sourceId) } : {}),
+            ...(row.lineId ? { lineId: String(row.lineId) } : {}),
+            ...(row.earnedAt ? { earnedAt: row.earnedAt } : {}),
+            ...(row.sharedSale !== undefined ? { sharedSale: row.sharedSale } : {}),
+            ...(row.shareCount !== undefined ? { shareCount: row.shareCount } : {}),
+          }));
+        };
+        return {
+          commission: await snapshot(Commission),
+          invoiceLineCommission: await snapshot(InvoiceLineCommission),
+          saleCommission: await snapshot(SaleCommission),
+          sharedSaleCommission: await snapshot(SharedSaleCommission),
+        };
+      };
       const today = spaDay();
       const consultant = async (customer: any, selectedId?: string) => {
         const consultantId = selectedId || (customer.consultantId ? String(customer.consultantId) : undefined);
@@ -351,7 +385,14 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const pendingCommissions = async (staffId: string, month: string) => {
         const filter = {...scope,staffId,payrollId:{$exists:false},earnedAt:{$lt:monthBounds(month).end}};
         const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
-        const line = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
+        const lineCandidates = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
+        // Production drafts before invoiceLineCommissionIds stored line IDs in commissionIds.
+        // An already approved/paid legacy payroll is immutable, so exclude those IDs without
+        // backfilling operational data. Drafts remain eligible and are normalized on approval.
+        const legacySettled = await legacySettledInvoiceLineIds(
+          { ...scope, staffId }, lineCandidates.map(c => c._id), session,
+        );
+        const line = lineCandidates.filter(c=>!legacySettled.has(String(c._id)));
         const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         const shared = await SharedSaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         return [...service,...line,...sale,...shared];
@@ -371,14 +412,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
         payroll.commissionCount = commissions.length;
         payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
-        payroll.commissionIds = commissions.filter(c=>c.category !== 'PACKAGE_SALE').map(c=>c._id);
+        payroll.commissionIds = commissions.filter(c=>c.category !== 'PACKAGE_SALE' && c.sourceType !== 'INVOICE_LINE').map(c=>c._id);
+        payroll.invoiceLineCommissionIds = commissions.filter(c=>c.sourceType === 'INVOICE_LINE').map(c=>c._id);
         payroll.saleCommissionIds = commissions.filter(c=>c.category === 'PACKAGE_SALE' && !c.sharedSale).map(c=>c._id);
         payroll.sharedSaleCommissionIds = commissions.filter(c=>c.sharedSale).map(c=>c._id);
         let base; try { base = attendanceSalary(payroll.baseSalary,payroll.salaryPolicy,payroll.workdays,payroll.leaveStats || {permitted:0,unpermitted:0,paid:0,unpaid:0}); } catch(e) { ensure(false,(e as Error).message); }
         Object.assign(payroll,base);
         payroll.total = money(payroll.earnedBase + payroll.commissionTotal + payroll.bonus - payroll.deductions - (payroll.advance || 0), true);
       };
-      const payrollSnapshot = (p: any) => Object.fromEntries(['staffId', 'staffName', 'month', 'baseSalary', 'earnedBase', 'leaveDeduction', 'workdays', 'leaveStats', 'salaryPolicy', 'advance', 'serviceCommissionTotal', 'saleCommissionTotal', 'commissionTotal', 'commissionCount', 'carryoverCount', 'bonus', 'deductions', 'total', 'note', 'status', 'approvedBy', 'approvedAt', 'paidBy', 'paidAt', 'receiptId', 'sharedSaleCommissionIds'].map(key => [key, p[key]]));
+      const payrollSnapshot = (p: any) => Object.fromEntries(['staffId', 'staffName', 'month', 'baseSalary', 'earnedBase', 'leaveDeduction', 'workdays', 'leaveStats', 'salaryPolicy', 'advance', 'serviceCommissionTotal', 'saleCommissionTotal', 'commissionTotal', 'commissionCount', 'carryoverCount', 'bonus', 'deductions', 'total', 'note', 'status', 'approvedBy', 'approvedAt', 'paidBy', 'paidAt', 'receiptId', 'sharedSaleCommissionIds', 'invoiceLineCommissionIds'].map(key => [key, p[key]]));
       const commonSignature = (provided: Signature | undefined, items: {signature?:Signature}[]) => {
         const candidates = [provided,...items.map(item=>item.signature)].filter((value): value is Signature => !!value);
         ensure(candidates.every(value=>JSON.stringify(value)===JSON.stringify(candidates[0])), 'Một hóa đơn chỉ dùng một chữ ký chung.');
@@ -477,6 +519,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       let treatmentUseId: string | undefined;
       let replacementAppointmentId: string | undefined;
       let financialBefore: Record<string, unknown> | undefined;
+      let commissionLedgerInvoiceIds: unknown[] | undefined;
+      let commissionLedgerBefore: Record<string, unknown> | undefined;
       const linkVisit = async (appointment:any,invoice:any,reason:string) => {
         ensure(['CONFIRMED','COMPLETED'].includes(appointment.status),'Lịch đã hủy hoặc hoãn, không thể lập hóa đơn.',409);
         ensure(appointment.startAt <= new Date(),'Chưa tới thời gian thực hiện lịch.');
@@ -705,12 +749,21 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const ids = commissions.map(c => String(c._id)).sort().join(',');
           const attendance = await attendanceFor(String(target.staffId),target.month,target.attendanceConfirmed);
           ensure(target.attendanceDigest ? attendance.attendanceDigest === target.attendanceDigest : !attendance.salaryPolicy,'Ngày nghỉ, công hoặc chính sách đã đổi. Cập nhật nháp trước khi duyệt.',409);
-          ensure(ids === [...target.commissionIds,...(target.saleCommissionIds || []),...(target.sharedSaleCommissionIds || [])].map((id: any) => String(id)).sort().join(','), 'Hoa hồng đã thay đổi. Cập nhật bản nháp trước khi duyệt.', 409);
+          // Legacy drafts stored line IDs in commissionIds. Comparing the complete set first
+          // keeps those drafts approvable; fillPayroll below then separates each ledger.
+          ensure(ids === [...target.commissionIds,...(target.invoiceLineCommissionIds || []),...(target.saleCommissionIds || []),...(target.sharedSaleCommissionIds || [])].map((id: any) => String(id)).sort().join(','), 'Hoa hồng đã thay đổi. Cập nhật bản nháp trước khi duyệt.', 409);
           fillPayroll(target, commissions);
           ensure(target.total === d.expectedTotal, 'Số tiền đã thay đổi. Kiểm tra lại bảng lương.', 409);
-          await Commission.updateMany({ ...scope, _id: { $in: target.commissionIds }, payrollId: { $exists: false } }, { $set: { payrollId: target._id } }, { session });
-          await SaleCommission.updateMany({...scope,_id:{$in:target.saleCommissionIds || []},payrollId:{$exists:false}},{$set:{payrollId:target._id}},{session});
-          await SharedSaleCommission.updateMany({...scope,_id:{$in:target.sharedSaleCommissionIds || []},payrollId:{$exists:false}},{$set:{payrollId:target._id}},{session});
+          const attachPayroll = async (model: mongoose.Model<any>, commissionIds: any[]) => {
+            const selected = commissionIds || [];
+            if (!selected.length) return;
+            const result = await model.updateMany({ ...scope, _id: { $in: selected }, payrollId: { $exists: false } }, { $set: { payrollId: target._id } }, { session });
+            ensure(result.matchedCount === selected.length, 'Hoa hồng đã được chốt ở bảng lương khác. Cập nhật bản nháp trước khi duyệt.', 409);
+          };
+          await attachPayroll(Commission,target.commissionIds);
+          await attachPayroll(InvoiceLineCommission,target.invoiceLineCommissionIds);
+          await attachPayroll(SaleCommission,target.saleCommissionIds);
+          await attachPayroll(SharedSaleCommission,target.sharedSaleCommissionIds);
           target.status = 'APPROVED'; target.approvedBy = actor.id; target.approvedAt = new Date();
           await target.save({ session });
           break;
@@ -861,6 +914,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(startAt >= new Date(), 'Không đặt lịch trong quá khứ.');
           ensure(withinArrivalHours(startAt), 'Giờ đến phải nằm trong 09:00–22:00.');
           target = await create(Appointment, { ...d, serviceIds, requestedServices, ...(treatmentIds.length ? {treatmentId:treatmentIds[0],treatmentIds} : {}), startAt });
+          await queueAppointmentCreatedNotifications(target, session);
           break;
         }
         case 'appointmentStatus': {
@@ -1076,6 +1130,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           // Read explicitly: the generic mutation getter deliberately rejects canceled invoices.
           target=await Invoice.findOne({...scope,_id:d.id}).session(session);
           ensure(target,'Không tìm thấy hóa đơn trong spa này.',404);
+          ensure(target.status !== 'CANCELLED','Hóa đơn đã vô hiệu hóa; không được đảo giao dịch lần nữa.',409);
           ensure(target.updatedAt?.toISOString()===d.expectedUpdatedAt,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
           const deletionBlock=invoiceDeletionBlock(target);ensure(!deletionBlock,deletionBlock,409);
           const family=await Invoice.find({...scope,$or:[{_id:target._id},{giftOfInvoiceId:target._id}]}).session(session);
@@ -1086,6 +1141,18 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const gifts=await CashCard.find({...scope,sourceInvoiceId:{$in:ids}}).session(session);
           for(const card of gifts) ensure(card.balance===card.amount && !await CashCardUse.exists({...scope,cardId:card._id}).session(session),'Thẻ tặng đã sử dụng; cần đối soát riêng.',409);
           appointmentBefore=target.toObject();appointmentBefore!.family=family.map(i=>i.toObject());
+          commissionLedgerInvoiceIds=ids;
+          commissionLedgerBefore=await commissionLedgerSnapshot(ids);
+          const deletionCommissions=await Commission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          const deletionLineCommissions=await InvoiceLineCommission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          const deletionSaleCommissions=await SaleCommission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          const deletionSharedSaleCommissions=await SharedSaleCommission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          ensure(!await hasSettledCommissionLedgers(scope,{
+            commission:deletionCommissions,
+            invoiceLineCommission:deletionLineCommissions,
+            saleCommission:deletionSaleCommissions,
+            sharedSaleCommission:deletionSharedSaleCommissions,
+          },session),'Hoa hồng đã chốt/chi lương (payroll APPROVED/PAID) cần điều chỉnh bảng lương trước khi vô hiệu hóa hóa đơn.',409);
           const payments=await Payment.find({...scope,invoiceId:{$in:ids},reversed:false}).session(session);
           for(const payment of payments) {
             const original=await get(CashEntry,String(payment.receiptId));
@@ -1105,25 +1172,25 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             const card=await get(CashCard,String(use.cardId));card.balance+=use.amount;
             ensure(card.balance<=card.amount,'Số dư thẻ không hợp lệ.');await card.save({session});use.reversedAt=new Date();await use.save({session});
           }
-          for(const model of [Commission,SaleCommission,SharedSaleCommission]) {
-            const rows=await model.find({...scope,invoiceId:{$in:ids}}).session(session);
-            for(const row of rows) {
-              ensure(!row.payrollId,'Hoa hồng đã chốt/chi lương cần điều chỉnh bảng lương trước khi xóa.',409);
-              row.amount=0;if(model===Commission)row.cancelledAt=new Date();await row.save({session});
-            }
+          const voidedAt=new Date();
+          for(const row of [...deletionCommissions,...deletionLineCommissions,...deletionSaleCommissions,...deletionSharedSaleCommissions]) {
+            row.amount=0;
+            row.cancelledAt=voidedAt;
+            await row.save({session});
           }
           const movements=await StockMovement.find({...scope,$or:[{invoiceId:{$in:ids}},{checkoutInvoiceId:{$in:ids}}]}).session(session);
           for(const movement of movements) {
             ensure(movement.direction==='OUT','Phiếu kho không phải xuất bán, cần đối soát.',409);
             const product=await get(Product,String(movement.productId));const before=product.stock;product.stock=stockBalance(product.stock,'IN',movement.quantity);await product.save({session});
-            await create(StockMovement,{productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:actor.name,direction:'IN',kind:'MANUAL',quantity:movement.quantity,before,after:product.stock,reason:d.reason});
+            await create(StockMovement,{productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:actor.name,direction:'IN',kind:'MANUAL',quantity:movement.quantity,before,after:product.stock,reason:d.reason,reversalOf:movement._id});
           }
           for(const plan of plans) {plan.status='CANCELLED';await plan.save({session});}
           for(const card of gifts) {card.balance=0;await card.save({session});}
-          for(const gift of family.filter(i=>String(i._id)!==String(target._id))) {gift.cancelledTotal=gift.total;gift.total=0;gift.paid=0;gift.status='CANCELLED';await gift.save({session});}
+          for(const gift of family.filter(i=>String(i._id)!==String(target._id))) {gift.cancelledTotal=gift.cancelledTotal ?? gift.total;gift.total=0;gift.paid=0;gift.status='CANCELLED';gift.cancelledAt=gift.cancelledAt || new Date();gift.cancelledBy=gift.cancelledBy || actor.id;gift.cancelReason=gift.cancelReason || d.reason;await gift.save({session});}
           await ActivityNotification.deleteMany({...scope,kind:'INVOICE_CREATED',invoiceId:{$in:ids}},{session});
-          const deleted=await Invoice.deleteOne({...scope,_id:target._id,updatedAt:target.updatedAt},{session});
-          ensure(deleted.deletedCount===1,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
+          target.cancelledTotal=target.cancelledTotal ?? target.total;
+          target.total=0;target.paid=0;target.status='CANCELLED';target.cancelledAt=target.cancelledAt || new Date();target.cancelledBy=target.cancelledBy || actor.id;target.cancelReason=target.cancelReason || d.reason;
+          await target.save({session});
           break;
         }
         case 'cancelInvoice':
@@ -1148,8 +1215,18 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ensure(!await model.exists({...scope,invoiceId:{$in:ids}}).session(session),'Hóa đơn đã có lịch sử giao dịch hoặc hoa hồng, không thể sửa.',409);
           }
           const serviceCommissions = await Commission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          const lineCommissions = await InvoiceLineCommission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          const saleCommissions = await SaleCommission.find({...scope,invoiceId:{$in:ids}}).session(session);
+          const sharedSaleCommissions = await SharedSaleCommission.find({...scope,invoiceId:{$in:ids}}).session(session);
           ensure(serviceCorrection || !serviceCommissions.length, 'Hóa đơn đã có hoa hồng, không thể sửa trực tiếp.',409);
-          if(cancelling) ensure(serviceCommissions.every(c=>!c.payrollId), 'Hoa hồng đã thuộc bảng lương duyệt/đã chi. Cần xử lý bảng lương trước khi hủy hóa đơn.',409);
+          ensure(!await hasSettledCommissionLedgers(scope,{
+            commission:serviceCommissions,
+            invoiceLineCommission:lineCommissions,
+            saleCommission:saleCommissions,
+            sharedSaleCommission:sharedSaleCommissions,
+          },session), 'Hoa hồng đã thuộc bảng lương duyệt/đã chi. Chưa có quy trình adjustment để sửa hoặc hủy hóa đơn.',409);
+          commissionLedgerInvoiceIds=ids;
+          commissionLedgerBefore=await commissionLedgerSnapshot(ids);
           const plans=await Treatment.find({...scope,invoiceId:{$in:ids}}).session(session);
           ensure(target.kind==='PACKAGE' || !plans.length,'Hóa đơn có liệu trình cũ cần đối soát riêng, không thể sửa trực tiếp.',409);
           for(const plan of plans) {
@@ -1171,9 +1248,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const plan=plans.find(p=>String(p.invoiceId)===String(target._id));
           if(cancelling) {
             appointmentBefore!.commissions=serviceCommissions.map(c=>c.toObject());
-            for(const commission of serviceCommissions) {
+            appointmentBefore!.lineCommissions=lineCommissions.map(c=>c.toObject());
+            const voidedAt=new Date();
+            for(const commission of [...serviceCommissions,...lineCommissions]) {
               commission.amount=0;
-              commission.cancelledAt=new Date();
+              commission.cancelledAt=voidedAt;
               await commission.save({session});
             }
             appointmentBefore!.family=family.map(invoice=>invoice.toObject());
@@ -1212,6 +1291,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           if(d.items) {
             ensure(serviceCorrection, 'Chỉ sửa danh sách dịch vụ của hóa đơn dịch vụ lẻ.');
             ensure(new Set(d.items.map(item=>item.serviceId)).size === d.items.length, 'Không chọn trùng dịch vụ.');
+            if(lineCommissions.length) {
+              const beforeIds=(target.serviceItems || []).map((item:any)=>String(item.serviceId)).sort().join(',');
+              const afterIds=d.items.map(item=>item.serviceId).sort().join(',');
+              ensure(beforeIds===afterIds,'Hóa đơn có hoa hồng theo từng dòng; chưa có quy trình adjustment để đổi dịch vụ hoặc số dòng.',409);
+              const lineIds=new Set((target.serviceItems || []).map((item:any)=>String(item.lineId)));
+              ensure(lineCommissions.every(c=>lineIds.has(String(c.lineId))),'Ledger hoa hồng không khớp dòng hóa đơn; cần đối soát trước khi sửa.',409);
+            }
             const items=[];
             for(const item of d.items) {
               const service=await get(Service,item.serviceId);
@@ -1219,7 +1305,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               // Keep the original fixed rate when the service is unchanged.
               const previous=target.serviceItems?.find((old:any)=>String(old.serviceId)===item.serviceId);
               const rate=previous?.commission ?? (String(target.serviceId)===item.serviceId ? target.commission : undefined) ?? service.commission ?? 0;
-              items.push({serviceId:service._id,name:service.name,total:item.total,commission:rate});
+              items.push({serviceId:service._id,name:service.name,total:item.total,commission:rate,...(previous?.lineId ? {lineId:previous.lineId} : {}),...(previous?.performerId ? {performerId:previous.performerId} : {})});
             }
             ensure(money(items.reduce((n,item)=>n+item.total,0))===d.total,'Tổng giá từng dịch vụ không khớp hóa đơn.');
             const amount=money(items.reduce((n,item)=>n+item.commission,0),true);
@@ -1557,8 +1643,17 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       if(action==='checkout')details.checkoutKey=sha(key);
       if (appointmentBefore) {
         details.before = appointmentBefore;
-        details.after = op === 'deleteInvoice' ? null : target.toObject();
-        if(op === 'updateInvoice' || op === 'cancelInvoice') details.commissionsAfter = await Commission.find({...scope,invoiceId:target._id}).session(session).lean();
+        details.after = target.toObject();
+        if (commissionLedgerBefore && commissionLedgerInvoiceIds) {
+          details.commissionLedgers = {
+            before: commissionLedgerBefore,
+            after: await commissionLedgerSnapshot(commissionLedgerInvoiceIds),
+          };
+        }
+        if(op === 'updateInvoice' || op === 'cancelInvoice' || op === 'deleteInvoice') {
+          details.commissionsAfter = await Commission.find({...scope,invoiceId:target._id}).session(session).lean();
+          details.lineCommissionsAfter = await InvoiceLineCommission.find({...scope,invoiceId:target._id}).session(session).lean();
+        }
         if(op === 'updateInvoice') details.treatmentAfter = await Treatment.findOne({...scope,invoiceId:target._id}).session(session).lean();
       }
       if (financialBefore) {
@@ -1567,6 +1662,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       }
       if (replacementAppointmentId) details.replacementAppointmentId = replacementAppointmentId;
       if (linkedInvoiceId) details.invoiceId = linkedInvoiceId;
+      else if (op === 'deleteInvoice') details.invoiceId = String(target._id);
       delete details.password;
       if (Array.isArray(details.treatments)) {
         details.treatments = details.treatments.map((item: any) => ({treatmentId:item.treatmentId,remainingBefore:item.remainingBefore,...(item.signature ? {signatureDigest:sha(JSON.stringify(item.signature))} : {})}));
@@ -1582,7 +1678,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       if (op === 'openDay' || op === 'closeDay' || op === 'reopenDay') details.daySnapshot = target.toObject();
       if (op === 'openDay') details.opening = target.opening;
       await create(Audit, { actorId: actor.id, action: op, targetId: target._id, details });
-      const result = { id: String(target._id), message: op === 'deleteInvoice' ? 'Đã xóa vĩnh viễn hóa đơn nhập nhầm.' : 'Đã lưu thành công.', ...(linkedInvoiceId ? { invoiceId: linkedInvoiceId } : {}), ...(replacementAppointmentId ? { replacementAppointmentId } : {}), ...(treatmentUseId ? { treatmentUseId } : {}) };
+      const result = { id: String(target._id), message: op === 'deleteInvoice' ? 'Đã vô hiệu hóa hóa đơn nhập nhầm và giữ lịch sử chứng từ.' : 'Đã lưu thành công.', ...(linkedInvoiceId ? { invoiceId: linkedInvoiceId } : {}), ...(replacementAppointmentId ? { replacementAppointmentId } : {}), ...(treatmentUseId ? { treatmentUseId } : {}) };
       return result;
       };
       let result;

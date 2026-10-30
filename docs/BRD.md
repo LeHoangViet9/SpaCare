@@ -373,3 +373,13 @@ CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF ca
 PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn nợ chưa CANCELLED không giới hạn ngày tạo, hóa đơn tạo trong ngày, hóa đơn có Payment còn hiệu lực trong ngày và hóa đơn được phân công. Hóa đơn vừa tất toán vẫn tra được trong ngày thu; lịch sử đã tất toán không thuộc các phạm vi này không được mở rộng. Tìm khách cho OWNER/cashier giữ nguyên để phục vụ thu ngân; lịch sử hóa đơn áp dụng invoiceScope theo customerId cùng spa. Payment tiếp tục kiểm tài khoản active/cashier từ DB, cùng spa, hóa đơn chưa CANCELLED, số tiền không vượt nợ, sổ hôm nay OPEN, transaction/idempotency/audit. Không thay quyền allocate theo phân công.
 
 STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.
+
+## Thông báo lịch hẹn nội bộ — 30/10/2026
+
+CONFIRMED theo yêu cầu mới nhất: khi tạo lịch nội bộ, thông báo ngay cho OWNER đang hoạt động và nhân viên STAFF được phân công. Không phát thông báo cho STAFF không được phân công. Sự kiện lưu cùng transaction tạo lịch, retry idempotency không tạo bản ghi trùng; nội dung thông báo không cần tên/số điện thoại khách. Reminder trước giờ hẹn tiếp tục theo quy tắc APPOINTMENT_REMINDER hiện tại.
+
+## P0 bảo toàn ledger hoa hồng và chứng từ — 30/10/2026
+
+CONFIRMED theo yêu cầu mới nhất, thay thế mọi mô tả cho phép xóa cứng hóa đơn: `InvoiceLineCommission` phải được snapshot riêng và gắn đúng một payroll khi duyệt trong cùng transaction. Hóa đơn có bất kỳ hoa hồng nào đã thuộc payroll duyệt/đã chi không được sửa, hủy hoặc vô hiệu hóa trực tiếp khi chưa có quy trình adjustment được phê duyệt.
+
+Action `deleteInvoice` được giữ tên để tương thích client nhưng chuyển thành vô hiệu hóa: đảo các phát sinh được hỗ trợ theo quy trình hiện hành, giữ nguyên bản ghi hóa đơn/mã chứng từ, đặt trạng thái CANCELLED và lưu audit trước/sau. Không dùng `Invoice.deleteOne`. Với hóa đơn nhiều dòng/người thực hiện, sửa giá giữ `lineId`, `performerId` và mức hoa hồng snapshot; thay đổi tập dịch vụ bị chặn vì chưa có chính sách adjustment line commission. Không backfill hay sửa dữ liệu Production tự động.
