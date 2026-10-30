@@ -88,7 +88,14 @@ export default function Notifications() {
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
       <span>Thông báo</span>{unread > 0 && <span className="notification-count">{unread > 99 ? '99+' : unread}</span>}
     </button>
-    {open && <><button className="notification-backdrop" aria-label="Đóng thông báo" onClick={() => setOpen(false)} /><section id="workspace-notifications" className="notification-panel" aria-label="Thông báo">
+    {open && <><div className="notification-backdrop" role="button" tabIndex={0} aria-label="Đóng thông báo"
+      onClick={() => setOpen(false)}
+      onKeyDown={event => {
+        if (['Enter', ' ', 'Escape'].includes(event.key)) {
+          event.preventDefault();
+          setOpen(false);
+        }
+      }} /><section id="workspace-notifications" className="notification-panel" aria-label="Thông báo">
       <div className="section-head"><h2>Thông báo</h2><button onClick={() => setOpen(false)}>Đóng</button></div>
       <button disabled={busy} onClick={toggle}>{enabled ? 'Tắt thông báo thiết bị này' : 'Bật thông báo trên điện thoại'}</button>
       {unread > 0 && <button disabled={busy} onClick={readAll}>Đánh dấu tất cả đã đọc</button>}
