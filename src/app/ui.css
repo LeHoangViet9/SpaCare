@@ -129,8 +129,11 @@ form {
 .shared-brand svg { flex-shrink: 0; }
 
 [hidden] { display: none !important; }
-.pub-page-wrapper { width: 100%; max-width: 100%; min-width: 0; }
+.pub-page-wrapper { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .shared-public-page { display: grid; gap: 28px; padding-top: 28px; padding-bottom: 40px; min-width: 0; max-width: 100%; }
+.services-catalog-page { width: 100%; max-width: 100%; min-width: 0; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr); overflow-x: hidden; box-sizing: border-box; }
+.services-catalog-page > * { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.services-catalog-page > .page-heading > div { width: 100%; min-width: 0; }
 .ui-card { border-radius: var(--radius-ui); }
 .shared-home-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; padding: 28px; }
 .shared-home-intro h1 { font-size: 30px; line-height: 1.35; }
@@ -155,14 +158,28 @@ form {
 .shared-category-links > * { flex: 0 0 auto; white-space: nowrap; }
 .shared-search-form, .shared-search-form > div { min-width: 0; max-width: 100%; }
 .shared-public-page .pub-service-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); min-width: 0; }
+.services-catalog-page .shared-catalog-filters,
+.services-catalog-page .shared-search-form,
+.services-catalog-page .shared-search-form > div,
+.services-catalog-page .shared-category-links,
+.services-catalog-page .services-catalog-grid,
+.services-catalog-page .shared-service-card { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.services-catalog-page .shared-search-form > div { display: flex; }
+.services-catalog-page .shared-search-form input:not([type="hidden"]) { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.services-catalog-page .shared-category-links { flex-wrap: nowrap; overflow-x: auto; }
+.services-catalog-page .services-catalog-grid { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 700px) {
   .shared-brand { font-size: 24px; }
   .shared-public-page { width: 100%; gap: 22px; padding-top: 20px; overflow-x: hidden; }
+  .services-catalog-wrapper { width: 100%; max-width: 100%; overflow-x: hidden; }
+  .services-catalog-page { width: 100%; max-width: 100%; flex: 1 1 auto; overflow-x: hidden; }
   .shared-public-page .pub-service-grid { grid-template-columns: minmax(0, 1fr); }
+  .services-catalog-page .services-catalog-grid { grid-template-columns: minmax(0, 1fr); }
   .shared-home-intro { grid-template-columns: minmax(0, 1fr); padding: 20px; gap: 18px; }
   .shared-home-intro h1 { font-size: 27px; }
   .shared-opening-hours { padding: 16px; }
   .shared-service-card, .shared-about, .shared-catalog-filters { padding: 18px; }
+  .services-catalog-page .shared-service-card { width: 100%; max-width: 100%; min-width: 0; }
   .shared-service-card .shared-card-actions > a { flex: 1; }
   .shared-search-form > div { flex-wrap: wrap; }
   .shared-search-form button { width: 100%; }
