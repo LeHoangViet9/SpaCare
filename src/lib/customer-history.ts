@@ -26,7 +26,7 @@ export async function readCustomerHistory(user: Actor, id: string, kind: 'invoic
   const canSeeCredit = user.role === 'OWNER' || user.cashier || !!balances[0]?.count;
   const credit = canSeeCredit ? await Deposit.aggregate([{ $match: (Deposit.find({ ...scope, customerId: id }) as any).cast(Deposit) }, { $group: { _id: null, balance: { $sum: '$balance' } } }]) : [];
   const appointments = await Appointment.countDocuments(appointmentsFilter);
-  const activePackages = await Treatment.countDocuments({ ...treatmentFilter, ...availableTreatmentFilter() });
+  const activePackages = await Treatment.countDocuments({ $and: [treatmentFilter, availableTreatmentFilter()] });
   const lastVisit = await Appointment.findOne({ ...appointmentsFilter, status: 'COMPLETED' }).sort({ startAt: -1 }).select('startAt').lean();
   return { customer: { ...customer, consultantName: people.find(p => String(p._id) === String(customer.consultantId))?.name },
     rows: rows.map(r => ({ ...r, serviceName: appointmentServiceName(r, services.find(s => String(s._id) === String(r.serviceId))?.name || '-'),

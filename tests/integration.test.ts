@@ -93,6 +93,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await assert.rejects(readCustomerHistory(who(staff), String(other._id), 'treatments', 1), (e: any) => e.status === 404);
       const history = await readCustomerHistory(who(staff), String(customer._id), 'treatments', 1);
       assert.deepEqual(history.rows.map(r => String(r._id)), [String(own._id)]);
+      assert.equal(history.summary.activePackages, 1);
       for (const section of ['packages', 'treatment_uses']) {
         const data = await readWorkspace(who(staff), workspaceQuery(new URLSearchParams({ section })));
         assert.ok(!data.treatments.some(p => String(p._id) === String(hidden._id)));
