@@ -1362,8 +1362,12 @@
 @media (max-width: 768px) {
   .pub-mobile-bottom-bar {
     box-sizing: border-box;
-    bottom: var(--public-nav-bottom, 0px);
-    transform: translateZ(0);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 99;
     isolation: isolate;
     background: #fff;
     backdrop-filter: none;

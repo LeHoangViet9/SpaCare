@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
 import type { Actor } from '@/lib/auth';
@@ -9,33 +9,7 @@ import type { Actor } from '@/lib/auth';
 export default function MobileBottomNav({ user }: { user: Actor | null }) {
   const pathname = usePathname();
   const [mounted,setMounted]=useState(false);
-  const navigation=useRef<HTMLElement>(null);
-  useEffect(()=>{
-    setMounted(true);
-    const viewport=window.visualViewport;
-    let frame=0;
-    const update=()=>{
-      cancelAnimationFrame(frame);
-      frame=requestAnimationFrame(()=>{
-        // Mobile browser toolbars resize the visible viewport while scrolling.
-        // Match its bottom rather than retaining the previous layout viewport edge.
-        const inset=viewport && viewport.scale===1 ? window.innerHeight-viewport.height-viewport.offsetTop : 0;
-        navigation.current?.style.setProperty('--public-nav-bottom',`${Math.round(inset)}px`);
-      });
-    };
-    update();
-    viewport?.addEventListener('resize',update);
-    viewport?.addEventListener('scroll',update);
-    window.addEventListener('resize',update);
-    window.addEventListener('scroll',update,{passive:true});
-    return ()=>{
-      cancelAnimationFrame(frame);
-      viewport?.removeEventListener('resize',update);
-      viewport?.removeEventListener('scroll',update);
-      window.removeEventListener('resize',update);
-      window.removeEventListener('scroll',update);
-    };
-  },[pathname]);
+  useEffect(()=>setMounted(true),[]);
 
   // Hide on workspace pages if needed, but show on all public & customer pages
   if (!mounted || pathname.startsWith('/workspace')) {
@@ -60,7 +34,7 @@ export default function MobileBottomNav({ user }: { user: Actor | null }) {
   const isAccount = pathname === '/customer' || pathname === '/login' || pathname === '/register';
 
   return createPortal(
-    <nav ref={navigation} className="pub-mobile-bottom-bar" aria-label="Điều hướng nhanh trên điện thoại">
+    <nav className="pub-mobile-bottom-bar" aria-label="Điều hướng nhanh trên điện thoại">
       <Link
         href="/"
         className={`pub-bottom-item ${isHome ? 'active' : ''}`}
