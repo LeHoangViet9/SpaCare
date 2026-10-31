@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
-import { SaleCommission, SharedSaleCommission, Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
+import { SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
 const actor={id:ownerId,spaId,name:'Owner',role:'OWNER' as const,cashier:false};
@@ -12,7 +12,7 @@ function match(row:any,filter:any):boolean{return Object.entries(filter).every((
 function doc(name:string,row:any):any{if(!row)return null;return {...clone(row),...(name==='Appointment'?{startAt:new Date(row.startAt)}:{}),toObject(){const {toObject,save,...v}=this;return clone(v);},async save(){const i=state[name].findIndex(v=>String(v._id)===String(this._id));state[name][i]=this.toObject();}};}
 function query(value:any):any{return {distinct:(key:string)=>query([...new Set((value||[]).map((row:any)=>row[key]).filter(Boolean))]),session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
 let failModel='';
-for(const model of [SaleCommission,SharedSaleCommission,Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
+for(const model of [SaleCommission,SharedSaleCommission,InvoiceLineCommission,Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
   (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
@@ -98,11 +98,11 @@ await call('invoice',completedInput,completionKey);
 const completedInvoice=state.Invoice.find(v=>v._id===completed.id);
 assert.equal(String(completedInvoice.performedBy),performerId);
 assert.ok(completedInvoice.performedAt);
-assert.equal(state.Commission.filter(v=>v.invoiceId===completed.id).length,1);
-assert.equal(state.Commission.find(v=>v.invoiceId===completed.id).amount,20000);
+assert.equal(state.InvoiceLineCommission.filter(v=>v.invoiceId===completed.id).length,1);
+assert.equal(state.InvoiceLineCommission.find(v=>v.invoiceId===completed.id).amount,20000);
 await call('completeInvoiceService',{id:completed.id,staffId:performerId});
-assert.equal(state.Commission.filter(v=>v.invoiceId===completed.id).length,1);
-const beforeCompletionFailure=clone(state);failModel='Commission';
+assert.equal(state.InvoiceLineCommission.filter(v=>v.invoiceId===completed.id).length,1);
+const beforeCompletionFailure=clone(state);failModel='InvoiceLineCommission';
 await assert.rejects(call('invoice',completedInput),/INJECTED_LEDGER_FAILURE/);
 failModel='';assert.deepEqual(state,beforeCompletionFailure,'commission failure rolls back the new invoice');
 state.User.find(v=>v._id===performerId).active=false;
@@ -114,15 +114,15 @@ await assert.rejects(call('invoice',{...completedInput,staffId:'7'.repeat(24)}))
 // Multi-service checkout is one invoice, one summed performer commission, one card redemption.
 const secondServiceId='6'.repeat(24);
 state.Service.push({_id:secondServiceId,spaId,name:'Second service',price:150000,active:true,commission:10000});
-const bundleInput={customerId,staffId:performerId,items:[{serviceId,total:350000},{serviceId:secondServiceId}]};
+const bundleInput={customerId,staffId:performerId,items:[{serviceId,total:350000,performerId},{serviceId:secondServiceId,performerId}]};
 const bundleKey=randomUUID(),bundle=await call('serviceInvoice',bundleInput,bundleKey);
 await call('serviceInvoice',bundleInput,bundleKey);
 const bundleBill=state.Invoice.find(v=>v._id===bundle.id);
 assert.equal(bundleBill.total,500000);assert.equal(bundleBill.serviceId,undefined);
 assert.equal(bundleBill.serviceItems.length,2);assert.equal(bundleBill.serviceItems[0].total,350000);
 assert.equal(bundleBill.serviceItems[1].total,150000);assert.equal(bundleBill.commission,30000);
-assert.equal(state.Commission.filter(v=>v.invoiceId===bundle.id).length,1);
-assert.equal(state.Commission.find(v=>v.invoiceId===bundle.id).amount,30000);
+assert.equal(state.InvoiceLineCommission.filter(v=>v.invoiceId===bundle.id).length,2);
+assert.deepEqual(state.InvoiceLineCommission.filter(v=>v.invoiceId===bundle.id).map(v=>v.amount).sort((a,b)=>a-b),[10000,20000]);
 assert.equal(state.Invoice.filter(v=>v._id===bundle.id).length,1);
 state.Service[0].name='Changed catalog';state.Service[0].commission=999;
 assert.notEqual(bundleBill.serviceItems[0].name,state.Service[0].name);
@@ -136,21 +136,28 @@ await assert.rejects(call('serviceInvoice',{...bundleInput,items:[{serviceId:for
 state.Service.find(v=>v._id===secondServiceId).active=false;
 await assert.rejects(call('serviceInvoice',bundleInput));state.Service.find(v=>v._id===secondServiceId).active=true;
 await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'serviceInvoice',bundleInput,randomUUID()),e=>(e as any).status===403);
-let bundleBefore=clone(state);failModel='Commission';await assert.rejects(call('serviceInvoice',bundleInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore);
+let bundleBefore=clone(state);failModel='InvoiceLineCommission';await assert.rejects(call('serviceInvoice',bundleInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore);
 const bundleCard=await call('sellCashCard',{...sale,amount:800000});
 const bundlePay={...bundleInput,cashCard:{cardId:bundleCard.id,amount:400000,additionalAmount:100000,method:'CASH',receivedConfirmation:true}};
-const cardBundleKey=randomUUID(),paidBundle=await call('serviceInvoice',bundlePay,cardBundleKey);await call('serviceInvoice',bundlePay,cardBundleKey);
+bundleBefore=clone(state);await assert.rejects(call('serviceInvoice',bundlePay),/phân bổ/);assert.deepEqual(state,bundleBefore);
+const paidBundle=await call('serviceInvoice',bundleInput);
+const paymentLines=state.Invoice.find(row=>row._id===paidBundle.id).serviceItems;
+const bundleRedemption={...bundlePay.cashCard,invoiceId:paidBundle.id,lineAllocations:[{lineId:paymentLines[0].lineId,amount:350000},{lineId:paymentLines[1].lineId,amount:50000}],additionalLineAllocations:[{lineId:paymentLines[1].lineId,amount:100000}]};
+const cardBundleKey=randomUUID();await call('redeemCashCard',bundleRedemption,cardBundleKey);await call('redeemCashCard',bundleRedemption,cardBundleKey);
 assert.equal(state.Invoice.find(v=>v._id===paidBundle.id).paid,500000);
 assert.equal(state.CashCard.find(v=>v._id===bundleCard.id).balance,400000);
 assert.equal(state.CashCardUse.filter(v=>v.invoiceId===paidBundle.id).length,1);
 assert.equal(state.Payment.filter(v=>v.invoiceId===paidBundle.id).length,1);
-for(const model of ['Payment','Audit']) { bundleBefore=clone(state);failModel=model;await assert.rejects(call('serviceInvoice',bundlePay),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore); }
+const rollbackBundle=await call('serviceInvoice',bundleInput);
+const rollbackLines=state.Invoice.find(row=>row._id===rollbackBundle.id).serviceItems;
+const rollbackRedemption={...bundleRedemption,invoiceId:rollbackBundle.id,lineAllocations:[{lineId:rollbackLines[0].lineId,amount:350000},{lineId:rollbackLines[1].lineId,amount:50000}],additionalLineAllocations:[{lineId:rollbackLines[1].lineId,amount:100000}]};
+for(const model of ['Payment','Audit']) { bundleBefore=clone(state);failModel=model;await assert.rejects(call('redeemCashCard',rollbackRedemption),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore); }
 
 
 // Completing a public multi-service visit cannot silently bill only its first service.
 const visitId='3'.repeat(24);
 state.Appointment=[{_id:visitId,spaId,customerId,serviceId,staffId:performerId,startAt:new Date(Date.now()-60000).toISOString(),status:'CONFIRMED',requestedServices:[{serviceId,name:'First'},{serviceId:secondServiceId,name:'Second'}]}];
-let beforeVisit=clone(state);failModel='Commission';
+let beforeVisit=clone(state);failModel='InvoiceLineCommission';
 await assert.rejects(call('completeAppointment',{id:visitId}),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,beforeVisit);
 await assert.rejects(call('completeAppointment',{id:visitId,total:1}),e=>(e as any).status===409);assert.deepEqual(state,beforeVisit);
 const completeVisitKey=randomUUID();const visitResult=await call('completeAppointment',{id:visitId},completeVisitKey);
@@ -158,8 +165,8 @@ await call('completeAppointment',{id:visitId},completeVisitKey);
 const visitBill=state.Invoice.find(row=>row.appointmentId===visitId);
 assert.equal(visitResult.invoiceId,visitBill._id);assert.equal(visitBill.serviceItems.length,2);
 assert.equal(visitBill.total,550000);assert.equal(visitBill.commission,10999);
-assert.equal(state.Commission.filter(row=>row.invoiceId===visitBill._id).length,1);
-assert.equal(state.Commission.find(row=>row.invoiceId===visitBill._id).amount,10999);
+assert.equal(state.InvoiceLineCommission.filter(row=>row.invoiceId===visitBill._id).length,2);
+assert.deepEqual(state.InvoiceLineCommission.filter(row=>row.invoiceId===visitBill._id).map(row=>row.amount).sort((a,b)=>a-b),[999,10000]);
 assert.equal(state.Appointment[0].status,'COMPLETED');
 
 // Invoice notifications are committed once per created invoice and roll back with its transaction.
@@ -181,7 +188,7 @@ const purchaseA=invoice(0,'PACKAGE'),purchaseB=invoice(0,'PACKAGE');
 purchaseB.serviceId=secondServiceId;
 state.Treatment.push({_id:planA,spaId,customerId,invoiceId:purchaseA._id,serviceId,name:'Gội dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'},
  {_id:planB,spaId,customerId,invoiceId:purchaseB._id,serviceId:secondServiceId,name:'Triệt dùng gói',packageType:'SESSIONS',totalSessions:5,remaining:5,status:'ACTIVE'});
-const selections=(a=5,b=5)=>[{treatmentId:planA,signature:signed,remainingBefore:a},{treatmentId:planB,signature:signed,remainingBefore:b}];
+const selections=(a=5,b=5)=>[{treatmentId:planA,signature:signed,remainingBefore:a,performerId},{treatmentId:planB,signature:signed,remainingBefore:b,performerId}];
 const multiple={customerId,serviceId,staffId:performerId,treatments:selections()};
 for(const bad of [[selections()[0],selections()[0]], selections(5,4), [selections()[0],{...selections()[1],signature:{version:1,strokes:[[[0.2,0.5],[0.4,0.3],[0.9,0.8]]]}}], [selections()[0],{...selections()[1],signature:{version:1,strokes:[]}}]]) {
  const before=clone(state);await assert.rejects(call('invoice',{...multiple,treatments:bad}));assert.deepEqual(state,before);
@@ -192,13 +199,13 @@ state.Treatment.find(row=>row._id===planB).customerId=customerId;
 state.Treatment.find(row=>row._id===planB).spaId='9'.repeat(24);
 snapshot=clone(state);await assert.rejects(call('invoice',multiple));assert.deepEqual(state,snapshot);
 state.Treatment.find(row=>row._id===planB).spaId=spaId;
-for(const model of ['Commission','Audit','ActivityNotification']) {
+for(const model of ['InvoiceLineCommission','Audit','ActivityNotification']) {
  const before=clone(state);failModel=model;await assert.rejects(call('invoice',multiple),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,before);
 }
 const combinedKey=randomUUID(),combined=await call('invoice',multiple,combinedKey);await call('invoice',multiple,combinedKey);
 const combinedBill=state.Invoice.find(row=>row._id===combined.invoiceId);
 assert.equal(combinedBill.treatmentSessions.length,2);assert.equal(combinedBill.serviceItems.length,2);
-assert.equal(combinedBill.total,0);assert.equal(state.Commission.find(row=>row.invoiceId===combined.invoiceId).amount,10999);
+assert.equal(combinedBill.total,0);assert.deepEqual(state.InvoiceLineCommission.filter(row=>row.invoiceId===combined.invoiceId).map(row=>row.amount).sort((a,b)=>a-b),[999,10000]);
 assert.equal(state.TreatmentUse.filter(row=>row.checkoutInvoiceId===combined.invoiceId).length,2);
 for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,4);
 const combinedAudit=state.Audit.find(row=>row.targetId===combined.invoiceId);
@@ -295,7 +302,7 @@ const cart={customerId,issuedOn:spaDay(),actions:[
 ]};
 const cartBefore=clone(state);failModel='Treatment';await assert.rejects(call('checkout',cart),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,cartBefore,'failed package rolls back earlier product invoice and inventory');
 const cartKey=randomUUID(),cartDone=await call('checkout',cart,cartKey);await call('checkout',cart,cartKey);
-assert.equal(cartDone.invoiceIds.length,2);assert.equal(cartDone.total,6180000);
+assert.equal(cartDone.invoiceIds.length,1);assert.equal(cartDone.total,6180000);
 assert.equal(state.Invoice.find(row=>row._id===cartDone.invoiceIds[0]).productItems.length,2);
 assert.equal(state.Product.find(row=>row._id===extraProductId).stock,2);assert.equal(state.Product.find(row=>row._id===secondProductId).stock,6);
 assert.equal(state.Treatment.filter(row=>cartDone.invoiceIds.includes(row.invoiceId)).length,2);
@@ -304,9 +311,9 @@ snapshot=clone(state);await assert.rejects(call('checkout',{...cart,actions:[car
 await assert.rejects(call('checkout',{...cart,actions:[cart.actions[0],{...cart.actions[1],data:{...cart.actions[1].data,customerId:'9'.repeat(24)}}]}),/cùng khách/);
 assert.deepEqual(state,snapshot);
 await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'checkout',cart,randomUUID()),error=>(error as any).status===403);
-const mixedServiceProduct=await call('serviceInvoice',{customerId,staffId:performerId,items:[{serviceId,total:100000}],additionalProducts:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
+const mixedServiceProduct=await call('serviceInvoice',{customerId,staffId:performerId,items:[{serviceId,total:100000,performerId}],additionalProducts:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
 assert.equal(state.Invoice.find(row=>row._id===mixedServiceProduct.id).total,150000);
-assert.equal(state.Commission.find(row=>row.invoiceId===mixedServiceProduct.id).amount,999,'product has no service commission');
+assert.equal(state.InvoiceLineCommission.find(row=>row.invoiceId===mixedServiceProduct.id).amount,999,'product has no service commission');
 
 // Service gifts grant one free visit, never a package entitlement.
 const giftSale={customerId,templateId,dueDate:spaDay(),promotion:'Tặng gội',gifts:[{serviceId}]};
@@ -339,7 +346,7 @@ assert.equal(state.CashCard.filter(row=>row.sourceInvoiceId===grouped.invoiceId)
 assert.equal(state.CashCard.find(row=>row.sourceInvoiceId===grouped.invoiceId).balance,300000);
 assert.equal(state.CashEntry.length,snapshot.CashEntry.length,'sale is not receipt confirmation');
 state.Day[0].status='OPEN';
-const payKey=randomUUID(),payInput={invoiceId:grouped.invoiceId,amount:1000000,method:'CASH',receivedConfirmation:true};
+const payKey=randomUUID(),payInput={invoiceId:grouped.invoiceId,amount:1000000,method:'CASH',receivedConfirmation:true,lineAllocations:[{lineId:groupBill.packageItems[0].lineId,amount:1000000}]};
 await call('payment',payInput,payKey);await call('payment',payInput,payKey);
 assert.equal(state.Invoice.find(row=>row._id===grouped.invoiceId).paid,1000000);
 assert.equal(state.SaleCommission.filter(row=>row.invoiceId===grouped.invoiceId).reduce((n,row)=>n+row.amount,0),50000,'5% of the combined amount received, once');

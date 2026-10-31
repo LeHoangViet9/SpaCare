@@ -17,8 +17,12 @@ assert.equal(mixed[0].action,'invoice');assert.equal(mixed[0].data.additionalPro
 assert.equal(mixed[0].data.additionalServices.length,1);assert.equal(mixed[0].data.treatments[0].remainingBefore,3);
 assert.equal(mixed[0].data.signature,undefined,'signature remains optional');
 assert.equal(cashierActions({...base,services:[{_id:'s1',total:'100'}]})[0].action,'serviceInvoice');
-const perLine=cashierActions({...base,services:[{_id:'s1',total:'100',performerId:'staff-a'}],staffId:''});
-assert.equal(perLine[0].data.staffId,undefined);
-assert.equal(perLine[0].data.items[0].performerId,'staff-a');
-assert.throws(()=>cashierActions({...base,services:[],sessions:[{_id:'t1',serviceId:'s1',remaining:3}],staffId:''}),/nhân viên/);
+const optionalPerformers=cashierActions({...base,staffId:'',services:[{_id:'s1',total:'100',performerId:'a'},{_id:'s2',total:'200'}],sessions:[],products:[],packages:[]})[0];
+assert.equal(optionalPerformers.data.staffId,undefined);
+assert.equal(optionalPerformers.data.items[0].performerId,'a');
+assert.equal(optionalPerformers.data.items[1].performerId,undefined);
+const optionalSession=cashierActions({...base,staffId:'',services:[{_id:'s2',total:'200'}],sessions:[{_id:'t1',serviceId:'s1',remaining:3,performerId:'b'}],products:[],packages:[]})[0];
+assert.equal(optionalSession.data.staffId,undefined);
+assert.equal(optionalSession.data.treatments[0].performerId,'b');
+assert.equal(optionalSession.data.additionalServices[0].performerId,undefined);
 assert.throws(()=>cashierActions({...base,products:[],packages:[]}),/ít nhất/);

@@ -1,0 +1,19 @@
+FROM node:24-bookworm AS node24
+
+FROM mcr.microsoft.com/playwright:v1.51.1-noble
+
+# The official Playwright image already contains its matching Chromium and
+# system libraries. Replace only the Node/npm runtime with Node 24.
+COPY --from=node24 /usr/local/ /usr/local/
+
+WORKDIR /work
+COPY package.json package-lock.json ./
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm ci
+RUN node -e "if (Number(process.versions.node.split('.')[0]) !== 24) process.exit(1)" \
+    && test "$(node node_modules/@playwright/test/cli.js --version)" = "Version 1.51.1" \
+    && test -d /ms-playwright
+COPY . .
+
+ENV CI=1

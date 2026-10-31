@@ -1,5 +1,7 @@
 # SpaCare — Business Rules
 
+Kiểm toán 29/10/2026 — áp dụng BR-PERFORMER-001 cho sửa hóa đơn: hóa đơn có mã dòng không tự lấy người thực hiện cấp hóa đơn cho dòng chưa chọn, kể cả khi thêm dịch vụ. Giữ guard 409 nếu đã có ledger hoa hồng theo dòng; chưa triển khai luồng điều chỉnh performer riêng. Không chốt chính sách mới.
+
 Cập nhật: 21/10/2026.
 
 - CONFIRMED: có xác nhận nghiệp vụ hoặc yêu cầu rõ từ người dùng; ghi nguồn tại từng rule.
@@ -725,7 +727,6 @@ CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF ca
 PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn nợ chưa CANCELLED không giới hạn ngày tạo, hóa đơn tạo trong ngày, hóa đơn có Payment còn hiệu lực trong ngày và hóa đơn được phân công. Hóa đơn vừa tất toán vẫn tra được trong ngày thu; lịch sử đã tất toán không thuộc các phạm vi này không được mở rộng. Tìm khách cho OWNER/cashier giữ nguyên để phục vụ thu ngân; lịch sử hóa đơn áp dụng invoiceScope theo customerId cùng spa. Payment tiếp tục kiểm tài khoản active/cashier từ DB, cùng spa, hóa đơn chưa CANCELLED, số tiền không vượt nợ, sổ hôm nay OPEN, transaction/idempotency/audit. Không thay quyền allocate theo phân công.
 
 STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.
-
 ## BR-PAY-002 — Toàn vẹn hoa hồng từng dòng và chứng từ — 30/10/2026
 
 CONFIRMED, ưu tiên mới nhất. Mỗi `InvoiceLineCommission` chỉ thuộc tối đa một payroll; duyệt payroll phải khóa toàn bộ ID của các ledger trong cùng transaction và rollback nếu không gắn đủ. Khoản đã thuộc payroll duyệt/đã chi là bất biến; sửa/hủy/vô hiệu hóa hóa đơn phải trả 409 cho đến khi có quy trình adjustment được phê duyệt.
@@ -739,3 +740,14 @@ Khi void invoice, audit bất biến ghi snapshot before/after của cả bốn 
 ## Thông báo lịch hẹn nội bộ — 30/10/2026
 
 CONFIRMED: tạo lịch nội bộ gửi một thông báo đến từng OWNER đang hoạt động cùng spa và STAFF đang hoạt động được phân công; STAFF khác không nhận. Notification được ghi trong transaction tạo lịch, không chứa tên/số điện thoại khách và retry cùng Idempotency-Key không phát sinh bản sao. Notification Center đọc cả Notification lẫn ActivityNotification; reminder APPOINTMENT_REMINDER vẫn chỉ được tạo khi lịch CONFIRMED nằm trong cửa sổ tối đa 10 phút.
+
+### BR-PERFORMER-001 — Người thực hiện theo từng dòng hóa đơn
+Trạng thái: CONFIRMED theo thiết kế đã audit. Mỗi dòng dịch vụ hoặc lượt dùng liệu trình có thể lưu `performerId`; hệ thống không tự gán người tạo. Hoa hồng dịch vụ được ghi theo performer của từng dòng. Gói mua mới giữ hoa hồng 5% theo nhân viên tư vấn; lượt dùng gói 0đ không tự phát sinh hoa hồng khi chưa có cấu hình.
+
+Thanh toán một phần phải mang phân bổ tường minh theo mã dòng và tổng phân bổ phải bằng số tiền thực thu. Cọc chỉ giảm số dư cọc, không tạo CashEntry mới; thẻ tiền chỉ áp dụng cho dịch vụ lẻ theo các guard hiện hành. Đảo thanh toán/cọc phải đảo đúng ledger gốc trong cùng transaction và qua idempotency.
+
+Khắc phục 29/10/2026: nếu nhiều dòng còn nợ, thu một phần phải chỉ định từng dòng. Tiền trừ thẻ và tiền thu thêm có phân bổ độc lập, cùng transaction; đảo tiền thu thêm giữ nguyên tiền thẻ. Giao diện thu tiền/cọc và chi tiết thẻ gửi phân bổ này. Giỏ nhiều dịch vụ lưu hóa đơn trước rồi dùng thẻ tại chi tiết, để chọn mã dòng ổn định.
+
+PROPOSED kỹ thuật, không phải chính sách spa mới: khi chỉ một dòng còn nợ hoặc tất toán toàn bộ, backend có duy nhất một cách phân bổ và lưu tường minh vào ledger. Hóa đơn cũ hoàn toàn thiếu mã dòng giữ luồng tổng cũ. Hóa đơn có mã dòng nhưng số dư không khớp hoặc thiếu mã một phần bị chặn thu thêm để đối soát; không tự backfill hay chia tiền lịch sử. Đảo chứng từ cũ thiếu phân bổ giữ cách ghi tổng cũ.
+
+`performerId` đã dùng cho dòng có hoa hồng không được sửa khi Commission đã gắn payroll. OWNER chỉ được sửa trước khi chốt lương, với expected version, audit và đối soát lại ledger.

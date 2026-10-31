@@ -1,5 +1,9 @@
 # SpaCare — Data Model
 
+Khắc phục phân bổ 29/10/2026: Payment.lineAllocations lưu riêng tiền thu trực tiếp/thu thêm sau thẻ; Allocation.lineAllocations lưu tiền cọc; CashCardUse.lineAllocations chỉ lưu tiền trừ thẻ. Backend cập nhật Invoice.*Items[].paid và ledger cùng transaction, kiểm tổng paid cấp dòng so với hóa đơn trước thu mới. Chỉ tham chiếu treatmentSessions 0đ trùng lineId với serviceItems được bỏ khỏi phép cộng; vẫn giữ snapshot liên kết. Các sub-schema lineAllocations đặt versionKey:false như schema cha để Mongoose rollback không lỗi __v. Không thêm index, migration hoặc backfill dữ liệu vận hành.
+
+Kiểm toán 29/10/2026: sửa hóa đơn có mã dòng giữ `performerId` trống nếu chưa chọn; không lấy `performedBy` cấp hóa đơn cho dòng mới hoặc dòng cũ. Dòng không có performer giữ commission bằng 0. Không thay schema/index hoặc backfill.
+
 Cập nhật: 20/10/2026. Mô tả code `src/lib/models.ts` và `src/lib/operations.ts` hiện tại; không phải bằng chứng chính sách đã được spa duyệt.
 
 ## Quy ước
@@ -551,7 +555,6 @@ CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF ca
 PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn nợ chưa CANCELLED không giới hạn ngày tạo, hóa đơn tạo trong ngày, hóa đơn có Payment còn hiệu lực trong ngày và hóa đơn được phân công. Hóa đơn vừa tất toán vẫn tra được trong ngày thu; lịch sử đã tất toán không thuộc các phạm vi này không được mở rộng. Tìm khách cho OWNER/cashier giữ nguyên để phục vụ thu ngân; lịch sử hóa đơn áp dụng invoiceScope theo customerId cùng spa. Payment tiếp tục kiểm tài khoản active/cashier từ DB, cùng spa, hóa đơn chưa CANCELLED, số tiền không vượt nợ, sổ hôm nay OPEN, transaction/idempotency/audit. Không thay quyền allocate theo phân công.
 
 STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.
-
 ## P0 payroll và bảo toàn hóa đơn — 30/10/2026
 
 `Payroll.invoiceLineCommissionIds: ObjectId[]` lưu snapshot riêng của ledger `InvoiceLineCommission`; không đổi unique indexes hiện tại. Khi duyệt, backend gắn `payrollId` cho Commission, InvoiceLineCommission, SaleCommission và SharedSaleCommission tuần tự trong cùng transaction, kiểm `matchedCount` bằng số ID snapshot. Draft cũ có line IDs trong `commissionIds` được phân loại lại khi duyệt. APPROVED/PAID lịch sử không tự backfill; line ID đã có trong snapshot khóa cũ được loại khỏi pending để không tính lại ở kỳ sau.
@@ -561,3 +564,6 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 Payroll APPROVED/PAID cùng spa có line ID trong `commissionIds` hoặc `invoiceLineCommissionIds` cũng là quan hệ settled dù ledger cũ chưa có `payrollId`. `StockMovement.reversalOf?: ObjectId` liên kết movement hoàn kho với movement xuất gốc. Đây là field additive, không có index mới và không cần backfill; chống đảo lặp dựa trên Control transaction, idempotency và `Invoice.status=CANCELLED`.
 
 Thông báo tạo lịch nội bộ tiếp tục dùng collection `notifications` và index unique hiện có `{spaId,userId,appointmentId}`; recipient là OWNER đang hoạt động cùng spa và STAFF đang hoạt động được phân công. Bản ghi được tạo cùng transaction với Appointment, không thêm field/index hoặc migration. `activitynotifications` giữ riêng reminder `APPOINTMENT_REMINDER` được sinh trong cửa sổ 10 phút.
+
+### Per-line performer and payment allocation (CONFIRMED)
+Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment lines) and `paid`. Payment and Allocation may carry `lineAllocations[]` with `{lineId, amount}`. Legacy documents without line IDs remain readable; a new line-allocation payment is rejected until the invoice has explicit line identities. No production backfill is implied.
