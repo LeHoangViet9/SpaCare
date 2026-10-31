@@ -1,6 +1,6 @@
 'use client';
 import AppointmentCheckoutPicker from './appointment-checkout-picker';
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {packageLabel,timedPackage,treatmentDay,packageExpiry} from '@/lib/treatment-rules';
 import {formatCurrency,parseMoney} from '@/lib/currency';
 import {cashierCatalog,type CashierMode} from '@/lib/cashier-catalog';
@@ -15,6 +15,55 @@ import {TreatmentConfirmations} from './treatment-selection';
 type Row=Record<string,any>;
 const money=formatCurrency;
 const amountOf=(value:string)=>{try{return parseMoney(value);}catch{return 0;}};
+function PerformerMultiSelect({staffOptions,selectedIds,onChange,disabled}:{
+  staffOptions:Row[];selectedIds:string[];onChange:(ids:string[])=>void;disabled?:boolean;
+}){
+  const [open,setOpen]=useState(false);
+  const containerRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!open)return;
+    function handleClickOutside(e:MouseEvent){
+      if(containerRef.current && !containerRef.current.contains(e.target as Node)){
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown',handleClickOutside);
+    return ()=>document.removeEventListener('mousedown',handleClickOutside);
+  },[open]);
+  const selectedStaff=staffOptions.filter((s:Row)=>selectedIds.includes(s._id));
+  const displayText=selectedStaff.length>0 ? selectedStaff.map((s:Row)=>s.name).join(', ') : 'Chọn người thực hiện...';
+  return <div className="relative w-full" ref={containerRef}>
+    <button
+      type="button"
+      disabled={disabled}
+      aria-expanded={open}
+      aria-haspopup="listbox"
+      className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 text-left transition-colors"
+      onClick={()=>setOpen(prev=>!prev)}
+    >
+      <span className={`truncate flex-1 ${selectedStaff.length>0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>{displayText}</span>
+      <span className={`text-xs text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+    </button>
+    {open && <div role="listbox" aria-multiselectable="true" className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-md shadow-lg p-1">
+      {staffOptions.length===0 ? <div className="px-3 py-2 text-sm text-gray-400">Không có nhân viên</div> : staffOptions.map((staff:Row)=>{
+        const isSelected=selectedIds.includes(staff._id);
+        return <label key={staff._id} className={`flex items-center gap-2 px-3 py-2 text-sm rounded cursor-pointer select-none transition-colors ${isSelected ? 'bg-green-50 text-green-900 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            className="cursor-pointer"
+            onChange={()=>{
+              const next=isSelected ? selectedIds.filter((id:string)=>id!==staff._id) : [...selectedIds,staff._id];
+              onChange(next);
+            }}
+          />
+          <span className="flex-1 truncate">{staff.name}</span>
+        </label>;
+      })}
+    </div>}
+  </div>;
+}
+
 export default function Cashier({data,busy,initialMode,initialCustomer,initialAppointmentId,onInvoice,onSubmit,onInvoices,onNewCustomer}:{
  data:Row;busy:boolean;initialMode:CashierMode;initialCustomer?:Row|null;initialAppointmentId?:string;onInvoice?:(id:string)=>void;onSubmit:(action:string,values:Row)=>void;onInvoices:()=>void;onNewCustomer:()=>void;
 }){
@@ -108,7 +157,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    <div className="cashier-receipt-heading"><strong>{customer?.name || 'Chưa chọn khách'}</strong><small>{customer?.phone}</small></div>
    {!basketCount && <p>Chọn một hoặc nhiều dịch vụ, liệu trình, gói mới hoặc sản phẩm.</p>}
    <fieldset disabled={busy} className="cashier-fields">
-   {serviceItems.map(item=><div className="cashier-service-line" key={item.lineId || item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setServiceItems(old=>removeServiceItem(old,item.lineId))}>Bỏ dịch vụ</button></div><label>Giá dịch vụ (VNĐ)<MoneyInput value={item.total} min={1} required onValueChange={total=>setServiceItems(old=>old.map(row=>row.lineId===item.lineId?{...row,total}:row))}/></label><div className="cashier-performers"><span>Người thực hiện</span><div className="cashier-performer-buttons" role="group" aria-label="Người thực hiện dòng này">{staffOptions.map((staff:Row)=>{const isSelected=(item.performerIds||[]).includes(staff._id);return <button type="button" key={staff._id} aria-pressed={isSelected} style={isSelected?{background:'#16a34a',color:'#fff',borderColor:'#15803d'}:undefined} onClick={()=>{const current:string[]=item.performerIds||[];const next=isSelected?current.filter((id:string)=>id!==staff._id):[...current,staff._id];setServiceItems(old=>updateServiceItemPerformers(old,item.lineId,next));}}>{staff.name}</button>;})}</div></div></div>)}
+   {serviceItems.map(item=><div className="cashier-service-line" key={item.lineId || item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setServiceItems(old=>removeServiceItem(old,item.lineId))}>Bỏ dịch vụ</button></div><label>Giá dịch vụ (VNĐ)<MoneyInput value={item.total} min={1} required onValueChange={total=>setServiceItems(old=>old.map(row=>row.lineId===item.lineId?{...row,total}:row))}/></label><div className="cashier-performers"><span>Người thực hiện</span><PerformerMultiSelect staffOptions={staffOptions} selectedIds={item.performerIds || []} onChange={next=>setServiceItems(old=>updateServiceItemPerformers(old,item.lineId,next))} disabled={busy}/></div></div>)}
    {sessionItems.map(item=><div className="cashier-service-line" key={item._id}><div className="section-head"><strong>{item.name} · 0đ</strong><button type="button" onClick={()=>setSessionItems(old=>old.filter(row=>row._id!==item._id))}>Bỏ liệu trình</button></div><label>Người thực hiện lượt này<select aria-label="Người thực hiện lượt này" value={item.performerId || ''} onChange={e=>setSessionItems(old=>old.map(row=>row._id===item._id?{...row,performerId:e.target.value}:row))}><option value="">Chưa chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label></div>)}
    {productItems.map(item=><div className="cashier-service-line" key={item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setProductItems(old=>old.filter(row=>row._id!==item._id))}>Bỏ sản phẩm</button></div><label>Số lượng ({item.unit})<input type="number" min={1} max={item.stock} step={1} required value={item.quantity} onChange={e=>setProductItems(old=>old.map(row=>row._id===item._id?{...row,quantity:e.target.value}:row))}/></label><label>Đơn giá (VNĐ)<MoneyInput value={item.unitPrice} min={1} required onValueChange={unitPrice=>setProductItems(old=>old.map(row=>row._id===item._id?{...row,unitPrice}:row))}/></label></div>)}
    {packageItems.map(item=><section className="cashier-service-line" key={item._id}>
