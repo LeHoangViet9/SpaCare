@@ -4,7 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {packageLabel,timedPackage,treatmentDay,packageExpiry} from '@/lib/treatment-rules';
 import {formatCurrency,parseMoney} from '@/lib/currency';
 import {cashierCatalog,type CashierMode} from '@/lib/cashier-catalog';
-import {cashierActions,toggleCartItem} from '@/lib/cashier-cart';
+import {cashierActions,toggleCartItem,addServiceItem,removeServiceItem,updateServiceItemPerformers} from '@/lib/cashier-cart';
 import {isValidSignature} from '@/lib/signature';
 import CustomerPicker from './customer-picker';
 import MoneyInput from './money-input';
@@ -54,7 +54,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  function choose(row:Row){
    setError('');
    try{
-     if(browseMode==='service')setServiceItems(old=>toggleCartItem(old,row,{total:String(row.price)}));
+     if(browseMode==='service')setServiceItems(old=>addServiceItem(old,row));
      else if(browseMode==='session')setSessionItems(old=>toggleCartItem(old,row));
      else if(browseMode==='product')setProductItems(old=>toggleCartItem(old,row,{unitPrice:String(row.price),quantity:'1'}));
      else setPackageItems(old=>toggleCartItem(old,row,{total:String(row.price),startsOn:treatmentDay(),promotion:'',giftCashCardAmount:'0',gifts:[]}));
@@ -85,7 +85,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      resetSelection();if(!detail)return;
      setCustomer(detail.customer);setAppointment(detail);
      if(detail.invoice)return;
-     setServiceItems(detail.services.map((row:Row)=>({...row,total:String(row.price),performerId:detail.appointment.staffId || ''})));
+     setServiceItems(detail.services.map((row:Row)=>({...row,lineId:crypto.randomUUID(),total:String(row.price),performerIds:detail.appointment.staffId ? [detail.appointment.staffId] : []})));
      setSessionItems(detail.treatments);setPerformerId(detail.appointment.staffId || '');
    }}/>
    {appointment?.invoice && <p>Điểm hẹn đã có hóa đơn. <button type="button" onClick={()=>onInvoice?.(appointment.invoice._id)}>Mở hóa đơn</button></p>}
@@ -96,8 +96,9 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    <label>{browseMode==='product'?'Tìm sản phẩm':browseMode==='package'?'Tìm gói để bán mới':browseMode==='session'?'Tìm gói đã mua':'Tìm dịch vụ lẻ'}<input type="search" maxLength={100} value={search} disabled={busy} placeholder="Nhập tên để tìm…" onChange={e=>{setSearch(e.target.value);setCatalogPage(1);}}/></label>
    <label>{browseMode==='product'?'Nhóm sản phẩm':'Nhóm dịch vụ'}<select value={category} disabled={busy} onChange={e=>{setCategory(e.target.value);setCatalogPage(1);}}><option value="">Tất cả nhóm</option>{[...new Set([...categories,...(category?[category]:[])])].map(name=><option key={name} value={name}>{name}</option>)}</select></label>
    <div className="cashier-cards">{visibleCatalog.map(row=>{
-     const selected=selectedItems.some(item=>item._id===row._id);
-     return <button type="button" key={row._id} className={'cashier-card'+(selected?' is-selected':'')} aria-pressed={selected} disabled={busy || !customer || (!selected && selectedItems.length>=30) || (browseMode==='product' && row.stock<1 && !selected)} onClick={()=>choose(row)}><strong>{row.name}</strong><span>{browseMode==='product'?'Tồn '+row.stock+' '+row.unit:browseMode==='package' || browseMode==='session'?packageLabel(row):row.category || 'Dịch vụ'}</span><b>{money(browseMode==='session'?0:row.price)}</b>{selected && <small>Đã chọn ✓</small>}</button>;
+     const serviceCount=browseMode==='service' ? serviceItems.filter((item:Row)=>item._id===row._id).length : 0;
+     const selected=browseMode==='service' ? serviceCount>0 : selectedItems.some(item=>item._id===row._id);
+     return <button type="button" key={row._id} className={'cashier-card'+(selected?' is-selected':'')} aria-pressed={browseMode!=='service' ? selected : undefined} disabled={busy || !customer || (browseMode!=='service' && !selected && selectedItems.length>=30) || (browseMode==='service' && serviceItems.length>=30) || (browseMode==='product' && row.stock<1 && !selected)} onClick={()=>choose(row)}><strong>{row.name}</strong><span>{browseMode==='product'?'Tồn '+row.stock+' '+row.unit:browseMode==='package' || browseMode==='session'?packageLabel(row):row.category || 'Dịch vụ'}</span><b>{money(browseMode==='session'?0:row.price)}</b>{selected && <small>{browseMode==='service' ? 'Đã chọn x'+serviceCount : 'Đã chọn ✓'}</small>}</button>;
    })}</div>
    {!catalog.length && <p>{browseMode==='session'?'Chọn khách để xem các gói khả dụng, hoặc khách chưa có gói phù hợp.':'Không có mục phù hợp.'}</p>}
    {actualPages>1 && <div className="customer-picker-pages"><button type="button" disabled={page<=1 || busy} onClick={()=>setCatalogPage(page-1)}>Trước</button><span>{page}/{actualPages}</span><button type="button" disabled={page>=actualPages || busy} onClick={()=>setCatalogPage(page+1)}>Sau</button></div>}
@@ -107,7 +108,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    <div className="cashier-receipt-heading"><strong>{customer?.name || 'Chưa chọn khách'}</strong><small>{customer?.phone}</small></div>
    {!basketCount && <p>Chọn một hoặc nhiều dịch vụ, liệu trình, gói mới hoặc sản phẩm.</p>}
    <fieldset disabled={busy} className="cashier-fields">
-   {serviceItems.map(item=><div className="cashier-service-line" key={item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setServiceItems(old=>old.filter(row=>row._id!==item._id))}>Bỏ dịch vụ</button></div><label>Giá dịch vụ (VNĐ)<MoneyInput value={item.total} min={1} required onValueChange={total=>setServiceItems(old=>old.map(row=>row._id===item._id?{...row,total}:row))}/></label><label>Người thực hiện dòng này<select aria-label="Người thực hiện dòng này" value={item.performerId || ''} onChange={e=>setServiceItems(old=>old.map(row=>row._id===item._id?{...row,performerId:e.target.value}:row))}><option value="">Chưa chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label></div>)}
+   {serviceItems.map(item=><div className="cashier-service-line" key={item.lineId || item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setServiceItems(old=>removeServiceItem(old,item.lineId))}>Bỏ dịch vụ</button></div><label>Giá dịch vụ (VNĐ)<MoneyInput value={item.total} min={1} required onValueChange={total=>setServiceItems(old=>old.map(row=>row.lineId===item.lineId?{...row,total}:row))}/></label><div className="cashier-performers"><span>Người thực hiện</span><div className="cashier-performer-buttons" role="group" aria-label="Người thực hiện dòng này">{staffOptions.map((staff:Row)=>{const isSelected=(item.performerIds||[]).includes(staff._id);return <button type="button" key={staff._id} aria-pressed={isSelected} style={isSelected?{background:'#16a34a',color:'#fff',borderColor:'#15803d'}:undefined} onClick={()=>{const current:string[]=item.performerIds||[];const next=isSelected?current.filter((id:string)=>id!==staff._id):[...current,staff._id];setServiceItems(old=>updateServiceItemPerformers(old,item.lineId,next));}}>{staff.name}</button>;})}</div></div></div>)}
    {sessionItems.map(item=><div className="cashier-service-line" key={item._id}><div className="section-head"><strong>{item.name} · 0đ</strong><button type="button" onClick={()=>setSessionItems(old=>old.filter(row=>row._id!==item._id))}>Bỏ liệu trình</button></div><label>Người thực hiện lượt này<select aria-label="Người thực hiện lượt này" value={item.performerId || ''} onChange={e=>setSessionItems(old=>old.map(row=>row._id===item._id?{...row,performerId:e.target.value}:row))}><option value="">Chưa chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label></div>)}
    {productItems.map(item=><div className="cashier-service-line" key={item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setProductItems(old=>old.filter(row=>row._id!==item._id))}>Bỏ sản phẩm</button></div><label>Số lượng ({item.unit})<input type="number" min={1} max={item.stock} step={1} required value={item.quantity} onChange={e=>setProductItems(old=>old.map(row=>row._id===item._id?{...row,quantity:e.target.value}:row))}/></label><label>Đơn giá (VNĐ)<MoneyInput value={item.unitPrice} min={1} required onValueChange={unitPrice=>setProductItems(old=>old.map(row=>row._id===item._id?{...row,unitPrice}:row))}/></label></div>)}
    {packageItems.map(item=><section className="cashier-service-line" key={item._id}>
