@@ -2317,7 +2317,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         description: 'Đã cập nhật ghi chú',
         total: 500000,
         reason: 'Sửa ghi chú'
-      }),/lịch sử giao dịch/i);
+      }),/đã phát sinh giao dịch/i);
       const afterUpdate = await Invoice.findById(bill!._id);
       assert.deepEqual(afterUpdate!.toObject(),beforeUpdate,'rejected paid-invoice edit leaves the full invoice unchanged');
       assert.equal(afterUpdate!.dueDate, '2026-12-31', 'dueDate remains unchanged after rejected content edit');
