@@ -1520,7 +1520,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               const purchase = await get(Invoice,String(plan.invoiceId));
               ensure(String(plan.customerId) === d.customerId && (index > 0 || String(plan.serviceId || purchase.serviceId) === d.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
               const performerId = 'performerId' in item ? item.performerId : undefined;
-              const recorded = await recordUse(schemas.use.parse({...item,signature:invoiceSignature,remainingBefore:item.remainingBefore}),undefined,performerId || null,combined);
+              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore,...('recipientName' in item ? {recipientName:item.recipientName,recipientPhone:item.recipientPhone} : {})}),undefined,performerId || null,combined);
               treatmentUseId ||= String(recorded._id);
               combined = await get(Invoice,linkedInvoiceId!);
             }
