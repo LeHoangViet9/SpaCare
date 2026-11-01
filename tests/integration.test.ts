@@ -393,7 +393,21 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const foreign=await buy(b.id,otherCustomer.id);
       const uses=(left=5,right=5)=>[{treatmentId:String(one._id),remainingBefore:left,signature:signed,performerId:String(staff._id)},{treatmentId:String(two._id),remainingBefore:right,signature:signed,performerId:String(staff._id)}];
       const payload={customerId:customer.id,serviceId:svcA.id,staffId:String(staff._id),treatments:uses()};
-      await assert.rejects(call('invoice',{...payload,treatments:[uses()[0],uses()[0]]}),/trùng/);
+      const beforeStaleRepeat = {
+        invoices: await Invoice.countDocuments({spaId}),
+        uses: await TreatmentUse.countDocuments({spaId}),
+        commissions: await InvoiceLineCommission.countDocuments({spaId}),
+      };
+      await assert.rejects(
+        call('invoice',{...payload,treatments:[uses()[0],uses()[0]]}),
+        (error:any)=>error.status===409 && /Số buổi đã thay đổi/i.test(error.message)
+      );
+      assert.equal((await Treatment.findById(one._id))!.remaining,5);
+      assert.deepEqual({
+        invoices: await Invoice.countDocuments({spaId}),
+        uses: await TreatmentUse.countDocuments({spaId}),
+        commissions: await InvoiceLineCommission.countDocuments({spaId}),
+      },beforeStaleRepeat,'stale repeated-package request must roll back every write');
       const rollbackBefore={
         invoices:await Invoice.countDocuments({spaId}),uses:await TreatmentUse.countDocuments({spaId}),
         commissions:await Commission.countDocuments({spaId}),remaining:[one,two,foreign].map(plan=>plan.remaining),
