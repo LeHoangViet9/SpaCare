@@ -451,7 +451,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const line = lineCandidates.filter(c=>!legacySettled.has(String(c._id)));
         const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         const shared = await SharedSaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
-        return [...service,...line,...sale,...shared];
+        return [
+          ...service.map(c=>({...c.toObject(),ledgerType:'commission'})),
+          ...line.map(c=>({...c.toObject(),ledgerType:'invoiceLineCommission'})),
+          ...sale.map(c=>({...c.toObject(),ledgerType:'saleCommission'})),
+          ...shared.map(c=>({...c.toObject(),ledgerType:'sharedSaleCommission'})),
+        ];
       };
       const newLineId = () => new mongoose.Types.ObjectId();
       const performerFor = async (requested: string | undefined, fallback: string | undefined) => {
@@ -477,10 +482,15 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
         payroll.commissionCount = commissions.length;
         payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
-        payroll.commissionIds = commissions.filter(c=>c.category !== 'PACKAGE_SALE' && c.sourceType !== 'INVOICE_LINE').map(c=>c._id);
-        payroll.invoiceLineCommissionIds = commissions.filter(c=>c.sourceType === 'INVOICE_LINE').map(c=>c._id);
-        payroll.saleCommissionIds = commissions.filter(c=>c.category === 'PACKAGE_SALE' && !c.sharedSale).map(c=>c._id);
-        payroll.sharedSaleCommissionIds = commissions.filter(c=>c.sharedSale).map(c=>c._id);
+        const serviceLedgers = commissions.filter(c=>c.ledgerType === 'commission' || c.ledgerType === 'invoiceLineCommission');
+        const saleLedgers = commissions.filter(c=>c.ledgerType === 'saleCommission' || c.ledgerType === 'sharedSaleCommission');
+        payroll.serviceCommissionTotal = serviceLedgers.reduce((n,c)=>n+c.amount,0);
+        payroll.saleCommissionTotal = saleLedgers.reduce((n,c)=>n+c.amount,0);
+        payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
+        payroll.commissionIds = commissions.filter(c=>c.ledgerType === 'commission').map(c=>c._id);
+        payroll.invoiceLineCommissionIds = commissions.filter(c=>c.ledgerType === 'invoiceLineCommission').map(c=>c._id);
+        payroll.saleCommissionIds = commissions.filter(c=>c.ledgerType === 'saleCommission').map(c=>c._id);
+        payroll.sharedSaleCommissionIds = commissions.filter(c=>c.ledgerType === 'sharedSaleCommission').map(c=>c._id);
         let base; try { base = attendanceSalary(payroll.baseSalary,payroll.salaryPolicy,payroll.workdays,payroll.leaveStats || {permitted:0,unpermitted:0,paid:0,unpaid:0}); } catch(e) { ensure(false,(e as Error).message); }
         Object.assign(payroll,base);
         payroll.total = money(payroll.earnedBase + payroll.commissionTotal + payroll.bonus - payroll.deductions - (payroll.advance || 0), true);
