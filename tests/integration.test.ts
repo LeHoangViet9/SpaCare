@@ -1890,7 +1890,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const lateBill = await call('invoice', { customerId: customer.id, serviceId: service.id });
       await call('completeInvoiceService', { id: lateBill.id, staffId: who.id });
       assert.equal((await Payroll.findById(draft.id))!.total, refreshed.total);
-      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, staffId: who.id, payrollId: { $exists: false } }), 1);
+      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, invoiceId: lateBill.id, staffId: who.id, payrollId: { $exists: false }, cancelledAt: { $exists: false } }), 1);
       assert.equal((await Payroll.findById(draft.id))!.total,refreshed.total);
     });
     await t.test('payroll commissions stay in their Vietnam month through preview, draft and approval', async () => {
