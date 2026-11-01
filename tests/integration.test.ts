@@ -326,21 +326,36 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await auditFor(String(rollbackBill._id)),null);
 
       const assertPayrollBlocksVoid=async(staff:any,status:'APPROVED'|'PAID'|'LEGACY')=>{
-        const billResult=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:earningService.id,total:100000}]});
-        const bill=(await Invoice.findById(billResult.id))!;
-        const commission=(await Commission.findOne({spaId,invoiceId:bill._id}))!;
+        const appointment=await Appointment.create({spaId,customerId:customer.id,serviceId:earningService.id,staffId:staff._id,startAt:new Date(Date.now()-86400000),endAt:new Date(Date.now()-82800000),status:'CONFIRMED'});
+        const createdBill=await Invoice.create({spaId,appointmentId:appointment._id,customerId:customer.id,serviceId:earningService.id,description:earningService.name,total:100000,paid:0,commission:12000,kind:'SERVICE'});
+        await call('completeAppointment',{id:String(appointment._id),existingInvoiceId:String(createdBill._id)});
+        const bill=(await Invoice.findById(createdBill._id))!;
+        const commission=await Commission.findOne({spaId,invoiceId:bill._id});
+        assert.ok(commission,'legacy commission fixture must create a Commission ledger row');
+        assert.equal(commission.amount,12000);
+        let payroll:any;
         if(status==='LEGACY'){
-          await Payroll.create({spaId,staffId:staff._id,staffName:staff.name,month:spaDay().slice(0,7),baseSalary:0,commissionTotal:commission.amount,total:commission.amount,commissionIds:[commission._id],status:'APPROVED',approvedBy:actor.id,approvedAt:new Date()});
-          assert.equal((await Commission.findById(commission._id))!.payrollId,undefined);
+          payroll=await Payroll.create({spaId,staffId:staff._id,staffName:staff.name,month:spaDay().slice(0,7),baseSalary:0,commissionTotal:commission.amount,total:commission.amount,commissionIds:[commission._id],status:'APPROVED',approvedBy:actor.id,approvedAt:new Date()});
+          assert.equal(commission.payrollId,undefined,'legacy settled fixture uses the payroll snapshot without backfilling payrollId');
         }else{
           const saved=await call('savePayroll',{staffId:String(staff._id),month:spaDay().slice(0,7),baseSalary:0});
-          const payroll=(await Payroll.findById(saved.id))!;
+          payroll=(await Payroll.findById(saved.id))!;
+          assert.ok(payroll.commissionIds.some((id:any)=>String(id)===String(commission._id)),'saved payroll must contain this Commission ID');
+          assert.equal(commission.payrollId,undefined,'saving a draft must not claim the commission');
           await call('approvePayroll',{id:saved.id,expectedTotal:payroll.total});
           if(status==='PAID')await call('payPayroll',{id:saved.id,method:'CASH',receivedConfirmation:true});
+          payroll=(await Payroll.findById(saved.id))!;
         }
+        const expectedStatus=status==='LEGACY'?'APPROVED':status;
+        assert.equal(payroll.status,expectedStatus);
+        assert.ok(payroll.commissionIds.some((id:any)=>String(id)===String(commission._id)),'settled payroll snapshot must own the invoice commission ID');
+        const settledCommission=(await Commission.findById(commission._id))!;
+        assert.equal(String(settledCommission.payrollId || ''),status==='LEGACY'?'':String(payroll._id));
         const payload={id:String(bill._id),expectedUpdatedAt:bill.updatedAt.toISOString(),reason:`Blocked ${status}`,confirmDelete:true};
         await assert.rejects(call('deleteInvoice',payload,randomUUID()),(error:any)=>error.status===409);
-        assert.equal((await Commission.findById(commission._id))!.amount,commission.amount);
+        const afterRejectedDelete=(await Commission.findById(commission._id))!;
+        assert.equal(afterRejectedDelete.amount,commission.amount);
+        assert.equal(String(afterRejectedDelete.payrollId || ''),status==='LEGACY'?'':String(payroll._id));
         assert.equal((await Invoice.findById(bill._id))!.status,'OPEN');
         assert.equal(await auditFor(String(bill._id)),null);
       };
@@ -1795,14 +1810,43 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.deepEqual(await call('savePayroll', draftData, draftKey), draft);
       await assert.rejects(call('savePayroll', draftData), status(409));
       const original = (await Payroll.findById(draft.id))!;
+      assert.equal(original.invoiceLineCommissionIds.length,4);
+      const initialDraftLineRows=await InvoiceLineCommission.find({_id:{$in:original.invoiceLineCommissionIds}}).lean();
+      assert.deepEqual(initialDraftLineRows.map((row:any)=>String(row._id)).sort(),original.invoiceLineCommissionIds.map(String).sort());
+      assert.ok(initialDraftLineRows.every((row:any)=>!row.payrollId),'saving a draft must leave all line ledgers unassigned');
       assert.equal(original.total, 5000000 + 25000 + 25000 + 99999 + 99999 + 50000 - 10000);
       const extraBill = await call('invoice', { customerId: customer.id, serviceId: service.id });
       await call('completeInvoiceService', { id: extraBill.id, staffId: who.id });
+      const extraCommission=(await InvoiceLineCommission.findOne({spaId,invoiceId:extraBill.id}))!;
+      assert.equal(String(extraCommission.staffId),who.id);
       await assert.rejects(call('approvePayroll', { id: draft.id, expectedTotal: original.total }), status(409));
+      const afterRejectedApproval=await InvoiceLineCommission.find({_id:{$in:original.invoiceLineCommissionIds}}).lean();
+      assert.ok(afterRejectedApproval.every((row:any)=>!row.payrollId),'a failed approval must roll back every payrollId assignment');
+      assert.equal((await InvoiceLineCommission.findById(extraCommission._id))!.payrollId,undefined,'failed approval must leave the newly earned line pending');
       await call('savePayroll', { ...draftData, id: draft.id });
       const refreshed = (await Payroll.findById(draft.id))!;
+      assert.equal(refreshed.invoiceLineCommissionIds.length,original.invoiceLineCommissionIds.length+1);
+      assert.ok(refreshed.invoiceLineCommissionIds.some((id:any)=>String(id)===String(extraCommission._id)),'updated draft must include the newly earned line ledger');
+      const refreshedLineRows=await InvoiceLineCommission.find({_id:{$in:refreshed.invoiceLineCommissionIds}}).lean();
+      assert.deepEqual(refreshedLineRows.map((row:any)=>String(row._id)).sort(),refreshed.invoiceLineCommissionIds.map(String).sort());
+      assert.ok(refreshedLineRows.every((row:any)=>!row.payrollId),'updating a draft must not assign its commission ledgers');
+      const refreshedLegacyRows=await Commission.find({_id:{$in:refreshed.commissionIds}}).lean();
+      assert.deepEqual(refreshedLegacyRows.map((row:any)=>String(row._id)).sort(),refreshed.commissionIds.map(String).sort());
+      assert.ok(refreshedLegacyRows.every((row:any)=>!row.payrollId));
+      // A recovered/retried approval may encounter a ledger already owned by this exact draft.
+      // It may retain that owner, but may never claim a ledger assigned to another payroll.
+      const retryOwnedLineId=refreshed.invoiceLineCommissionIds[0];
+      const claimedForSameDraft=await InvoiceLineCommission.updateOne({_id:retryOwnedLineId,spaId,payrollId:{$exists:false}},{$set:{payrollId:refreshed._id}});
+      assert.equal(claimedForSameDraft.matchedCount,1);
+      assert.equal(String((await InvoiceLineCommission.findById(retryOwnedLineId))!.payrollId),String(refreshed._id));
       await call('approvePayroll', { id: draft.id, expectedTotal: refreshed.total });
-      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, payrollId: draft.id }), 4);
+      const approvedPayroll=(await Payroll.findById(draft.id))!;
+      assert.equal(approvedPayroll.status,'APPROVED');
+      const approvedLineRows=await InvoiceLineCommission.find({_id:{$in:approvedPayroll.invoiceLineCommissionIds}}).lean();
+      assert.ok(approvedLineRows.every((row:any)=>String(row.payrollId)===String(approvedPayroll._id)));
+      const approvedLegacyRows=await Commission.find({_id:{$in:approvedPayroll.commissionIds}}).lean();
+      assert.ok(approvedLegacyRows.every((row:any)=>String(row.payrollId)===String(approvedPayroll._id)));
+      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, payrollId: draft.id }), refreshed.invoiceLineCommissionIds.length);
       const approvedLineInvoice=await Invoice.findById(lineBill.id);
       const protectedCorrection={id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),description:approvedLineInvoice!.description,total:approvedLineInvoice!.total,reason:'Must use adjustment'};
       await assert.rejects(call('updateInvoice',protectedCorrection),/chưa có quy trình adjustment/i);
@@ -2248,18 +2292,28 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       });
       assert.equal((await Invoice.findById(bill!._id))!.paid, 500000);
 
-      // Update invoice without passing dueDate (form hides it when paid == total)
+      // Paid invoices are protected from content edits; the UI routes them to the date-only form.
       const beforeUpdate = (await Invoice.findById(bill!._id))!.toObject();
-      await callOp('updateInvoice', {
+      const paymentsBefore=await Payment.find({spaId:scope.spaId,invoiceId:bill!._id}).lean();
+      const receiptsBefore=await CashEntry.find({_id:{$in:paymentsBefore.map(row=>row.receiptId)}}).lean();
+      const commissionsBefore=await Commission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean();
+      const lineCommissionsBefore=await InvoiceLineCommission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean();
+      const updateAuditCount=await Audit.countDocuments({spaId:scope.spaId,action:'updateInvoice',targetId:bill!._id});
+      await assert.rejects(callOp('updateInvoice', {
         id: String(bill!._id),
         expectedUpdatedAt: beforeUpdate.updatedAt.toISOString(),
         description: 'Đã cập nhật ghi chú',
         total: 500000,
         reason: 'Sửa ghi chú'
-      });
+      }),/lịch sử giao dịch/i);
       const afterUpdate = await Invoice.findById(bill!._id);
-      assert.equal(afterUpdate!.description, 'Đã cập nhật ghi chú');
-      assert.equal(afterUpdate!.dueDate, '2026-12-31', 'dueDate preserved when omitted from update payload');
+      assert.deepEqual(afterUpdate!.toObject(),beforeUpdate,'rejected paid-invoice edit leaves the full invoice unchanged');
+      assert.equal(afterUpdate!.dueDate, '2026-12-31', 'dueDate remains unchanged after rejected content edit');
+      assert.deepEqual(await Payment.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),paymentsBefore,'payment history is unchanged');
+      assert.deepEqual(await CashEntry.find({_id:{$in:paymentsBefore.map(row=>row.receiptId)}}).lean(),receiptsBefore,'cash receipts are unchanged');
+      assert.deepEqual(await Commission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),commissionsBefore,'legacy commission ledger is unchanged');
+      assert.deepEqual(await InvoiceLineCommission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),lineCommissionsBefore,'per-line commission ledger is unchanged');
+      assert.equal(await Audit.countDocuments({spaId:scope.spaId,action:'updateInvoice',targetId:bill!._id}),updateAuditCount,'rejected edit writes no audit');
     });
   } finally {
     if (spaId) {

@@ -731,6 +731,8 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 
 CONFIRMED, ưu tiên mới nhất. Mỗi `InvoiceLineCommission` chỉ thuộc tối đa một payroll; duyệt payroll phải khóa toàn bộ ID của các ledger trong cùng transaction và rollback nếu không gắn đủ. Khoản đã thuộc payroll duyệt/đã chi là bất biến; sửa/hủy/vô hiệu hóa hóa đơn phải trả 409 cho đến khi có quy trình adjustment được phê duyệt.
 
+Khi tiếp tục duyệt một draft, ledger đã mang `payrollId` đúng bằng ID của draft đó được xem là thuộc chính lần duyệt đang tiếp tục và không bị gắn lại sang bảng lương khác. Ledger chưa gắn được claim cho draft; ledger mang ID payroll khác bị từ chối. Cập nhật draft cũng giữ các ledger đã gắn chính draft đó trong snapshot để lần duyệt sau đối chiếu cùng tập ID.
+
 Không xóa cứng hóa đơn tài chính. Xử lý hóa đơn nhập nhầm giữ bản ghi gốc ở trạng thái CANCELLED, giữ mã và audit, đồng thời đảo tuần tự các khoản thu, cọc, thẻ, kho, quyền lợi và hoa hồng chưa chốt theo các guard hiện hành. Sửa hóa đơn nhiều dòng chỉ được giữ nguyên tập dịch vụ/người thực hiện/lineId khi đã có line commission; thay dòng hoặc đổi người thực hiện chưa có chính sách adjustment nên bị chặn.
 
 Ledger commission được xem là đã chốt khi có `payrollId` hoặc ID nằm trong snapshot tương ứng của payroll APPROVED/PAID cùng spa (`commissionIds`, `invoiceLineCommissionIds`, `saleCommissionIds`, `sharedSaleCommissionIds`; line ledger legacy cũng có thể nằm trong `commissionIds`). Hóa đơn có ledger như vậy không được sửa, hủy hay vô hiệu hóa khi chưa có adjustment được phê duyệt; không backfill payroll cũ. Invoice đã CANCELLED không được xử lý reversal lần hai. Retry cùng Idempotency-Key trả kết quả cũ, key mới trả 409.

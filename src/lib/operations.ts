@@ -435,8 +435,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         } else if (delta) await create(SaleCommission,{staffId:invoice.sellerId,staffName:invoice.sellerName,serviceId:invoice.serviceId || invoice.packageItems?.[0]?.serviceId,serviceName:invoice.description,customerId:invoice.customerId,invoiceId:invoice._id,sourceType,sourceId,amount:delta,earnedAt:new Date()});
         invoice.saleCommissionAccrued=total; await invoice.save({session});
       };
-      const pendingCommissions = async (staffId: string, month: string) => {
-        const filter = {...payrollCommissionPeriod({...scope,staffId,payrollId:{$exists:false}},month)};
+      const pendingCommissions = async (staffId: string, month: string, ownerPayrollId?: unknown) => {
+        const ownership = ownerPayrollId
+          ? {$or:[{payrollId:{$exists:false}},{payrollId:null},{payrollId:ownerPayrollId}]}
+          : {payrollId:{$exists:false}};
+        const filter = {...payrollCommissionPeriod({...scope,staffId,...ownership},month)};
         const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         const lineCandidates = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         // Production drafts before invoiceLineCommissionIds stored line IDs in commissionIds.
@@ -814,7 +817,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           financialBefore = existing ? payrollSnapshot(existing) : { status: null };
           const baseSalary = d.baseSalary ?? existing?.baseSalary ?? staff.baseSalary;
           ensure(baseSalary !== undefined, 'Cần cài lương cơ bản hoặc nhập lương tháng trước.');
-          const commissions = await pendingCommissions(d.staffId, d.month);
+          const commissions = await pendingCommissions(d.staffId, d.month, existing?._id);
           const { id, ...input } = d;
           const attendance = await attendanceFor(d.staffId,d.month,d.attendanceConfirmed);
           const values: any = { ...input, ...attendance, baseSalary, staffName: staff.name };
@@ -829,7 +832,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure((await get(User,String(target.staffId))).role === 'STAFF','Bảng lương chỉ áp dụng cho nhân viên.',403);
           financialBefore = payrollSnapshot(target);
           if (target.status !== 'DRAFT') { ensure(target.total === d.expectedTotal, 'Số tiền bảng lương đã thay đổi.', 409); break; }
-          const commissions = await pendingCommissions(String(target.staffId), target.month);
+          const commissions = await pendingCommissions(String(target.staffId), target.month, target._id);
           const ids = commissions.map(c => String(c._id)).sort().join(',');
           const attendance = await attendanceFor(String(target.staffId),target.month,target.attendanceConfirmed);
           ensure(target.attendanceDigest ? attendance.attendanceDigest === target.attendanceDigest : !attendance.salaryPolicy,'Ngày nghỉ, công hoặc chính sách đã đổi. Cập nhật nháp trước khi duyệt.',409);
@@ -841,7 +844,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const attachPayroll = async (model: mongoose.Model<any>, commissionIds: any[]) => {
             const selected = commissionIds || [];
             if (!selected.length) return;
-            const result = await model.updateMany({ ...scope, _id: { $in: selected }, payrollId: { $exists: false } }, { $set: { payrollId: target._id } }, { session });
+            const candidates = await model.find({ ...scope, _id: { $in: selected } }).select('_id payrollId').session(session).lean();
+            ensure(candidates.length === selected.length && candidates.every(row => !row.payrollId || String(row.payrollId) === String(target._id)), 'Hoa hồng đã được chốt ở bảng lương khác. Cập nhật bản nháp trước khi duyệt.', 409);
+            const result = await model.updateMany({ ...scope, _id: { $in: selected }, $or: [{ payrollId: { $exists: false } }, { payrollId: null }, { payrollId: target._id }] }, { $set: { payrollId: target._id } }, { session });
             ensure(result.matchedCount === selected.length, 'Hoa hồng đã được chốt ở bảng lương khác. Cập nhật bản nháp trước khi duyệt.', 409);
           };
           await attachPayroll(Commission,target.commissionIds);

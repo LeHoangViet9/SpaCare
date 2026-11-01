@@ -10,6 +10,7 @@ import {
 } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 import { allowedPushEndpoint, urlBase64ToUint8Array } from '../src/lib/push-validation';
+import { invoiceEditorAction, invoiceDueDateVisible } from '../src/lib/invoice-editing';
 import type { Signature } from '../src/lib/signature';
 
 const sigA: Signature = { version: 1, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]] };
@@ -276,41 +277,17 @@ failModel = '';
 assert.deepEqual(state, stateBeforeFailure, 'Atomic rollback completely restores treatment quota and records');
 
 console.log('--- TEST 2: SHORTEN INVOICE FORM WHEN FULLY PAID ---');
-// 2.1: UI rule verification: dueDate visibility condition (unit-tested separately from backend)
-function isDueDateVisible(total: number, paid: number): boolean {
-  return (total || 0) - (paid || 0) > 0;
-}
-assert.equal(isDueDateVisible(500000, 0), true, 'Unpaid invoice: dueDate must be visible');
-assert.equal(isDueDateVisible(500000, 200000), true, 'Partially paid invoice: dueDate must be visible');
-assert.equal(isDueDateVisible(500000, 500000), false, 'Fully paid invoice: dueDate must be hidden');
-assert.equal(isDueDateVisible(500000, 600000), false, 'Overpaid invoice: dueDate must be hidden');
-
-// 2.2: Backend invariant: if client omits dueDate, updateInvoice must not overwrite saved value.
-// We test this directly against the updateInvoice implementation logic extracted from operations.ts:
-// `if (d.dueDate !== undefined) target.dueDate = d.dueDate;`
-// Simulate this logic:
-function applyUpdateInvoice(target: Record<string, any>, update: Record<string, any>): Record<string, any> {
-  const result = { ...target };
-  if (update.description !== undefined) result.description = update.description;
-  if (update.total !== undefined) result.total = update.total;
-  if (update.dueDate !== undefined) result.dueDate = update.dueDate; // Key invariant: only update if explicitly provided
-  return result;
-}
-
+// Exercise the same helpers used by Workspace.editInvoice, not a test-only copy of its logic.
+const unpaidInvoice = { _id: '6'.repeat(24), total: 500000, paid: 0, dueDate: '2026-12-31' };
+assert.equal(invoiceEditorAction(unpaidInvoice), 'updateInvoice');
+assert.equal(invoiceDueDateVisible(unpaidInvoice.total, unpaidInvoice.paid), true, 'Unpaid invoice editor shows dueDate');
+const partialInvoice = { _id: '4'.repeat(24), total: 500000, paid: 200000, dueDate: '2026-11-30' };
+assert.equal(invoiceDueDateVisible(partialInvoice.total, partialInvoice.paid), true, 'Partially paid invoice editor shows dueDate');
 const fullyPaidInvoice = { _id: '5'.repeat(24), total: 500000, paid: 500000, dueDate: '2026-12-31', description: 'Ghi chú gốc' };
-// Client hides dueDate field when paid == total → sends update WITHOUT dueDate
-const withoutDueDate = applyUpdateInvoice(fullyPaidInvoice, { description: 'Ghi chú đã cập nhật', total: 500000 });
-assert.equal(withoutDueDate.description, 'Ghi chú đã cập nhật');
-assert.equal(withoutDueDate.dueDate, '2026-12-31', 'Saved dueDate preserved when field is omitted');
-// Client explicitly sends dueDate → it gets updated
-const withNewDueDate = applyUpdateInvoice(fullyPaidInvoice, { dueDate: '2027-01-15' });
-assert.equal(withNewDueDate.dueDate, '2027-01-15', 'dueDate updated when explicitly sent');
-// Partially-paid invoice: client shows dueDate field and sends it
-const partialInvoice = { _id: '4'.repeat(24), total: 500000, paid: 200000, dueDate: '2026-11-30', description: 'Chưa thanh toán đủ' };
-assert.equal(isDueDateVisible(partialInvoice.total, partialInvoice.paid), true, 'Partially paid: dueDate field visible');
-const partialUpdated = applyUpdateInvoice(partialInvoice, { dueDate: '2026-12-15', description: 'Cập nhật' });
-assert.equal(partialUpdated.dueDate, '2026-12-15', 'Partial payment: dueDate can be set');
-console.log('TEST 2 PASSED: dueDate visibility and preservation logic verified');
+assert.equal(invoiceEditorAction(fullyPaidInvoice), 'correctInvoiceDate', 'Paid invoice opens the date-only correction form');
+assert.equal(invoiceDueDateVisible(fullyPaidInvoice.total, fullyPaidInvoice.paid), false, 'Fully paid invoice hides dueDate');
+assert.equal(invoiceDueDateVisible(500000, 600000), false, 'Overpaid invoice hides dueDate');
+console.log('TEST 2 PASSED: Workspace invoice editor hides dueDate for paid invoices');
 
 console.log('--- TEST 3: SELL MULTIPLE PACKAGES IN A SINGLE INVOICE ---');
 // Sell 2 packages of the SAME template in one invoice via checkout
