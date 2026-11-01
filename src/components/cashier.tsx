@@ -176,7 +176,6 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    </section>;
    })}
    {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy}/></>}
-   {(serviceItems.length>0 || sessionItems.length>0) && <label>Nhân viên cấp hóa đơn (tùy chọn, không áp dụng cho từng dòng)<select aria-label="Nhân viên cấp hóa đơn" value={performerId} onChange={e=>setPerformerId(e.target.value)}><option value="">Không chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label>}
    {basketCount>0 && (amount - appliedCard > 0) && <label>Hạn thanh toán{packageItems.length?'':' (nếu có)'}<input type="date" required={packageItems.length>0} min={packageItems.length?data.today:undefined} value={dueDate} onChange={e=>setDueDate(e.target.value)}/></label>}
    {sessionItems.length>0 && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
    {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard}/></section>}
