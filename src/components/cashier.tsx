@@ -104,7 +104,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    setError('');
    try{
      if(browseMode==='service')setServiceItems(old=>addServiceItem(old,row));
-     else if(browseMode==='session'){if(sessionItems.length>=30)throw new Error('Tối đa 30 lượt trong giỏ.');if(!timedPackage(row) && sessionItems.filter(item=>item._id===row._id).length>=row.remaining)throw new Error('Không đủ số buổi còn lại.');setSessionItems(old=>[...old,{...row,cartId:crypto.randomUUID(),recipientName:'',recipientPhone:''}]);};
+     else if(browseMode==='session'){if(sessionItems.length>=30)throw new Error('Tối đa 30 lượt trong giỏ.');if(!timedPackage(row) && sessionItems.filter(item=>item._id===row._id).length>=row.remaining)throw new Error('Không đủ số buổi còn lại.');setSessionItems(old=>[...old,{...row,cartId:crypto.randomUUID(),recipientName:'',recipientPhone:''}]);}
      else if(browseMode==='product')setProductItems(old=>toggleCartItem(old,row,{unitPrice:String(row.price),quantity:'1'}));
      else setPackageItems(old=>addPackageItem(old,row));
    }catch(e){setError((e as Error).message);}
