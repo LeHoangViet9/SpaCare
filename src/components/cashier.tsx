@@ -130,6 +130,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  <section className="panel panel-padded cashier-customer">
    <div className="section-head"><h3>1. Khách hàng</h3><div className="actions"><button type="button" disabled={busy} onClick={onNewCustomer}>+ Khách mới</button><button type="button" onClick={onInvoices}>Danh sách hóa đơn</button></div></div>
    <CustomerPicker label="Khách hàng" value={customer?._id || ''} onChange={()=>{}} onCustomerChange={row=>{setCustomer(row);resetSelection();}} required disabled={busy}/>
+   {initialAppointmentId && <div hidden>
    <AppointmentCheckoutPicker customerId={customer?._id} initialId={initialAppointmentId} selectedId={appointment?.appointment?._id} busy={busy} onSelect={detail=>{
      resetSelection();if(!detail)return;
      setCustomer(detail.customer);setAppointment(detail);
@@ -137,6 +138,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      setServiceItems(detail.services.map((row:Row)=>({...row,lineId:crypto.randomUUID(),total:String(row.price),performerIds:detail.appointment.staffId ? [detail.appointment.staffId] : []})));
      setSessionItems(detail.treatments);setPerformerId(detail.appointment.staffId || '');
    }}/>
+   </div>}
    {appointment?.invoice && <p>Điểm hẹn đã có hóa đơn. <button type="button" onClick={()=>onInvoice?.(appointment.invoice._id)}>Mở hóa đơn</button></p>}
  </section>
  <section className="panel panel-padded cashier-catalog">
