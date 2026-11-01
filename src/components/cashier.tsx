@@ -142,7 +142,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    {appointment?.invoice && <p>Điểm hẹn đã có hóa đơn. <button type="button" onClick={()=>onInvoice?.(appointment.invoice._id)}>Mở hóa đơn</button></p>}
  </section>
  <section className="panel panel-padded cashier-catalog">
-   <h3>2. Thêm vào giỏ</h3><p>Có thể tích nhiều mục ở từng danh mục. Chuyển danh mục vẫn giữ toàn bộ giỏ.</p>
+   <h3>2. Thêm vào giỏ</h3>
    <div className="cashier-modes" role="group" aria-label="Danh mục thu ngân">{([['service','Dịch vụ lẻ'],['session','Dùng gói đã mua'],['package','Bán gói mới'],['product','Sản phẩm']] as const).map(([key,title])=><button type="button" key={key} disabled={busy} aria-pressed={browseMode===key} onClick={()=>{setBrowseMode(key);setSearch('');setCategory('');setCatalogPage(1);}}>{title}</button>)}</div>
    <label>{browseMode==='product'?'Tìm sản phẩm':browseMode==='package'?'Tìm gói để bán mới':browseMode==='session'?'Tìm gói đã mua':'Tìm dịch vụ lẻ'}<input type="search" maxLength={100} value={search} disabled={busy} placeholder="Nhập tên để tìm…" onChange={e=>{setSearch(e.target.value);setCatalogPage(1);}}/></label>
    <label>{browseMode==='product'?'Nhóm sản phẩm':'Nhóm dịch vụ'}<select value={category} disabled={busy} onChange={e=>{setCategory(e.target.value);setCatalogPage(1);}}><option value="">Tất cả nhóm</option>{[...new Set([...categories,...(category?[category]:[])])].map(name=><option key={name} value={name}>{name}</option>)}</select></label>
@@ -175,7 +175,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      <label>Thẻ tiền tặng kèm (VNĐ)<MoneyInput value={item.giftCashCardAmount} min={0} required onValueChange={giftCashCardAmount=>updatePackage(pkgId,{giftCashCardAmount})}/></label>
    </section>;
    })}
-   {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy}/><p>Các gói mua trong lần này được gộp vào một hóa đơn, mỗi gói vẫn có hồ sơ liệu trình riêng.</p></>}
+   {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy}/></>}
    {(serviceItems.length>0 || sessionItems.length>0) && <label>Nhân viên cấp hóa đơn (tùy chọn, không áp dụng cho từng dòng)<select aria-label="Nhân viên cấp hóa đơn" value={performerId} onChange={e=>setPerformerId(e.target.value)}><option value="">Không chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label>}
    {basketCount>0 && (amount - appliedCard > 0) && <label>Hạn thanh toán{packageItems.length?'':' (nếu có)'}<input type="date" required={packageItems.length>0} min={packageItems.length?data.today:undefined} value={dueDate} onChange={e=>setDueDate(e.target.value)}/></label>}
    {sessionItems.length>0 && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
