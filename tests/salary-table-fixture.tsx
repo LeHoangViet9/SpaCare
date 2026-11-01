@@ -8,6 +8,8 @@ const render = (owner:boolean, status:string) => renderToStaticMarkup(<SalaryTab
 const draft=render(true,'DRAFT');
 assert.match(draft,/4\.350\.000/); assert.match(draft,/300\.000/); assert.match(draft,/100\.000/);
 assert.match(draft,/600\.000/); assert.match(draft,/50\.000/); assert.match(draft,/Thưởng \(gồm hoa hồng\)/); assert.match(draft,/Đã gồm trong thưởng/);
+assert.match(draft,/Bảng lương nhân viên theo tháng/);
+assert.doesNotMatch(draft,/Xoay ngang điện thoại|Đơn vị: đồng|Lương tính \+ thưởng|Hoa hồng chưa chốt đến hết tháng/);
 assert.match(draft,/Duyệt lương/); assert.doesNotMatch(draft,/Ghi nhận chi<\/button>/);
 const approved=render(true,'APPROVED'); assert.match(approved,/Ghi nhận chi/); assert.doesNotMatch(approved,/Cập nhật nháp|Duyệt lương/);
 assert.doesNotMatch(render(true,'PAID'),/Cập nhật nháp|Duyệt lương|Ghi nhận chi<\/button>/); assert.doesNotMatch(render(false,'DRAFT'),/Cập nhật nháp|Duyệt lương|Ghi nhận chi<\/button>/);
