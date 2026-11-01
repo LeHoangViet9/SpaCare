@@ -1,11 +1,27 @@
 import assert from 'node:assert/strict';
-import {toggleCartItem,cashierActions,addServiceItem,removeServiceItem,updateServiceItemPerformers} from '../src/lib/cashier-cart';
+import {toggleCartItem,cashierActions,addServiceItem,removeServiceItem,updateServiceItemPerformers,addPackageItem,removePackageItem} from '../src/lib/cashier-cart';
 let products:any[]=[];
 products=toggleCartItem(products,{_id:'p1',price:10},{unitPrice:'10',quantity:'2'});
 products=toggleCartItem(products,{_id:'p2',price:20},{unitPrice:'20',quantity:'1'});
 assert.equal(products.length,2);
 assert.equal(toggleCartItem(products,{_id:'p1'}).length,1);
 assert.throws(()=>toggleCartItem(Array.from({length:30},(_,i)=>({_id:String(i)})),{_id:'new'}),/30/);
+
+// addPackageItem & removePackageItem tests
+let packageCart:any[]=[];
+packageCart=addPackageItem(packageCart,{_id:'t1',name:'Gói 1',price:1000000,packageType:'SESSIONS',totalSessions:10});
+assert.equal(packageCart.length,1);
+assert.ok(packageCart[0].cartId);
+assert.equal(packageCart[0].total,'1000000');
+// Adding same template again creates a distinct line with different cartId
+packageCart=addPackageItem(packageCart,{_id:'t1',name:'Gói 1',price:1000000,packageType:'SESSIONS',totalSessions:10});
+assert.equal(packageCart.length,2);
+assert.equal(packageCart[0]._id,packageCart[1]._id);
+assert.notEqual(packageCart[0].cartId,packageCart[1].cartId);
+const firstCartId=packageCart[0].cartId;
+packageCart=removePackageItem(packageCart,firstCartId);
+assert.equal(packageCart.length,1);
+assert.notEqual(packageCart[0].cartId,firstCartId);
 
 // addServiceItem tests
 let services:any[]=[];

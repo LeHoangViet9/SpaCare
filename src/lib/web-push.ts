@@ -45,6 +45,10 @@ export async function sendPush(subscription: Subscription, payload: string, conf
     signal: AbortSignal.timeout(8000), headers: { Authorization: vapidAuthorization(subscription.endpoint, config),
       TTL: String(ttl), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream' },
     body: new Uint8Array(encrypted) });
-  if (!response.ok) throw Object.assign(new Error('Push delivery failed'), { statusCode: response.status });
+  if (!response.ok) {
+    let responseBody = '';
+    try { responseBody = await response.text(); } catch {}
+    throw Object.assign(new Error('Push delivery failed'), { statusCode: response.status, responseBody });
+  }
   await response.body?.cancel();
 }

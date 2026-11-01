@@ -33,3 +33,45 @@ Push có thể lặp khi máy chủ dừng giữa gửi thành công và đánh 
 - API: chưa đăng nhập trả 401, origin khác trả 403 trước ghi dữ liệu.
 - Integration bổ sung kiểm tra một Notification sau retry cùng lịch; chỉ chạy với `spacare_test`.
 - Cần nghiệm thu thiết bị thật sau deploy: Android/iPhone, cho phép/từ chối quyền, tắt nhận/đăng xuất, màn hình khóa, bấm mở đúng lịch, tài khoản khác spa không đọc được dữ liệu. Chưa có xác nhận giao nhận thật trong phiên này.
+
+## Khắc phục lỗi và khôi phục thông báo đẩy điện thoại — 01/11/2026
+
+### 1. Nguyên nhân đã xác minh
+1. **Lỗi giải mã Base64URL VAPID Public Key trên trình duyệt (`atob`)**:
+   - Khóa công khai VAPID chuẩn P-256 (uncompressed point, 65 bytes) khi mã hóa Base64URL không có padding có độ dài 87 ký tự.
+   - Vì `87 % 4 = 3`, hàm `window.atob(base64)` chuẩn của trình duyệt ném ngoại lệ `DOMException: The string to be decoded is not correctly encoded`, khiến luồng `pushManager.subscribe()` bị gián đoạn hoàn toàn trên máy khách trước khi kịp lưu `PushDevice`.
+   - Đã khắc phục: Thêm padding bằng ký tự `=` (`key.padEnd(key.length + (4 - key.length % 4) % 4, '=')`) trước khi chuyển đổi sang `Uint8Array`.
+2. **Whitelist Gateway Push quá hẹp (`allowedPushEndpoint`)**:
+   - Danh sách kiểm tra ban đầu chỉ cho phép `fcm.googleapis.com` và `updates.push.services.mozilla.com`.
+   - Các thiết bị iOS (Apple Web Push qua Safari/PWA) sử dụng endpoint dạng `https://*.push.apple.com/...` (ví dụ `web.push.apple.com`, `api.push.apple.com`), và một số thiết bị Android/Chrome sử dụng gateway `https://android.googleapis.com/gcm/send/...` bị chặn bởi bộ lọc bảo mật, khiến push không thể gửi đến thiết bị di động của Apple và Android.
+   - Đã khắc phục: Bổ sung `android.googleapis.com` và các subdomain của `push.apple.com` vào danh sách gateway được phép.
+3. **Subscription hỏng không được giải phóng khi nhận mã lỗi 400**:
+   - Khi token của thiết bị hết hạn hoặc không hợp lệ (ví dụ đổi ứng dụng hoặc thiết bị hủy đăng ký), Apple APNs và Google FCM có thể phản hồi mã `400 Bad Request` (chẳng hạn `DeviceTokenNotForTopic` hoặc `BadDeviceToken`) thay vì chỉ `410 Gone`.
+   - Cơ chế cũ chỉ xóa thiết bị khi nhận 404/410, dẫn đến việc thiết bị lỗi bị giữ lại trong DB, liên tục thử lại 8 lần làm nghẽn hàng đợi push.
+   - Đã khắc phục: Dọn dẹp bản ghi `PushDevice` khi gateway phản hồi mã lỗi 400.
+4. **Xử lý payload trong Service Worker (`public/sw.js`)**:
+   - Bổ sung fallback hiển thị text khi payload không phải định dạng JSON và cấu hình icon/badge rõ ràng để thông báo hiển thị tốt trên thanh trạng thái Android và trung tâm thông báo iOS.
+
+### 2. Hướng dẫn kiểm tra thực tế trên điện thoại (Manual Verification)
+> [!IMPORTANT]
+> Do Web Push Notification phụ thuộc vào kết nối mạng bên ngoài và máy chủ Apple Push Notification Service (APNs) / Google Firebase Cloud Messaging (FCM), việc kiểm thử thực tế trên điện thoại thật bắt buộc phải có domain HTTPS công khai và cấu hình biến môi trường VAPID. Không tuyên bố thông báo đã đến điện thoại thật nếu chưa thực hiện các bước sau.
+
+1. **Chuẩn bị cấu hình máy chủ**:
+   - Khởi tạo bộ khóa VAPID qua `npm run push:setup` và cấu hình đầy đủ `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (ví dụ `mailto:admin@spacare.vn`).
+   - Đảm bảo website chạy trên giao thức `https://` (trình duyệt chặn Service Worker Push trên `http://`).
+2. **Đối với thiết bị iOS (iPhone / iPad - từ iOS 16.4 trở lên)**:
+   - Web Push trên iOS bắt buộc ứng dụng phải được cài dưới dạng PWA (Web App).
+   - Dùng trình duyệt **Safari** truy cập vào trang web spa.
+   - Bấm nút **Chia sẻ** (biểu tượng mũi tên hướng lên) → Chọn **Thêm vào màn hình chính** (Add to Home Screen) → Đặt tên và xác nhận.
+   - Đóng Safari, tìm biểu tượng SpaCare trên màn hình chính và mở ứng dụng.
+   - Đăng nhập tài khoản OWNER → Bấm biểu tượng Chuông thông báo → Chọn **Bật thông báo trên điện thoại này**.
+   - Hộp thoại hệ thống iOS xuất hiện: Chọn **Cho phép** (Allow).
+3. **Đối với thiết bị Android (Google Chrome / Samsung Internet)**:
+   - Mở Chrome truy cập vào trang web spa (HTTPS).
+   - Đăng nhập tài khoản OWNER → Bấm biểu tượng Chuông thông báo → Chọn **Bật thông báo trên điện thoại này**.
+   - Trình duyệt hiển thị popup xin quyền thông báo: Chọn **Cho phép** (Allow).
+4. **Kiểm tra luồng gửi nhận**:
+   - Đưa màn hình điện thoại về chế độ khóa hoặc chuyển sang ứng dụng khác.
+   - Từ một thiết bị khác (hoặc tab ẩn danh), thực hiện đặt một lịch hẹn trực tuyến mới (`/booking`).
+   - Quan sát màn hình khóa / Notification Center của điện thoại: Banner thông báo "SpaCare có lịch hẹn mới" phải xuất hiện kèm âm thanh/rung theo cấu hình máy.
+   - Bấm vào thông báo: Ứng dụng mở đúng màn hình chi tiết lịch hẹn tại `/workspace/appointments`.

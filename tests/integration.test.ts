@@ -2095,6 +2095,148 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const visit=await operate(who,'appointment',{customerId:String(guest._id),serviceId:String(service!._id),staffId:who.id,startAt: spaDay(new Date(Date.now()+86400000))+'T22:00:00+07:00'},randomUUID());
       assert.equal((await Appointment.findById(visit.id))!.endAt,undefined);
     });
+    await t.test('multi-use and shared sessions, multi-package checkout, due date preservation, rollback and concurrency', async () => {
+      const spa = await Spa.create({ name: 'Multi-use integration ' + randomUUID() }); extraSpaIds.push(spa._id);
+      const scope = { spaId: spa._id };
+      await Control.create(scope);
+      const owner = await User.create({ ...scope, name: 'Owner Multi', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'OWNER', cashier: true });
+      const staff = await User.create({ ...scope, name: 'Staff Multi', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'STAFF', cashier: false });
+      const who: Actor = { id: String(owner._id), spaId: String(spa._id), name: owner.name, role: 'OWNER', cashier: true };
+      const callOp = (action: string, data: unknown, key = randomUUID()) => operate(who, action, data, key);
+
+      await callOp('openDay', { day: spaDay(), opening: 0 });
+      const customerA = await Customer.create({ ...scope, name: 'Khách A', phone: '0901111111' });
+      const customerB = await Customer.create({ ...scope, name: 'Người thân B', phone: '0902222222' });
+      const service = await Service.create({ ...scope, name: 'Chăm sóc da', price: 500000, duration: 60, commission: 25000, active: true });
+      const template = await PackageTemplate.create({ ...scope, serviceId: service._id, name: 'Gói chăm sóc da 10 buổi', price: 4000000, totalSessions: 10, packageType: 'SESSIONS', active: true });
+
+      // 1. Sell multiple packages of the SAME template in one invoice via checkout
+      const cartKey = randomUUID();
+      const multiCart = {
+        customerId: String(customerA._id),
+        actions: [
+          { action: 'sellPackage', data: { cartId: 'c1', templateId: String(template._id), dueDate: spaDay() } },
+          { action: 'sellPackage', data: { cartId: 'c2', templateId: String(template._id), dueDate: spaDay() } },
+        ]
+      };
+      const cartResult = await callOp('checkout', multiCart, cartKey);
+      const replayResult = await callOp('checkout', multiCart, cartKey);
+      assert.equal(cartResult.invoiceId, replayResult.invoiceId);
+      const invoice = await Invoice.findById(cartResult.invoiceId);
+      assert.ok(invoice);
+      assert.equal(invoice!.packageItems?.length, 2);
+      assert.equal(invoice!.total, 8000000);
+      assert.equal(invoice!.paid, 0);
+
+      const treatments = await Treatment.find({ ...scope, invoiceId: invoice!._id });
+      assert.equal(treatments.length, 2);
+      const treatment1 = treatments[0];
+
+      // 2. Multi-use batch treatment & sharing with family in one transaction
+      const sig1 = { version: 1 as const, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]] as [number, number][][] };
+      const sig2 = { version: 1 as const, strokes: [[[0.4, 0.4], [0.5, 0.5], [0.6, 0.6]]] as [number, number][][] };
+      const useBatchKey = randomUUID();
+      await callOp('use', {
+        treatmentId: String(treatment1._id),
+        remainingBefore: 10,
+        sessions: [
+          {
+            recipientCustomerId: String(customerB._id),
+            recipientName: 'Người thân B',
+            recipientPhone: '0902222222',
+            staffId: String(staff._id),
+            signature: sig1,
+          },
+          {
+            recipientName: 'Bạn C',
+            recipientPhone: '0903333333',
+            staffId: String(staff._id),
+            signature: sig2,
+          }
+        ]
+      }, useBatchKey);
+
+      await callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 10, sessions: [{ recipientCustomerId: String(customerB._id), signature: sig1 }, { recipientName: 'Bạn C', signature: sig2 }] }, useBatchKey);
+
+      const refreshedTreatment1 = await Treatment.findById(treatment1._id);
+      assert.equal(refreshedTreatment1!.remaining, 8, 'Deducted exactly 2 sessions');
+
+      const uses = await TreatmentUse.find({ ...scope, treatmentId: treatment1._id }).sort({ createdAt: 1 });
+      assert.equal(uses.length, 2);
+      assert.equal(String(uses[0].ownerCustomerId), String(customerA._id));
+      assert.equal(String(uses[0].recipientCustomerId), String(customerB._id));
+      assert.equal(uses[0].isShared, true);
+      assert.equal(uses[1].recipientName, 'Bạn C');
+      assert.equal(uses[1].isShared, true);
+
+      // 3. Signature independence: cannot use same signature for different recipients
+      await assert.rejects(callOp('use', {
+        treatmentId: String(treatment1._id),
+        remainingBefore: 8,
+        sessions: [
+          { recipientName: 'Khách 1', signature: sig1 },
+          { recipientName: 'Khách 2', signature: sig1 },
+        ]
+      }), (e: any) => e.status === 409);
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 8);
+
+      // 4. Concurrency: race condition between two competing batch use requests
+      const sigA = { version: 1 as const, strokes: [[[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]] as [number, number][][] };
+      const sigB = { version: 1 as const, strokes: [[[0.2, 0.3], [0.4, 0.5], [0.6, 0.7]]] as [number, number][][] };
+      const sigC = { version: 1 as const, strokes: [[[0.3, 0.4], [0.5, 0.6], [0.7, 0.8]]] as [number, number][][] };
+      const sigD = { version: 1 as const, strokes: [[[0.4, 0.5], [0.6, 0.7], [0.8, 0.9]]] as [number, number][][] };
+      const sigE = { version: 1 as const, strokes: [[[0.5, 0.6], [0.7, 0.8], [0.9, 0.1]]] as [number, number][][] };
+      const competingUses1 = [
+        { recipientName: 'K1', signature: sigA }, { recipientName: 'K2', signature: sigB },
+        { recipientName: 'K3', signature: sigC }, { recipientName: 'K4', signature: sigD },
+        { recipientName: 'K5', signature: sigE }
+      ];
+      const competingUses2 = [
+        { recipientName: 'K6', signature: sigA }, { recipientName: 'K7', signature: sigB },
+        { recipientName: 'K8', signature: sigC }, { recipientName: 'K9', signature: sigD },
+        { recipientName: 'K10', signature: sigE }
+      ];
+      const results = await Promise.allSettled([
+        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 8, sessions: competingUses1 }),
+        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 8, sessions: competingUses2 })
+      ]);
+      const fulfilled = results.filter(r => r.status === 'fulfilled');
+      const rejected = results.filter(r => r.status === 'rejected');
+      assert.equal(fulfilled.length, 1, 'Only one competing request succeeds');
+      assert.equal(rejected.length, 1, 'Competing request exceeding quota is rejected');
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 3);
+
+      // 5. Preserving due date on invoice update
+      const standaloneService = await callOp('serviceInvoice', {
+        customerId: String(customerA._id),
+        dueDate: '2026-12-31',
+        items: [{ serviceId: String(service._id), total: 500000 }]
+      });
+      const bill = await Invoice.findById(standaloneService.id);
+      assert.equal(bill!.dueDate, '2026-12-31');
+
+      // Pay in full
+      await callOp('payment', {
+        invoiceId: String(bill!._id),
+        amount: 500000,
+        method: 'CASH',
+        receivedConfirmation: true
+      });
+      assert.equal((await Invoice.findById(bill!._id))!.paid, 500000);
+
+      // Update invoice without passing dueDate (form hides it when paid == total)
+      const beforeUpdate = (await Invoice.findById(bill!._id))!.toObject();
+      await callOp('updateInvoice', {
+        id: String(bill!._id),
+        expectedUpdatedAt: beforeUpdate.updatedAt.toISOString(),
+        description: 'Đã cập nhật ghi chú',
+        total: 500000,
+        reason: 'Sửa ghi chú'
+      });
+      const afterUpdate = await Invoice.findById(bill!._id);
+      assert.equal(afterUpdate!.description, 'Đã cập nhật ghi chú');
+      assert.equal(afterUpdate!.dueDate, '2026-12-31', 'dueDate preserved when omitted from update payload');
+    });
   } finally {
     if (spaId) {
       const fixtureSpaIds = [spaId, ...extraSpaIds];

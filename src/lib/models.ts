@@ -144,7 +144,7 @@ const serviceItemSchema = new Schema({ lineId: optionalId, serviceId: id, name: 
 
 export const Invoice = model('Invoice', {
   treatmentSessions: {type:[new Schema({lineId:optionalId,treatmentId:id,treatmentUseId:id,name:String,performerId:optionalId,total:amount,paid:{...amount,default:0}},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
-  packageItems: {type:[new Schema({lineId:optionalId,templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,paid:{...amount,default:0},promotion:String,giftCashCardAmount:Number,performerId:optionalId},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
+  packageItems: {type:[new Schema({lineId:optionalId,templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,paid:{...amount,default:0},promotion:String,giftCashCardAmount:Number,performerId:optionalId,packageType:String,totalSessions:Number,durationMonths:Number,startsOn:String,sellerId:optionalId,sellerName:String},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
   recordedAt:Date,
   cancelledTotal: { ...amount, required: false }, cancelledAt: Date, cancelledBy: optionalId, cancelReason: String,
   code: { type: String, match: /^HD[0-9]+$/ },
@@ -296,6 +296,11 @@ export const TreatmentUse = model('TreatmentUse', {
   signatureDigest: String,
   sessionNumber: Number,
   customerId: optionalId,
+  ownerCustomerId: optionalId,
+  recipientCustomerId: optionalId,
+  recipientName: String,
+  recipientPhone: String,
+  isShared: { type: Boolean, default: false },
   staffId: optionalId,
   snapshot: String,
   digest: String,

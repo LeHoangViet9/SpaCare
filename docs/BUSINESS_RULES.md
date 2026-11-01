@@ -751,3 +751,38 @@ Khắc phục 29/10/2026: nếu nhiều dòng còn nợ, thu một phần phải
 PROPOSED kỹ thuật, không phải chính sách spa mới: khi chỉ một dòng còn nợ hoặc tất toán toàn bộ, backend có duy nhất một cách phân bổ và lưu tường minh vào ledger. Hóa đơn cũ hoàn toàn thiếu mã dòng giữ luồng tổng cũ. Hóa đơn có mã dòng nhưng số dư không khớp hoặc thiếu mã một phần bị chặn thu thêm để đối soát; không tự backfill hay chia tiền lịch sử. Đảo chứng từ cũ thiếu phân bổ giữ cách ghi tổng cũ.
 
 `performerId` đã dùng cho dòng có hoa hồng không được sửa khi Commission đã gắn payroll. OWNER chỉ được sửa trước khi chốt lương, với expected version, audit và đối soát lại ledger.
+
+## Cải tiến liệu trình, hóa đơn và thông báo đẩy — 01/11/2026
+
+### BR-TRT-003 — Dùng liệu trình nhiều lượt và chia sẻ cho người thân
+Trạng thái: CONFIRMED theo yêu cầu người dùng.
+- Cho phép ghi nhận nhiều lượt dùng từ cùng một gói liệu trình trong một lần thao tác (batch use).
+- Mỗi lượt dùng trừ đúng một buổi (`remaining -= 1`); tổng số lượt dùng trong thao tác không được vượt quá số buổi còn lại của gói (`treatment.remaining >= sessions.length`).
+- Phân biệt rõ chủ gói (`ownerCustomerId`) và người thực nhận dịch vụ (`recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared`).
+- Mỗi lượt dùng lưu thông tin người nhận riêng, thời điểm, nhân viên thực hiện, dịch vụ và xác nhận/chữ ký riêng.
+- Invariant bất biến: Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ. Các người nhận khác nhau trong cùng lượt ghi nhận phải có chữ ký/xác nhận riêng biệt.
+- Toàn bộ lượt dùng trong một thao tác được thực hiện nhất quán trong một transaction; nếu lỗi giữa chừng, toàn bộ thay đổi (số buổi, lượt dùng, hóa đơn buổi 0đ, audit) phải rollback toàn bộ.
+- Bảo đảm chống gửi lặp qua `Idempotency-Key` và ngăn ngừa race condition ghi nhận vượt số buổi còn lại.
+- Quy tắc PROPOSED: Hiện tại tính năng chia sẻ áp dụng an toàn cho gói tính theo số buổi (`SESSIONS`). Với gói không giới hạn theo thời gian (`TIME`), chính sách chia sẻ người thân (có giới hạn lượt/ngày hay không) cần chủ spa xác nhận trước khi cho phép chia sẻ; hiện giữ nguyên quy tắc sử dụng cá nhân cho gói TIME.
+
+### BR-INV-003 — Rút gọn form hóa đơn khi đã thanh toán đủ
+Trạng thái: CONFIRMED theo yêu cầu người dùng.
+- Khi hóa đơn đã thanh toán đủ và số dư còn phải thu bằng 0 (`total - paid <= 0`), ẩn trường nhập hạn thanh toán (`dueDate`) trên giao diện thu ngân và sửa hóa đơn để form ngắn gọn hơn.
+- Chỉ ẩn trường khi thực sự không còn công nợ; hóa đơn chưa thanh toán hoặc thanh toán một phần vẫn giữ luồng nhập `dueDate` như hiện tại.
+- Ẩn trường trên giao diện không xóa hoặc ghi đè `dueDate` đã lưu trong database: backend chỉ cập nhật `dueDate` khi client truyền giá trị tường minh (`d.dueDate !== undefined`); nếu client không truyền trường này (do form ẩn), giá trị `dueDate` ban đầu được giữ nguyên để bảo toàn lịch sử và đối soát công nợ.
+
+### BR-PKG-006 — Bán nhiều gói trong cùng một hóa đơn
+Trạng thái: CONFIRMED theo yêu cầu người dùng.
+- Cho phép thêm từ hai gói trở lên vào cùng một hóa đơn bán gói, bao gồm cả trường hợp mua nhiều gói cùng loại mẫu (`templateId`). Phân biệt các dòng gói trong giỏ hàng qua `cartId` duy nhất.
+- Mỗi gói là một dòng riêng (`packageItems`), giữ đúng dịch vụ, số buổi, giá, giảm giá, người bán và thông tin hoa hồng tương ứng.
+- Tạo riêng từng hồ sơ `Treatment` độc lập cho từng gói được mua, liên kết chung về `invoiceId`.
+- Thanh toán, phân bổ tiền, công nợ, thẻ tiền mặt và báo cáo xác định đúng từng dòng gói; không cộng nhầm số buổi hay hoa hồng giữa các gói.
+- Hóa đơn, các gói `Treatment`, payment/ledger, audit và idempotency xử lý trong cùng transaction. Gửi lại request với cùng `Idempotency-Key` trả về hóa đơn hiện có, không tạo trùng hóa đơn, gói hay hoa hồng.
+
+### BR-NOTIF-002 — Khôi phục và bảo đảm toàn vẹn thông báo đẩy Web Push
+Trạng thái: CONFIRMED & PROPOSED kỹ thuật.
+- Phân biệt rõ thông báo nội bộ trong ứng dụng (`ActivityNotification`, `Notification` đọc từ MongoDB) với Web Push Notification của trình duyệt qua Service Worker và giao thức RFC 8291 / RFC 8292.
+- Chuẩn hóa Base64URL padding cho VAPID public key 87 ký tự (bổ sung padding `=` để đạt độ dài chia hết cho 4 trước khi giải mã qua `atob()`), loại bỏ lỗi DOMException/InvalidCharacterError trên trình duyệt di động.
+- Mở rộng whitelist máy chủ push được phép (`allowedPushEndpoint`): hỗ trợ Android FCM/GCM (`android.googleapis.com`), Apple APNs Web Push (`*.push.apple.com`, `api.push.apple.com`, `web.push.apple.com`), Mozilla (`updates.push.services.mozilla.com`), Windows WNS (`*.notify.windows.com`).
+- Tự động dọn dẹp subscription hết hạn/lỗi: khi endpoint phản hồi HTTP 400 (Bad Request / DeviceTokenNotForTopic / InvalidRegistration), HTTP 404 hoặc HTTP 410, hệ thống tự động xóa bản ghi `PushDevice` tương ứng để ngăn chặn gửi lặp và spam log.
+- Bảo mật: Tuyệt đối không log subscription token, push endpoint đầy đủ, private key hay dữ liệu định danh khách hàng. Không dùng khóa production trong môi trường test.

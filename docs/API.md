@@ -636,3 +636,52 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 `redeemCashCard` and inline `cashCard` accept `lineAllocations` for the card debit and `additionalLineAllocations` for `additionalAmount`. The additional allocations are stored on the separate Payment, never on CashCardUse. Both sources validate and commit atomically. Additional allocations with a zero additional amount are rejected. Reversing the Payment reverses only its original allocations and preserves card balance/cardPaid. Multi-service checkout UI saves the invoice first, then opens its card payment flow to choose stable line IDs; inline single-service card payment remains atomic.
 
 PROPOSED compatibility: invoices entirely lacking line IDs retain aggregate payments and reject explicit allocations. Partially identified lines or a mismatch between line totals/paid and invoice totals/paid fail closed with 409 for new receipts; no historical redistribution or backfill. Historical reversals without allocations preserve the aggregate ledger. Existing scope, active account, OWNER reversal, day, idempotency and transaction checks remain in force.
+
+## Cải tiến API nghiệp vụ — 01/11/2026
+
+### 1. Action `use` — Ghi nhận nhiều lượt dùng và chia sẻ liệu trình
+- Hỗ trợ mảng `sessions` trong payload:
+```json
+{
+  "action": "use",
+  "data": {
+    "treatmentId": "OBJECT_ID",
+    "remainingBefore": 5,
+    "sessions": [
+      {
+        "recipientCustomerId": "OBJECT_ID",
+        "recipientName": "Người thân B",
+        "recipientPhone": "0902222222",
+        "staffId": "STAFF_OBJECT_ID",
+        "signature": { "version": 1, "strokes": [...] }
+      },
+      {
+        "recipientName": "Khách C",
+        "recipientPhone": "0903333333",
+        "staffId": "STAFF_OBJECT_ID_2",
+        "signature": { "version": 1, "strokes": [...] }
+      }
+    ]
+  }
+}
+```
+- Quy tắc kiểm tra:
+  - `sessions.length <= treatment.remaining`: không cho phép dùng vượt quá số buổi còn lại.
+  - Mỗi lượt dùng trừ đúng 1 buổi và tạo một bản ghi `TreatmentUse` độc lập với thông tin `ownerCustomerId`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared: true`.
+  - Nghiêm cấm dùng chung một chữ ký hoặc xác nhận cho nhiều người nhận dịch vụ khác nhau; mỗi người nhận phải có chữ ký riêng biệt.
+  - Toàn bộ các lượt dùng được commit trong một transaction duy nhất; lỗi bất kỳ bước nào sẽ rollback toàn bộ.
+
+### 2. Action `completeTreatmentAppointment` — Người nhận riêng cho từng buổi trong lịch hẹn
+- Mỗi phần tử trong mảng `treatments` chấp nhận `recipientCustomerId`, `recipientName`, `recipientPhone`.
+- Cho phép nhiều buổi từ cùng một gói trong một ca hẹn (ví dụ khách đi cùng người thân), mỗi người nhận mang thông tin và xác nhận riêng.
+
+### 3. Action `updateInvoice` — Bảo toàn hạn thanh toán (`dueDate`) khi form bị ẩn
+- Khi hóa đơn đã thanh toán đủ (`total - paid <= 0`), giao diện thu ngân và sửa hóa đơn ẩn trường `dueDate`.
+- Client không gửi trường `dueDate` trong payload sửa hóa đơn.
+- Backend kiểm tra `if (d.dueDate !== undefined) target.dueDate = d.dueDate;` để bảo toàn giá trị `dueDate` ban đầu trong database, không bị xóa hay ghi đè thành `undefined`.
+
+### 4. Action `checkout` — Bán nhiều gói cùng mẫu trong một hóa đơn
+- Giỏ hàng cashier chấp nhận nhiều gói cùng hoặc khác loại mẫu (`templateId`), gắn `cartId` duy nhất cho từng dòng gói.
+- Tạo một hóa đơn bán gói `PACKAGE` chứa nhiều dòng `packageItems`, gán đầy đủ `packageType`, `totalSessions`, `durationMonths`, `startsOn`, `sellerId`, `sellerName`.
+- Khởi tạo số lượng bản ghi `Treatment` tương ứng cho từng dòng gói.
+- Giữ vững tính bất biến Idempotency: retry cùng `Idempotency-Key` trả về đúng hóa đơn ban đầu và không nhân đôi số lượng `Treatment` hay hoa hồng tư vấn 5%.

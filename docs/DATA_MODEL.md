@@ -568,3 +568,23 @@ Thông báo tạo lịch nội bộ tiếp tục dùng collection `notifications
 
 ### Per-line performer and payment allocation (CONFIRMED)
 Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment lines) and `paid`. Payment and Allocation may carry `lineAllocations[]` with `{lineId, amount}`. Legacy documents without line IDs remain readable; a new line-allocation payment is rejected until the invoice has explicit line identities. No production backfill is implied.
+
+## Cải tiến TreatmentUse và Invoice.packageItems — 01/11/2026
+
+### Cấu trúc TreatmentUse chia sẻ và nhiều lượt dùng
+- `TreatmentUse.ownerCustomerId?: ObjectId`: Lưu ID khách hàng chủ sở hữu gói liệu trình.
+- `TreatmentUse.recipientCustomerId?: ObjectId`: Lưu ID khách hàng thực nhận dịch vụ nếu người nhận đã có hồ sơ trong spa.
+- `TreatmentUse.recipientName?: string`: Tên của người thực nhận dịch vụ trong buổi trị liệu.
+- `TreatmentUse.recipientPhone?: string`: Số điện thoại liên hệ của người thực nhận dịch vụ.
+- `TreatmentUse.isShared?: boolean`: Cờ đánh dấu lượt dùng này là chia sẻ cho người thân/bạn bè (`true`) hay do chính chủ gói sử dụng (`false` hoặc không có).
+- Snapshot và digest: Snapshot của từng lượt dùng ghi nhận đầy đủ `ownerCustomerId`, `ownerCustomerName`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared`, cùng thông tin nhân viên thực hiện và chữ ký vector độc lập.
+- Tính tương thích: Toàn bộ trường mới là additive (tùy chọn), không phá vỡ schema cũ hay yêu cầu migration database production.
+
+### Mở rộng Invoice.packageItems cho bán nhiều gói
+- `Invoice.packageItems[].packageType?: 'SESSIONS' | 'TIME'`: Phân loại gói theo số buổi hoặc thời gian.
+- `Invoice.packageItems[].totalSessions?: number`: Số buổi của gói (đối với gói SESSIONS).
+- `Invoice.packageItems[].durationMonths?: number`: Thời hạn hiệu lực theo tháng (đối với gói TIME).
+- `Invoice.packageItems[].startsOn?: string`: Ngày bắt đầu áp dụng gói (YYYY-MM-DD).
+- `Invoice.packageItems[].sellerId?: ObjectId`: Nhân viên tư vấn/bán gói tương ứng cho dòng này.
+- `Invoice.packageItems[].sellerName?: string`: Tên nhân viên tư vấn/bán gói tương ứng cho dòng này.
+- Cho phép lưu trữ độc lập từng dòng gói khi khách mua cùng lúc từ 2 gói trở lên (kể cả cùng một mẫu `templateId`) trên cùng một hóa đơn thanh toán.
