@@ -477,9 +477,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           attendanceDigest:sha(JSON.stringify({policy:staff?.salaryPolicy,leaves:leaves.map(r=>r.toObject()),work:work.map(r=>r.toObject())}))};
       };
       const fillPayroll = (payroll: any, commissions: any[]) => {
-        payroll.serviceCommissionTotal = commissions.filter(c=>c.category !== 'PACKAGE_SALE').reduce((n,c)=>n+c.amount,0);
-        payroll.saleCommissionTotal = commissions.filter(c=>c.category === 'PACKAGE_SALE').reduce((n,c)=>n+c.amount,0);
-        payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
         payroll.commissionCount = commissions.length;
         payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
         const serviceLedgers = commissions.filter(c=>c.ledgerType === 'commission' || c.ledgerType === 'invoiceLineCommission');
