@@ -306,18 +306,19 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         }
       }
 
-      const rollbackInvoice=(await call('serviceInvoice',{customerId:customer.id,staffId:String(earners[0]._id),items:[{serviceId:earningService.id,total:100000}]}));
+      const rollbackInvoice=(await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:earningService.id,total:100000,performerId:String(earners[0]._id)}]}));
       await call('payment',{invoiceId:rollbackInvoice.id,amount:100000,method:'CASH',receivedConfirmation:true});
       const rollbackBill=(await Invoice.findById(rollbackInvoice.id))!;
-      const rollbackCommission=(await Commission.findOne({spaId,invoiceId:rollbackBill._id}))!;
+      const rollbackCommission=await InvoiceLineCommission.findOne({spaId,invoiceId:rollbackBill._id});
+      assert.ok(rollbackCommission,'rollback fixture must create a per-line commission ledger');
       const rollbackPayment=(await Payment.findOne({spaId,invoiceId:rollbackBill._id}))!;
       const originalReceipt=(await CashEntry.findById(rollbackPayment.receiptId))!;
       const product=await Product.create({spaId,name:'Rollback movement '+randomUUID(),sku:randomUUID(),unit:'chai',price:1,stock:1});
       await StockMovement.create({spaId,productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:actor.name,direction:'IN',kind:'MANUAL',quantity:1,invoiceId:rollbackBill._id});
       const rollbackPayload={id:String(rollbackBill._id),expectedUpdatedAt:rollbackBill.updatedAt.toISOString(),reason:'Must rollback',confirmDelete:true};
       await assert.rejects(call('deleteInvoice',rollbackPayload,randomUUID()),(error:any)=>error.status===409);
-      assert.equal((await Commission.findById(rollbackCommission._id))!.amount,rollbackCommission.amount);
-      assert.equal((await Commission.findById(rollbackCommission._id))!.cancelledAt,undefined);
+      assert.equal((await InvoiceLineCommission.findById(rollbackCommission._id))!.amount,rollbackCommission.amount);
+      assert.equal((await InvoiceLineCommission.findById(rollbackCommission._id))!.cancelledAt,undefined);
       assert.equal((await Payment.findById(rollbackPayment._id))!.reversed,false);
       assert.equal((await CashEntry.findById(originalReceipt._id))!.reversed,false);
       assert.equal(await CashEntry.countDocuments({spaId,kind:'REVERSAL',originalId:originalReceipt._id}),0);
@@ -1751,10 +1752,16 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const correctionBill=await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:service.id,total:350000,performerId:who.id},{serviceId:lineService.id,total:200000,performerId:String(staff._id)}]});
       const correctionBefore=await Invoice.findById(correctionBill.id);
       const originalLines=correctionBefore!.serviceItems.map((item:any)=>({lineId:String(item.lineId),performerId:String(item.performerId)}));
-      await call('updateInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionBefore!.updatedAt.toISOString(),description:correctionBefore!.description,total:500000,reason:'Correct line prices',items:[{serviceId:service.id,total:300000},{serviceId:lineService.id,total:200000}]});
+      const correctionLinesBefore=await InvoiceLineCommission.find({spaId,invoiceId:correctionBill.id}).lean();
+      const correctionAuditCount=await Audit.countDocuments({spaId,action:'updateInvoice',targetId:correctionBefore!._id});
+      const correctionPayload={id:correctionBill.id,expectedUpdatedAt:correctionBefore!.updatedAt.toISOString(),description:correctionBefore!.description,total:500000,reason:'Correct line prices',items:[{serviceId:service.id,total:300000},{serviceId:lineService.id,total:200000}]};
+      await assert.rejects(call('updateInvoice',correctionPayload),/hoa hồng theo dòng/i);
       const correctionAfter=await Invoice.findById(correctionBill.id);
+      assert.deepEqual(correctionAfter!.toObject(),correctionBefore!.toObject());
+      assert.deepEqual(await InvoiceLineCommission.find({spaId,invoiceId:correctionBill.id}).lean(),correctionLinesBefore);
+      assert.equal(await Audit.countDocuments({spaId,action:'updateInvoice',targetId:correctionBefore!._id}),correctionAuditCount);
       assert.deepEqual(correctionAfter!.serviceItems.map((item:any)=>({lineId:String(item.lineId),performerId:String(item.performerId)})),originalLines);
-      await assert.rejects(call('updateInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionAfter!.updatedAt.toISOString(),description:correctionAfter!.description,total:300000,reason:'Unsupported line replacement',items:[{serviceId:service.id,total:300000}]}),/chưa có quy trình adjustment/i);
+      await assert.rejects(call('updateInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionAfter!.updatedAt.toISOString(),description:correctionAfter!.description,total:300000,reason:'Unsupported line replacement',items:[{serviceId:service.id,total:300000}]}),/hoa hồng theo dòng/i);
       await call('cancelInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionAfter!.updatedAt.toISOString(),reason:'Duplicate multi-performer invoice'});
       const cancelledLines=await InvoiceLineCommission.find({spaId,invoiceId:correctionBill.id});
       assert.equal(cancelledLines.length,2);assert.ok(cancelledLines.every(row=>row.amount===0 && row.cancelledAt));
@@ -1910,11 +1917,23 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const crossTenantLine=(await InvoiceLineCommission.findOne({spaId,invoiceId:crossTenantBill.id}))!;
       const foreignSpa=await Spa.create({name:'Foreign legacy payroll '+randomUUID()});extraSpaIds.push(foreignSpa._id);
       await Payroll.create({spaId:foreignSpa._id,staffId:person._id,staffName:person.name,month:priorMonth,baseSalary:0,earnedBase:0,commissionTotal:12000,serviceCommissionTotal:12000,saleCommissionTotal:0,commissionCount:1,commissionIds:[crossTenantLine._id],bonus:0,deductions:0,total:12000,note:'Foreign tenant reference',status:'APPROVED'});
-      await call('updateInvoice',{id:crossTenantBill.id,expectedUpdatedAt:crossTenantInvoice.updatedAt.toISOString(),description:crossTenantInvoice.description,total:crossTenantInvoice.total,reason:'Foreign payroll must not block'});
+      const crossTenantInvoiceBefore=JSON.stringify(crossTenantInvoice.toObject());
+      const crossTenantLineBefore=JSON.stringify(crossTenantLine.toObject());
+      const crossTenantAuditCount=await Audit.countDocuments({spaId,targetId:crossTenantInvoice._id});
+      await assert.rejects(call('updateInvoice',{id:crossTenantBill.id,expectedUpdatedAt:crossTenantInvoice.updatedAt.toISOString(),description:crossTenantInvoice.description,total:crossTenantInvoice.total,reason:'Line commission history blocks edits'}),/hoa hồng theo dòng/i);
+      assert.equal(JSON.stringify((await Invoice.findById(crossTenantInvoice._id))!.toObject()),crossTenantInvoiceBefore);
+      assert.equal(JSON.stringify((await InvoiceLineCommission.findById(crossTenantLine._id))!.toObject()),crossTenantLineBefore);
+      assert.equal(await Audit.countDocuments({spaId,targetId:crossTenantInvoice._id}),crossTenantAuditCount);
+      await call('cancelInvoice',{id:crossTenantBill.id,expectedUpdatedAt:crossTenantInvoice.updatedAt.toISOString(),reason:'Foreign tenant payroll must not block'});
+      assert.equal((await Invoice.findById(crossTenantInvoice._id))!.status,'CANCELLED');
+      assert.equal((await InvoiceLineCommission.findById(crossTenantLine._id))!.amount,0);
+
+      const payrollPreviewBill=await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:lineService.id,total:100000,performerId:String(person._id)}]});
+      const payrollPreviewLine=(await InvoiceLineCommission.findOne({spaId,invoiceId:payrollPreviewBill.id}))!;
 
       const draft=await call('savePayroll',{staffId:String(person._id),month:currentMonth,bonus:0,deductions:0,note:''});
       const saved=(await Payroll.findById(draft.id))!;
-      assert.equal(saved.commissionTotal,12000);assert.equal(saved.invoiceLineCommissionIds.length,1);
+      assert.equal(saved.commissionTotal,12000);assert.deepEqual(saved.invoiceLineCommissionIds.map(String),[String(payrollPreviewLine._id)]);
       const view=await readPayroll(actor,payrollQuery(new URLSearchParams({month:currentMonth,employee:String(person._id)})));
       assert.equal(view.summary.unsettled,12000);assert.equal(view.summary.unsettledCount,1);
     });
@@ -2141,7 +2160,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const sig1 = { version: 1 as const, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]] as [number, number][][] };
       const sig2 = { version: 1 as const, strokes: [[[0.4, 0.4], [0.5, 0.5], [0.6, 0.6]]] as [number, number][][] };
       const useBatchKey = randomUUID();
-      await callOp('use', {
+      const useBatchPayload = {
         treatmentId: String(treatment1._id),
         remainingBefore: 10,
         sessions: [
@@ -2159,9 +2178,9 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
             signature: sig2,
           }
         ]
-      }, useBatchKey);
-
-      await callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 10, sessions: [{ recipientCustomerId: String(customerB._id), signature: sig1 }, { recipientName: 'Bạn C', signature: sig2 }] }, useBatchKey);
+      };
+      const firstUseBatch=await callOp('use',useBatchPayload,useBatchKey);
+      assert.deepEqual(await callOp('use',useBatchPayload,useBatchKey),firstUseBatch);
 
       const refreshedTreatment1 = await Treatment.findById(treatment1._id);
       assert.equal(refreshedTreatment1!.remaining, 8, 'Deducted exactly 2 sessions');
