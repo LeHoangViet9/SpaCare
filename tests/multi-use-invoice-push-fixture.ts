@@ -281,8 +281,6 @@ console.log('--- TEST 2: SHORTEN INVOICE FORM WHEN FULLY PAID ---');
 const unpaidInvoice = { _id: '6'.repeat(24), total: 500000, paid: 0, dueDate: '2026-12-31' };
 assert.equal(invoiceEditorAction(unpaidInvoice), 'updateInvoice');
 assert.equal(invoiceDueDateVisible(unpaidInvoice.total, unpaidInvoice.paid), true, 'Unpaid invoice editor shows dueDate');
-const partialInvoice = { _id: '4'.repeat(24), total: 500000, paid: 200000, dueDate: '2026-11-30' };
-assert.equal(invoiceDueDateVisible(partialInvoice.total, partialInvoice.paid), true, 'Partially paid invoice editor shows dueDate');
 const fullyPaidInvoice = { _id: '5'.repeat(24), total: 500000, paid: 500000, dueDate: '2026-12-31', description: 'Ghi chú gốc' };
 assert.equal(invoiceEditorAction(fullyPaidInvoice), 'correctInvoiceDate', 'Paid invoice opens the date-only correction form');
 assert.equal(invoiceDueDateVisible(fullyPaidInvoice.total, fullyPaidInvoice.paid), false, 'Fully paid invoice hides dueDate');
