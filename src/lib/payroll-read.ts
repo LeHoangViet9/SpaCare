@@ -2,7 +2,7 @@ import { salaryOverviewRows } from './salary-overview';
 import { summarizeLeave } from './leave-rules';
 import { z } from 'zod';
 import { Commission, InvoiceLineCommission, Payroll, User, Service, StaffLeave, SaleCommission, Workday, Customer, SharedSaleCommission } from './models';
-import { monthBounds, payrollMonth } from './payroll-rules';
+import { monthBounds, payrollCommissionPeriod, payrollMonth } from './payroll-rules';
 import { ensure } from './rules';
 import type { Actor } from './auth';
 import { legacySettledInvoiceLineIds } from './commission-settlement';
@@ -37,11 +37,11 @@ export async function commissionCustomers<T extends Record<string, any>>(spaId: 
 }
 export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery>) {
   let scope: Record<string, any> = payrollStaffScope(user, q.employee);
-  const { start, end } = monthBounds(q.month);
+  const { end } = monthBounds(q.month);
   const people = await User.find({ spaId: user.spaId, role: { $in: q.view === 'salary' ? ['STAFF'] : ['OWNER', 'STAFF'] }, ...(user.role === 'OWNER' ? {} : { _id: user.id }) }).select('name active role +baseSalary +salaryPolicy').sort({ name: 1 }).lean();
   if (q.view === 'salary') scope = salaryStaffScope(scope, people.map(p => String(p._id)));
   const payrollFilter = { ...scope, month: q.month };
-  const commissionFilter = { ...scope, earnedAt: { $gte: start, $lt: end } };
+  const commissionFilter = payrollCommissionPeriod(scope, q.month);
   const combined = commissionPipeline;
   const combinedFilter = combined(commissionFilter);
   const selectedPeople = people.filter(p=>!q.employee || String(p._id)===q.employee);
@@ -53,7 +53,7 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   let displayRows = q.view === 'commission' ? await commissionCustomers(user.spaId, rows) : rows;
   const summary = await Commission.aggregate([...combinedFilter,{$group:{_id:'$category',amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const legacySettledLineIds = [...await legacySettledInvoiceLineIds({ ...scope, spaId: user.spaId })].map(id => new mongoose.Types.ObjectId(id));
-  const unsettled = await Commission.aggregate([...combined({...scope,payrollId:{$exists:false},earnedAt:{$lt:end}},legacySettledLineIds),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
+  const unsettled = await Commission.aggregate([...combined(payrollCommissionPeriod({...scope,payrollId:{$exists:false}},q.month),legacySettledLineIds),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const salarySummary = q.view === 'salary' ? await Payroll.aggregate([
     { $match: (Payroll.find(payrollFilter) as any).cast(Payroll) },
     { $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: '$total' } } },
@@ -72,7 +72,7 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   const workdays = q.view === 'salary' ? await Workday.find(workFilter).sort({day:-1,_id:-1}).skip((workPage-1)*10).limit(10).lean() : [];
   const leaveSummary = people.filter(p=>!q.employee || String(p._id)===q.employee).map(p=>({staffId:p._id,...summarizeLeave(allLeaves.filter(r=>String(r.staffId)===String(p._id)),q.month)}));
   if(q.view === 'salary') {
-    const pending = await Commission.aggregate([...combined({...scope,staffId:{$in:pagePeople.map(p=>p._id)},payrollId:{$exists:false},earnedAt:{$lt:end}},legacySettledLineIds),{$group:{_id:{staffId:'$staffId',category:'$category'},amount:{$sum:'$amount'}}}]);
+    const pending = await Commission.aggregate([...combined(payrollCommissionPeriod({...scope,staffId:{$in:pagePeople.map(p=>p._id)},payrollId:{$exists:false}},q.month),legacySettledLineIds),{$group:{_id:{staffId:'$staffId',category:'$category'},amount:{$sum:'$amount'}}}]);
     displayRows=salaryOverviewRows(pagePeople,rows,pending,workSummary,leaveSummary,q.month);
   }
   return { workdays,workSummary,workTotal,workPage, leaves, leaveSummary, leaveTotal, leavePage, salarySummary, services, people: people.map(p => ({ _id: p._id, name: p.name, active: p.active, role: p.role, baseSalary: p.baseSalary ?? null, salaryPolicy:p.salaryPolicy })),

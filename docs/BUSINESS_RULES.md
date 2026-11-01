@@ -307,7 +307,7 @@ PROPOSED kỹ thuật đang triển khai:
 - Buổi không lịch mặc định nhân viên phiên; OWNER/thu ngân có thể chỉ định người trực tiếp làm. STAFF không chọn người khác. Đổi người trước ký phải xóa chữ ký cũ; snapshot ký/Commission dùng cùng người thực hiện.
 - OWNER nhập thưởng/phụ cấp và khấu trừ với lý do, không tự suy từ chấm công. Tiền nguyên VNĐ, thực nhận không âm; một bảng/người/tháng. Tháng tương lai chưa lập bảng.
 - Nháp lưu snapshot; cập nhật nháp phải đúng id, không vô tình ghi đè bảng đã có. Duyệt kiểm tra expectedTotal và tập hoa hồng chưa chốt, thay đổi trả409 yêu cầu cập nhật nháp. Duyệt gắn các khoản vào đúng bảng trong transaction.
-- Mỗi bảng gom hoa hồng chưa chốt trước đầu tháng sau (gồm tồn trước tháng); không lấy từ bảng đã duyệt khác. Sau duyệt khoản đến muộn giữ chưa chốt để kỳ sau. Lương cơ bản không tự chia theo công hoặc ngày vào/nghỉ.
+- CONFIRMED theo yêu cầu mới nhất, thay thế đề xuất gom tồn trước tháng: bảng lương chỉ lấy hoa hồng có earnedAt trong đúng tháng của bảng. Hoa hồng tháng trước chưa chốt vẫn thuộc kỳ tháng trước, không tự chuyển sang tháng sau. Xem trước, lưu nháp và duyệt dùng cùng khoảng tháng theo giờ Việt Nam; khoản đến muộn vẫn ở tháng earnedAt của nó. Lương cơ bản không tự chia theo công hoặc ngày vào/nghỉ.
 - Chỉ OWNER chi bảng APPROVED, phải xác nhận thực chi. Tiền dương cần sổ hôm nay OPEN, BANK_TRANSFER cần ghi chú/tham chiếu. Tiền0 chuyển PAID không tạo CashEntry0. Một bảng chỉ có một CashEntry PAYROLL; retry không chi hai lần.
 - Không sửa bảng APPROVED/PAID, không hard delete khoản hoa hồng/bảng lương. Chưa có mở lại hoặc đảo chi lương; reverseCash thông thường từ chối PAYROLL để tránh lệch bảng và sổ. Quy trình xử lý trả lương nhầm cần thiết kế riêng.
 

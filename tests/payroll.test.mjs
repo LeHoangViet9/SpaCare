@@ -1,7 +1,7 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { tsImport } from 'tsx/esm/api';
-const { monthBounds, salaryTotal, payrollInputs } = await tsImport('../src/lib/payroll-rules.ts', import.meta.url);
+const { monthBounds, payrollCommissionPeriod, salaryTotal, payrollInputs } = await tsImport('../src/lib/payroll-rules.ts', import.meta.url);
 const { payrollStaffScope, payrollQuery } = await tsImport('../src/lib/payroll-read.ts', import.meta.url);
 const id = 'a'.repeat(24), other = 'b'.repeat(24), spaId = 'c'.repeat(24);
 test('service commission is a fixed integer amount per service, without client tenant or employee scope', () => {
@@ -21,6 +21,25 @@ test('monthly commission boundaries use Vietnam timezone and cross December safe
   assert.equal(range.start.toISOString(), '2026-11-30T17:00:00.000Z');
   assert.equal(range.end.toISOString(), '2026-12-31T17:00:00.000Z');
   for (const month of ['2026-13', '2026-00', '2026-1', 'bad', '1999-12']) assert.throws(() => monthBounds(month));
+});
+test('salary commission scope only includes earnings in the selected month', () => {
+  const october = payrollCommissionPeriod({ spaId, staffId: id, payrollId: { $exists: false } }, '2026-10');
+  const november = payrollCommissionPeriod({ spaId, staffId: id, payrollId: { $exists: false } }, '2026-11');
+  const inPeriod = (period, earnedAt) => earnedAt >= period.earnedAt.$gte && earnedAt < period.earnedAt.$lt;
+  const octoberLastMoment = new Date('2026-10-31T16:59:59.999Z');
+  const novemberStart = new Date('2026-10-31T17:00:00.000Z');
+  const unsettledOctober = { earnedAt: octoberLastMoment, payrollId: undefined };
+  assert.equal(october.earnedAt.$gte.toISOString(), '2026-09-30T17:00:00.000Z');
+  assert.equal(october.earnedAt.$lt.toISOString(), novemberStart.toISOString());
+  assert.equal(november.earnedAt.$gte.toISOString(), novemberStart.toISOString());
+  assert.equal(november.earnedAt.$lt.toISOString(), '2026-11-30T17:00:00.000Z');
+  assert.equal(inPeriod(october, octoberLastMoment), true);
+  assert.equal(inPeriod(october, novemberStart), false);
+  assert.equal(inPeriod(november, novemberStart), true);
+  assert.equal(inPeriod(november, new Date('2026-11-30T17:00:00.000Z')), false);
+  assert.equal(inPeriod(october, unsettledOctober.earnedAt), true);
+  assert.equal(inPeriod(november, unsettledOctober.earnedAt), false);
+  assert.equal(unsettledOctober.payrollId, undefined);
 });
 test('staff including cashiers cannot read another employee salary or commissions', () => {
   for (const cashier of [true, false]) {

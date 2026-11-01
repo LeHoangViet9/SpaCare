@@ -23,6 +23,7 @@ import { readWorkspace } from '../src/lib/workspace-read';
 import { readInvoice } from '../src/lib/invoice-read';
 import { readCustomerHistory } from '../src/lib/customer-history';
 import { readPayroll, payrollQuery } from '../src/lib/payroll-read';
+import { monthBounds } from '../src/lib/payroll-rules';
 import { workspaceQuery } from '../src/lib/workspace-query';
 import { reservePublicBooking } from '../src/lib/public-booking';
 import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
@@ -1823,6 +1824,57 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal((await Payroll.findById(draft.id))!.total, refreshed.total);
       assert.equal(await InvoiceLineCommission.countDocuments({ spaId, staffId: who.id, payrollId: { $exists: false } }), 1);
       assert.equal((await Payroll.findById(draft.id))!.total,refreshed.total);
+    });
+    await t.test('payroll commissions stay in their Vietnam month through preview, draft and approval', async () => {
+      const month = spaDay().slice(0, 7);
+      const period = monthBounds(month);
+      const previousMonth = new Date(period.start.getTime() - 1).toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
+      const person = await User.create({
+        spaId, name: 'Payroll period boundary', email: randomUUID() + '@example.test',
+        passwordHash: hashPassword(randomUUID()), role: 'STAFF', baseSalary: 0,
+      });
+      const amounts = [700, 100, 200, 300];
+      const earnedAt = [
+        new Date(period.start.getTime() - 1),
+        period.start,
+        new Date(period.end.getTime() - 1),
+        period.end,
+      ];
+      const commissions: { _id: mongoose.Types.ObjectId }[] = await Commission.create(amounts.map((amount, index) => ({
+        spaId, staffId: person._id, staffName: person.name, customerId: customer.id,
+        invoiceId: new mongoose.Types.ObjectId(), sourceType: 'INVOICE',
+        sourceId: new mongoose.Types.ObjectId(), amount, earnedAt: earnedAt[index],
+      })));
+
+      const readMonth = (targetMonth: string, view: 'salary' | 'commission' = 'salary') =>
+        readPayroll(actor, payrollQuery(new URLSearchParams({
+          month: targetMonth, view, employee: String(person._id),
+        })));
+      const preview = async (targetMonth: string) => (await readMonth(targetMonth)).rows[0];
+      assert.equal((await preview(previousMonth)).serviceCommissionTotal, 700);
+      const monthPreview = await readMonth(month);
+      assert.equal(monthPreview.rows[0].serviceCommissionTotal, 300);
+      assert.equal(monthPreview.summary.unsettled, 300);
+      const nextMonth = period.end.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
+      assert.equal((await preview(nextMonth)).serviceCommissionTotal, 300);
+      assert.equal((await readMonth(month, 'commission')).summary.unsettled, 300);
+
+      const draft = await call('savePayroll', { staffId: String(person._id), month, baseSalary: 0 });
+      const saved = await Payroll.findById(draft.id);
+      assert.equal(saved!.serviceCommissionTotal, 300);
+      assert.equal(saved!.commissionIds.length, 2);
+      assert.equal(saved!.carryoverCount, 0);
+      await call('approvePayroll', { id: draft.id, expectedTotal: 300 });
+      const approved = await Payroll.findById(draft.id);
+      assert.equal(approved!.status, 'APPROVED');
+      assert.equal(approved!.serviceCommissionTotal, 300);
+      assert.equal((await readMonth(month)).summary.unsettled, 0);
+      const afterApproval = await Commission.find({ _id: { $in: commissions.map(row => row._id) } }).sort({ earnedAt: 1 });
+      assert.equal(afterApproval.filter((row: { payrollId?: mongoose.Types.ObjectId }) => String(row.payrollId) === draft.id).length, 2);
+      assert.equal(afterApproval[0].payrollId, undefined);
+      assert.equal(afterApproval[3].payrollId, undefined);
+      assert.equal((await preview(previousMonth)).serviceCommissionTotal, 700);
+      assert.equal((await preview(nextMonth)).serviceCommissionTotal, 300);
     });
     await t.test('legacy approved and paid line commissions are settled, correction-protected and tenant-scoped',async()=>{
       const person=await User.create({spaId,name:'Legacy line payroll',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'STAFF',baseSalary:4000000});

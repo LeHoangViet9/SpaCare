@@ -19,7 +19,7 @@ import { staffPhone } from './login-identity';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package-input';
-import { payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
+import { payrollCommissionPeriod, payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
 import { productInputs, productNameKey, stockBalance, productTotal } from './product-rules';
 import type { Actor } from './auth';
 import { hashPassword } from './password';
@@ -416,7 +416,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         invoice.saleCommissionAccrued=total; await invoice.save({session});
       };
       const pendingCommissions = async (staffId: string, month: string) => {
-        const filter = {...scope,staffId,payrollId:{$exists:false},earnedAt:{$lt:monthBounds(month).end}};
+        const filter = {...payrollCommissionPeriod({...scope,staffId,payrollId:{$exists:false}},month)};
         const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         const lineCandidates = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         // Production drafts before invoiceLineCommissionIds stored line IDs in commissionIds.
