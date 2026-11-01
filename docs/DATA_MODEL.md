@@ -168,6 +168,7 @@ Các bộ lọc workspace và số liệu hồ sơ không ghi thêm document. Ca
 - User.baseSalary tùy chọn, tiền nguyên không âm, select:false. Chỉ endpoint payroll riêng được select thêm, owner toàn spa/staff chính mình. Workspace/staff/auth không trả lương cơ bản.
 - Commission mới: spaId, staffId/staffName, serviceId/serviceName, customerId, invoiceId; sourceType APPOINTMENT|TREATMENT_USE|INVOICE và sourceId; amount snapshot, earnedAt; payrollId tùy chọn chỉ gắn khi duyệt. Unique {spaId,sourceType,sourceId}; unique {spaId,invoiceId}; index {spaId,staffId,earnedAt:-1}. Snapshot tiền không sửa; không xóa, không tự backfill.
 - Payroll mới: staffId/staffName, month YYYY-MM, baseSalary, commissionTotal/count, carryoverCount, commissionIds; bonus,deductions,total,note; status DRAFT|APPROVED|PAID; approvedBy/At,paidBy/At,receiptId. Unique {spaId,staffId,month}. Danh sách API không trả commissionIds. Các lần đổi/duyệt/chi có before/after tài chính trong Audit, nguồn Commission giữ liên kết payrollId.
+- Phân bổ hoa hồng vào Payroll lọc theo earnedAt trong đúng tháng Payroll.month theo giờ Việt Nam; khoản tháng trước chưa chốt không được chuyển sang Payroll tháng sau. carryoverCount chỉ được giữ để tương thích dữ liệu bảng lương cũ.
 - Invoice.performedBy/performedAt cho thực hiện dịch vụ, không phải người tạo hoặc tư vấn. Ca lịch gói Commission lấy Use làm source duy nhất, các invoice SESSION vẫn0đ. Ghi Commission, snapshot người thực hiện, Use/lịch, Audit và Idempotency cùng transaction.
 - CashEntry.kind thêm PAYROLL, payrollId/employeeId tùy chọn. Unique partial {spaId,payrollId} khi payrollId tồn tại. Payroll.receiptId trỏ phiếu OUT thực chi. Không tự chuyển khoản ngân hàng hoặc dùng payment khách để trả lương.
 - Duyệt chọn/gắn Commission và khóa Payroll cùng transaction/Control guard; ghi chi cập nhật Payroll + CashEntry + Audit/Idempotency cùng transaction, không ghi song song. Đọc aggregate cast ObjectId đúng spa/người dùng.
@@ -567,3 +568,23 @@ Thông báo tạo lịch nội bộ tiếp tục dùng collection `notifications
 
 ### Per-line performer and payment allocation (CONFIRMED)
 Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment lines) and `paid`. Payment and Allocation may carry `lineAllocations[]` with `{lineId, amount}`. Legacy documents without line IDs remain readable; a new line-allocation payment is rejected until the invoice has explicit line identities. No production backfill is implied.
+
+## Cải tiến TreatmentUse và Invoice.packageItems — 01/11/2026
+
+### Cấu trúc TreatmentUse chia sẻ và nhiều lượt dùng
+- `TreatmentUse.ownerCustomerId?: ObjectId`: Lưu ID khách hàng chủ sở hữu gói liệu trình.
+- `TreatmentUse.recipientCustomerId?: ObjectId`: Lưu ID khách hàng thực nhận dịch vụ nếu người nhận đã có hồ sơ trong spa.
+- `TreatmentUse.recipientName?: string`: Tên của người thực nhận dịch vụ trong buổi trị liệu.
+- `TreatmentUse.recipientPhone?: string`: Số điện thoại liên hệ của người thực nhận dịch vụ.
+- `TreatmentUse.isShared?: boolean`: Cờ đánh dấu lượt dùng này là chia sẻ cho người thân/bạn bè (`true`) hay do chính chủ gói sử dụng (`false` hoặc không có).
+- Snapshot và digest: Snapshot của từng lượt dùng ghi nhận đầy đủ `ownerCustomerId`, `ownerCustomerName`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared`, cùng thông tin nhân viên thực hiện và chữ ký vector độc lập.
+- Tính tương thích: Toàn bộ trường mới là additive (tùy chọn), không phá vỡ schema cũ hay yêu cầu migration database production.
+
+### Mở rộng Invoice.packageItems cho bán nhiều gói
+- `Invoice.packageItems[].packageType?: 'SESSIONS' | 'TIME'`: Phân loại gói theo số buổi hoặc thời gian.
+- `Invoice.packageItems[].totalSessions?: number`: Số buổi của gói (đối với gói SESSIONS).
+- `Invoice.packageItems[].durationMonths?: number`: Thời hạn hiệu lực theo tháng (đối với gói TIME).
+- `Invoice.packageItems[].startsOn?: string`: Ngày bắt đầu áp dụng gói (YYYY-MM-DD).
+- `Invoice.packageItems[].sellerId?: ObjectId`: Nhân viên tư vấn/bán gói tương ứng cho dòng này.
+- `Invoice.packageItems[].sellerName?: string`: Tên nhân viên tư vấn/bán gói tương ứng cho dòng này.
+- Cho phép lưu trữ độc lập từng dòng gói khi khách mua cùng lúc từ 2 gói trở lên (kể cả cùng một mẫu `templateId`) trên cùng một hóa đơn thanh toán.

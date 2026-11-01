@@ -187,11 +187,11 @@ GET /api/staff/{id}: OWNER và cùng spa; trả staff{name,email,role,cashier,ac
 
 
 ## API lương/hoa hồng — 22/10/2026
-GET /api/payroll?month=YYYY-MM&view=salary|commission&employee=&page=1. month hợp lệ2000..9998, page1..1000000; phân trang10. OWNER xem/chọn toàn spa. STAFF/thu ngân bị ép staffId=user.id; yêu cầu employee khác trả403 trước đọc dữ liệu lương. Vai trò khác403. no-store,private. Response people (name,active,role,baseSalary hoặc null), rows,total,page,summary{commission,sessions,unsettled,unsettledCount}. Summary commission là toàn tháng; unsettled gồm khoản chưa chốt đến hết tháng. Commission rows bổ sung payrollMonth/payrollStatus. people STAFF chỉ chứa chính mình; không trả hash/password/session. GET workspace nhận salary/commission để điều hướng, không trả bảng lương qua payload workspace chung.
+GET /api/payroll?month=YYYY-MM&view=salary|commission&employee=&page=1. month hợp lệ2000..9998, page1..1000000; phân trang10. OWNER xem/chọn toàn spa. STAFF/thu ngân bị ép staffId=user.id; yêu cầu employee khác trả403 trước đọc dữ liệu lương. Vai trò khác403. no-store,private. Response people (name,active,role,baseSalary hoặc null), rows,total,page,summary{commission,sessions,unsettled,unsettledCount}. Summary commission và unsettled đều giới hạn đúng tháng được chọn theo giờ Việt Nam; khoản chưa chốt của tháng trước không cộng vào tháng sau. Commission rows bổ sung payrollMonth/payrollStatus. people STAFF chỉ chứa chính mình; không trả hash/password/session. GET workspace nhận salary/commission để điều hướng, không trả bảng lương qua payload workspace chung.
 Các action POST operations giữ Origin, phiên active, cùng spa, Idempotency-Key, transaction/audit:
 - setStaffSalary OWNER: {staffId,baseSalary>=0}; cấu hình không sửa bảng đã lập.
-- savePayroll OWNER: {id?:bảng đang sửa,staffId,month,baseSalary?,bonus>=0,deductions>=0,note?}. Mới lấy lương cấu hình nếu bỏ baseSalary; không có cấu hình phải nhập rõ. Bảng đã có yêu cầu đúng id và DRAFT. Điều chỉnh dương cần note. Tính hoa hồng còn chưa chốt trước đầu tháng sau, cộng tồn tháng trước; không tính lại ledger từ giá danh mục. Không lập tháng tương lai.
-- approvePayroll OWNER: {id,expectedTotal}. Kiểm tra tập Commission và tổng so với nháp/expectedTotal; lệch409, chưa khóa/ghi chi. Thành công gắn payrollId và chuyển APPROVED. Retry giữ bảng cũ.
+- savePayroll OWNER: {id?:bảng đang sửa,staffId,month,baseSalary?,bonus>=0,deductions>=0,note?}. Mới lấy lương cấu hình nếu bỏ baseSalary; không có cấu hình phải nhập rõ. Bảng đã có yêu cầu đúng id và DRAFT. Điều chỉnh dương cần note. Chỉ tính hoa hồng có earnedAt trong đúng tháng đã chọn theo giờ Việt Nam; không chuyển hoa hồng tháng trước sang tháng sau, không tính lại ledger từ giá danh mục. Không lập tháng tương lai.
+- approvePayroll OWNER: {id,expectedTotal}. Kiểm tra tập Commission trong đúng tháng và tổng so với nháp/expectedTotal; lệch409, chưa khóa/ghi chi. Thành công gắn payrollId và chuyển APPROVED. Retry giữ bảng cũ.
 - payPayroll OWNER: {id,method:CASH|BANK_TRANSFER,receivedConfirmation:true,note?,transferReference?}. Số tiền server lấy từ bảng duyệt; không nhận amount/staffId để quyết định chi. BANK_TRANSFER cần note/reference>=3 ký tự. Khoản dương cần sổ hôm nay OPEN; ghi PAYROLL OUT + PAID atomically. Bảng PAID retry không ghi chi thêm. Khoản0 không tạo phiếu0. reverseCash từ chối PAYROLL.
 - completeInvoiceService OWNER/thu ngân: {id,staffId}. Chỉ invoice dịch vụ lẻ, không Appointment/Treatment; nhân viên active cùng spa. Đánh dấu thực hiện và ghi Commission một lần, bất kể paid. Đã thực hiện khác người409. Invoice có lịch hoàn thành tại lịch; invoice đã thực hiện không gắn lịch mới.
 - use thêm staffId tùy chọn; invoice có treatmentId thêm staffId tùy chọn cho buổi. Chỉ OWNER/thu ngân chỉ định người khác, STAFF chỉ mình. Signature snapshot và Commission gắn cùng staffId. completeTreatmentAppointment giữ nhân viên lịch.
@@ -624,7 +624,7 @@ PROPOSED kỹ thuật thực hiện chính sách: cashier đọc hóa đơn còn
 STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mình ghi/thực hiện; phạm vi Treatment lấy từ treatmentId/treatmentIds của lịch đã giao và buổi mình ghi/thực hiện; TreatmentUse chỉ actorId/staffId của mình. Áp dụng trước count/pagination, tìm trực tiếp ID, lịch sử khách, dữ liệu tham chiếu workspace và thống kê buổi; query customer/search không mở rộng quyền. Không thêm phân công nhân viên theo từng dịch vụ. Không schema/index/migration/backfill. Phần này thay thế mô tả cũ cho rằng phạm vi theo ca chưa đổi.
 ## P0 financial integrity — 30/10/2026
 
-- `approvePayroll`: snapshot gồm `invoiceLineCommissionIds`; cùng transaction gắn `payrollId` cho bốn commission ledgers và trả 409 nếu bất kỳ ID nào không còn pending. Retry cùng idempotency key không ghi lại. Pending lookup loại line ID đã nằm trong snapshot APPROVED/PAID cũ để tương thích dữ liệu trước bản vá mà không backfill.
+- `approvePayroll`: snapshot gồm `invoiceLineCommissionIds`; cùng transaction gắn `payrollId` cho bốn commission ledgers và trả 409 nếu bất kỳ ID nào thuộc payroll khác hoặc không còn trong snapshot. Ledger đã gắn đúng chính payroll đích được giữ nguyên khi retry/cập nhật nháp rồi duyệt tiếp; `savePayroll` chỉ nạp lại các ledger chưa gắn hoặc đang gắn chính draft đó. Retry cùng idempotency key không ghi lại. Pending lookup loại line ID đã nằm trong snapshot APPROVED/PAID cũ để tương thích dữ liệu trước bản vá mà không backfill.
 - `updateInvoice`/`cancelInvoice`: đọc cả `InvoiceLineCommission`; có `payrollId` thì trả 409 vì adjustment chưa được phê duyệt. Hủy đặt amount=0/cancelledAt cho line ledger. Sửa giá nhiều dòng giữ lineId/performerId; đổi tập dịch vụ khi có line ledger trả 409.
 - `deleteInvoice`: giữ payload/tên action để tương thích nhưng semantics là vô hiệu hóa có audit, không hard-delete. Đảo các phát sinh đủ điều kiện, giữ Invoice ở CANCELLED và trả cùng invoice ID. Audit transaction lưu snapshot before/after đầy đủ bốn commission ledgers; payroll APPROVED/PAID hiện hành hoặc legacy đều trả 409 và rollback toàn transaction.
 - `updateInvoice`, `cancelInvoice` và `deleteInvoice` cùng coi line commission nằm trong payroll APPROVED/PAID legacy cùng spa là đã settled, kể cả khi ledger chưa có `payrollId`; trường hợp này trả 409. `deleteInvoice` cũng trả 409 cho invoice đã CANCELLED. Retry cùng Idempotency-Key trả kết quả cũ, key mới không chạy reversal lần hai.
@@ -636,3 +636,52 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 `redeemCashCard` and inline `cashCard` accept `lineAllocations` for the card debit and `additionalLineAllocations` for `additionalAmount`. The additional allocations are stored on the separate Payment, never on CashCardUse. Both sources validate and commit atomically. Additional allocations with a zero additional amount are rejected. Reversing the Payment reverses only its original allocations and preserves card balance/cardPaid. Multi-service checkout UI saves the invoice first, then opens its card payment flow to choose stable line IDs; inline single-service card payment remains atomic.
 
 PROPOSED compatibility: invoices entirely lacking line IDs retain aggregate payments and reject explicit allocations. Partially identified lines or a mismatch between line totals/paid and invoice totals/paid fail closed with 409 for new receipts; no historical redistribution or backfill. Historical reversals without allocations preserve the aggregate ledger. Existing scope, active account, OWNER reversal, day, idempotency and transaction checks remain in force.
+
+## Cải tiến API nghiệp vụ — 01/11/2026
+
+### 1. Action `use` — Ghi nhận nhiều lượt dùng và chia sẻ liệu trình
+- Hỗ trợ mảng `sessions` trong payload:
+```json
+{
+  "action": "use",
+  "data": {
+    "treatmentId": "OBJECT_ID",
+    "remainingBefore": 5,
+    "sessions": [
+      {
+        "recipientCustomerId": "OBJECT_ID",
+        "recipientName": "Người thân B",
+        "recipientPhone": "0902222222",
+        "staffId": "STAFF_OBJECT_ID",
+        "signature": { "version": 1, "strokes": [...] }
+      },
+      {
+        "recipientName": "Khách C",
+        "recipientPhone": "0903333333",
+        "staffId": "STAFF_OBJECT_ID_2",
+        "signature": { "version": 1, "strokes": [...] }
+      }
+    ]
+  }
+}
+```
+- Quy tắc kiểm tra:
+  - `sessions.length <= treatment.remaining`: không cho phép dùng vượt quá số buổi còn lại.
+  - Mỗi lượt dùng trừ đúng 1 buổi và tạo một bản ghi `TreatmentUse` độc lập với thông tin `ownerCustomerId`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared: true`.
+  - Nghiêm cấm dùng chung một chữ ký hoặc xác nhận cho nhiều người nhận dịch vụ khác nhau; mỗi người nhận phải có chữ ký riêng biệt.
+  - Toàn bộ các lượt dùng được commit trong một transaction duy nhất; lỗi bất kỳ bước nào sẽ rollback toàn bộ.
+
+### 2. Action `completeTreatmentAppointment` — Người nhận riêng cho từng buổi trong lịch hẹn
+- Mỗi phần tử trong mảng `treatments` chấp nhận `recipientCustomerId`, `recipientName`, `recipientPhone`.
+- Cho phép nhiều buổi từ cùng một gói trong một ca hẹn (ví dụ khách đi cùng người thân), mỗi người nhận mang thông tin và xác nhận riêng.
+
+### 3. Action `updateInvoice` — Bảo toàn hạn thanh toán (`dueDate`) khi form bị ẩn
+- Khi hóa đơn đã thanh toán đủ (`total - paid <= 0`), giao diện thu ngân và sửa hóa đơn ẩn trường `dueDate`.
+- Client không gửi trường `dueDate` trong payload sửa hóa đơn.
+- Backend kiểm tra `if (d.dueDate !== undefined) target.dueDate = d.dueDate;` để bảo toàn giá trị `dueDate` ban đầu trong database, không bị xóa hay ghi đè thành `undefined`.
+
+### 4. Action `checkout` — Bán nhiều gói cùng mẫu trong một hóa đơn
+- Giỏ hàng cashier chấp nhận nhiều gói cùng hoặc khác loại mẫu (`templateId`), gắn `cartId` duy nhất cho từng dòng gói.
+- Tạo một hóa đơn bán gói `PACKAGE` chứa nhiều dòng `packageItems`, gán đầy đủ `packageType`, `totalSessions`, `durationMonths`, `startsOn`, `sellerId`, `sellerName`.
+- Khởi tạo số lượng bản ghi `Treatment` tương ứng cho từng dòng gói.
+- Giữ vững tính bất biến Idempotency: retry cùng `Idempotency-Key` trả về đúng hóa đơn ban đầu và không nhân đôi số lượng `Treatment` hay hoa hồng tư vấn 5%.

@@ -1,9 +1,31 @@
 import assert from 'node:assert/strict';
 import { createECDH, createDecipheriv, createHmac, createPublicKey, randomBytes, verify } from 'node:crypto';
 import { encryptPush, vapidAuthorization, sendPush } from '../src/lib/web-push';
-import { allowedPushEndpoint, pushInput } from '../src/lib/push-validation';
+import { allowedPushEndpoint, pushInput, urlBase64ToUint8Array } from '../src/lib/push-validation';
 import { ActivityNotification, Day, Notification, PushDevice, User } from '../src/lib/models';
 import { dispatchNotifications } from '../src/lib/notifications';
+
+// Test urlBase64ToUint8Array with URL-safe chars (- and _) across all valid Base64 padding lengths
+// 1. Length % 4 == 3 (e.g. 87-character unpadded P-256 public key needing 1 '=')
+const sample87 = 'BH-rwHhEbGhDRBDqIh9G9K6F4GF0F8P0EaEiNMy5FeJpxG4eC_DQiS8hPK5Xf3WY7oP1nHAXJYTQz4CYvO5X-A_'; // contains - and _
+assert.ok(sample87.includes('-') && sample87.includes('_'));
+assert.equal(sample87.length % 4, 3);
+const decoded87 = urlBase64ToUint8Array(sample87);
+assert.deepEqual(Buffer.from(decoded87), Buffer.from(sample87, 'base64url'));
+
+// 2. Length % 4 == 2 (e.g. 22-character auth token needing 2 '=')
+const sample22 = 'a-b_c-d_e-f_g-h_i-j_12';
+assert.ok(sample22.includes('-') && sample22.includes('_'));
+assert.equal(sample22.length % 4, 2);
+const decoded22 = urlBase64ToUint8Array(sample22);
+assert.deepEqual(Buffer.from(decoded22), Buffer.from(sample22, 'base64url'));
+
+// 3. Length % 4 == 0 (e.g. 16-character string needing 0 '=')
+const sample16 = 'ab-_cd-_ef-_gh-_';
+assert.ok(sample16.includes('-') && sample16.includes('_'));
+assert.equal(sample16.length % 4, 0);
+const decoded16 = urlBase64ToUint8Array(sample16);
+assert.deepEqual(Buffer.from(decoded16), Buffer.from(sample16, 'base64url'));
 
 const ua = createECDH('prime256v1'); ua.generateKeys();
 const vapid = createECDH('prime256v1'); vapid.generateKeys();
@@ -16,6 +38,8 @@ for (const endpoint of ['http://fcm.googleapis.com/x', 'https://localhost/x', 'h
   assert.equal(allowedPushEndpoint(endpoint), false);
 }
 assert.ok(allowedPushEndpoint('https://web.push.apple.com/test'));
+assert.ok(allowedPushEndpoint('https://api.push.apple.com/3/device/test'));
+assert.ok(allowedPushEndpoint('https://android.googleapis.com/gcm/send/test'));
 assert.ok(allowedPushEndpoint('https://updates.push.services.mozilla.com/wpush/v2/test'));
 const payload = JSON.stringify({ title: 'Lịch hẹn mới', body: 'Mở SpaCare', tag: 'booking-test' });
 const encrypted = encryptPush(subscription, payload);
@@ -71,10 +95,38 @@ let claimed = 0, sent = 0, deleted = 0;
 (PushDevice as any).find = (filter: any) => { assert.equal(filter.userId, 'owner'); return { limit: async () => [{ _id: 'device', ...subscription }] }; };
 (PushDevice as any).deleteOne = async () => { deleted++; };
 await dispatchNotifications({ spaId: 'spa', userId: 'owner' });
-assert.equal(deleted, 1, 'Expired subscriptions are removed'); assert.equal(sent, 1);
-claimed = 0; sent = 0;
+assert.equal(deleted, 1, 'Expired subscriptions on 410 Gone are removed'); assert.equal(sent, 1);
+
+// HTTP 400 with permanent invalid token reason (e.g. BadDeviceToken) -> MUST delete
+claimed = 0; sent = 0; deleted = 0;
+globalThis.fetch = async () => new Response(JSON.stringify({ reason: 'BadDeviceToken' }), { status: 400 });
+await dispatchNotifications({ spaId: 'spa', userId: 'owner' });
+assert.equal(deleted, 1, 'Permanent invalid token on 400 Bad Request is removed');
+
+// HTTP 400 with InvalidRegistration -> MUST delete
+claimed = 0; sent = 0; deleted = 0;
+globalThis.fetch = async () => new Response('InvalidRegistration', { status: 400 });
+await dispatchNotifications({ spaId: 'spa', userId: 'owner' });
+assert.equal(deleted, 1, 'InvalidRegistration on 400 Bad Request is removed');
+
+// HTTP 400 with payload/config or unclassified reason (e.g. PayloadTooLarge) -> MUST NOT delete
+claimed = 0; sent = 0; deleted = 0;
+globalThis.fetch = async () => new Response('PayloadTooLarge', { status: 400 });
+await dispatchNotifications({ spaId: 'spa', userId: 'owner' });
+assert.equal(deleted, 0, 'Payload or configuration error on 400 must NOT delete device subscription');
+assert.equal(sent, 0, 'Must remain queued for retry');
+
+// HTTP 400 with empty body (unknown reason) -> MUST NOT delete
+claimed = 0; sent = 0; deleted = 0;
+globalThis.fetch = async () => new Response(null, { status: 400 });
+await dispatchNotifications({ spaId: 'spa', userId: 'owner' });
+assert.equal(deleted, 0, 'Unclassified 400 error must NOT delete device subscription');
+
+// Transient 503 error -> MUST NOT delete
+claimed = 0; sent = 0; deleted = 0;
 globalThis.fetch = async () => new Response(null, { status: 503 });
 await dispatchNotifications({ spaId: 'spa', userId: 'owner' });
+assert.equal(deleted, 0, 'Transient 503 error must NOT delete device subscription');
 assert.equal(sent, 0, 'Transient failures remain queued');
 
 

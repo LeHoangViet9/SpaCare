@@ -23,6 +23,7 @@ import { readWorkspace } from '../src/lib/workspace-read';
 import { readInvoice } from '../src/lib/invoice-read';
 import { readCustomerHistory } from '../src/lib/customer-history';
 import { readPayroll, payrollQuery } from '../src/lib/payroll-read';
+import { monthBounds } from '../src/lib/payroll-rules';
 import { workspaceQuery } from '../src/lib/workspace-query';
 import { reservePublicBooking } from '../src/lib/public-booking';
 import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
@@ -211,8 +212,13 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         await call('payment',{invoiceId:String(invoice._id),amount:invoice.total,method:'CASH',receivedConfirmation:true});
         return (await Invoice.findById(invoice._id))!;
       };
+      // Preserve coverage for the legacy Commission ledger with an invoice created
+      // before serviceItems/InvoiceLineCommission were introduced.
+      const legacyAppointment=await Appointment.create({spaId,customerId:customer.id,serviceId:earningService.id,staffId:earners[0]._id,startAt:new Date(Date.now()-86400000),endAt:new Date(Date.now()-82800000),status:'CONFIRMED'});
+      const legacyInvoice=await Invoice.create({spaId,appointmentId:legacyAppointment._id,customerId:customer.id,serviceId:earningService.id,description:earningService.name,total:100000,paid:0,commission:12000,kind:'SERVICE'});
+      await call('completeAppointment',{id:String(legacyAppointment._id),existingInvoiceId:String(legacyInvoice._id)});
       const invoices=[
-        {kind:'Commission',invoice:(await call('serviceInvoice',{customerId:customer.id,staffId:String(earners[0]._id),items:[{serviceId:earningService.id,total:100000}]})).id},
+        {kind:'Commission',invoice:String(legacyInvoice._id)},
         {kind:'InvoiceLineCommission',invoice:(await call('serviceInvoice',{customerId:customer.id,items:[
           {serviceId:earningService.id,total:100000,performerId:String(earners[1]._id)},
           {serviceId:secondService.id,total:150000,performerId:String(earners[2]._id)},
@@ -300,18 +306,19 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         }
       }
 
-      const rollbackInvoice=(await call('serviceInvoice',{customerId:customer.id,staffId:String(earners[0]._id),items:[{serviceId:earningService.id,total:100000}]}));
+      const rollbackInvoice=(await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:earningService.id,total:100000,performerId:String(earners[0]._id)}]}));
       await call('payment',{invoiceId:rollbackInvoice.id,amount:100000,method:'CASH',receivedConfirmation:true});
       const rollbackBill=(await Invoice.findById(rollbackInvoice.id))!;
-      const rollbackCommission=(await Commission.findOne({spaId,invoiceId:rollbackBill._id}))!;
+      const rollbackCommission=await InvoiceLineCommission.findOne({spaId,invoiceId:rollbackBill._id});
+      assert.ok(rollbackCommission,'rollback fixture must create a per-line commission ledger');
       const rollbackPayment=(await Payment.findOne({spaId,invoiceId:rollbackBill._id}))!;
       const originalReceipt=(await CashEntry.findById(rollbackPayment.receiptId))!;
       const product=await Product.create({spaId,name:'Rollback movement '+randomUUID(),sku:randomUUID(),unit:'chai',price:1,stock:1});
       await StockMovement.create({spaId,productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:actor.name,direction:'IN',kind:'MANUAL',quantity:1,invoiceId:rollbackBill._id});
       const rollbackPayload={id:String(rollbackBill._id),expectedUpdatedAt:rollbackBill.updatedAt.toISOString(),reason:'Must rollback',confirmDelete:true};
       await assert.rejects(call('deleteInvoice',rollbackPayload,randomUUID()),(error:any)=>error.status===409);
-      assert.equal((await Commission.findById(rollbackCommission._id))!.amount,rollbackCommission.amount);
-      assert.equal((await Commission.findById(rollbackCommission._id))!.cancelledAt,undefined);
+      assert.equal((await InvoiceLineCommission.findById(rollbackCommission._id))!.amount,rollbackCommission.amount);
+      assert.equal((await InvoiceLineCommission.findById(rollbackCommission._id))!.cancelledAt,undefined);
       assert.equal((await Payment.findById(rollbackPayment._id))!.reversed,false);
       assert.equal((await CashEntry.findById(originalReceipt._id))!.reversed,false);
       assert.equal(await CashEntry.countDocuments({spaId,kind:'REVERSAL',originalId:originalReceipt._id}),0);
@@ -319,21 +326,36 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await auditFor(String(rollbackBill._id)),null);
 
       const assertPayrollBlocksVoid=async(staff:any,status:'APPROVED'|'PAID'|'LEGACY')=>{
-        const billResult=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:earningService.id,total:100000}]});
-        const bill=(await Invoice.findById(billResult.id))!;
-        const commission=(await Commission.findOne({spaId,invoiceId:bill._id}))!;
+        const appointment=await Appointment.create({spaId,customerId:customer.id,serviceId:earningService.id,staffId:staff._id,startAt:new Date(Date.now()-86400000),endAt:new Date(Date.now()-82800000),status:'CONFIRMED'});
+        const createdBill=await Invoice.create({spaId,appointmentId:appointment._id,customerId:customer.id,serviceId:earningService.id,description:earningService.name,total:100000,paid:0,commission:12000,kind:'SERVICE'});
+        await call('completeAppointment',{id:String(appointment._id),existingInvoiceId:String(createdBill._id)});
+        const bill=(await Invoice.findById(createdBill._id))!;
+        const commission=await Commission.findOne({spaId,invoiceId:bill._id});
+        assert.ok(commission,'legacy commission fixture must create a Commission ledger row');
+        assert.equal(commission.amount,12000);
+        let payroll:any;
         if(status==='LEGACY'){
-          await Payroll.create({spaId,staffId:staff._id,staffName:staff.name,month:spaDay().slice(0,7),baseSalary:0,commissionTotal:commission.amount,total:commission.amount,commissionIds:[commission._id],status:'APPROVED',approvedBy:actor.id,approvedAt:new Date()});
-          assert.equal((await Commission.findById(commission._id))!.payrollId,undefined);
+          payroll=await Payroll.create({spaId,staffId:staff._id,staffName:staff.name,month:spaDay().slice(0,7),baseSalary:0,commissionTotal:commission.amount,total:commission.amount,commissionIds:[commission._id],status:'APPROVED',approvedBy:actor.id,approvedAt:new Date()});
+          assert.equal(commission.payrollId,undefined,'legacy settled fixture uses the payroll snapshot without backfilling payrollId');
         }else{
           const saved=await call('savePayroll',{staffId:String(staff._id),month:spaDay().slice(0,7),baseSalary:0});
-          const payroll=(await Payroll.findById(saved.id))!;
+          payroll=(await Payroll.findById(saved.id))!;
+          assert.ok(payroll.commissionIds.some((id:any)=>String(id)===String(commission._id)),'saved payroll must contain this Commission ID');
+          assert.equal(commission.payrollId,undefined,'saving a draft must not claim the commission');
           await call('approvePayroll',{id:saved.id,expectedTotal:payroll.total});
           if(status==='PAID')await call('payPayroll',{id:saved.id,method:'CASH',receivedConfirmation:true});
+          payroll=(await Payroll.findById(saved.id))!;
         }
+        const expectedStatus=status==='LEGACY'?'APPROVED':status;
+        assert.equal(payroll.status,expectedStatus);
+        assert.ok(payroll.commissionIds.some((id:any)=>String(id)===String(commission._id)),'settled payroll snapshot must own the invoice commission ID');
+        const settledCommission=(await Commission.findById(commission._id))!;
+        assert.equal(String(settledCommission.payrollId || ''),status==='LEGACY'?'':String(payroll._id));
         const payload={id:String(bill._id),expectedUpdatedAt:bill.updatedAt.toISOString(),reason:`Blocked ${status}`,confirmDelete:true};
         await assert.rejects(call('deleteInvoice',payload,randomUUID()),(error:any)=>error.status===409);
-        assert.equal((await Commission.findById(commission._id))!.amount,commission.amount);
+        const afterRejectedDelete=(await Commission.findById(commission._id))!;
+        assert.equal(afterRejectedDelete.amount,commission.amount);
+        assert.equal(String(afterRejectedDelete.payrollId || ''),status==='LEGACY'?'':String(payroll._id));
         assert.equal((await Invoice.findById(bill._id))!.status,'OPEN');
         assert.equal(await auditFor(String(bill._id)),null);
       };
@@ -769,7 +791,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const customerView=await readCustomerHistory(actor,customer.id,'invoices',1);
       assert.ok(customerView.rows.some(row=>String(row._id)===created.id && row.status==='CANCELLED'));
       const audit=await Audit.findOne({spaId,action:'cancelInvoice',targetId:changed!._id});
-      assert.equal(audit!.details.before.commissions[0].amount,commission!.amount);
+      assert.equal(audit!.details.before.lineCommissions[0].amount,commission!.amount);
       assert.equal(audit!.details.after.status,'CANCELLED');
     });
     await t.test('mistaken invoice correction preserves the original document, retry and references',async()=>{
@@ -1745,10 +1767,16 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const correctionBill=await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:service.id,total:350000,performerId:who.id},{serviceId:lineService.id,total:200000,performerId:String(staff._id)}]});
       const correctionBefore=await Invoice.findById(correctionBill.id);
       const originalLines=correctionBefore!.serviceItems.map((item:any)=>({lineId:String(item.lineId),performerId:String(item.performerId)}));
-      await call('updateInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionBefore!.updatedAt.toISOString(),description:correctionBefore!.description,total:500000,reason:'Correct line prices',items:[{serviceId:service.id,total:300000},{serviceId:lineService.id,total:200000}]});
+      const correctionLinesBefore=await InvoiceLineCommission.find({spaId,invoiceId:correctionBill.id}).lean();
+      const correctionAuditCount=await Audit.countDocuments({spaId,action:'updateInvoice',targetId:correctionBefore!._id});
+      const correctionPayload={id:correctionBill.id,expectedUpdatedAt:correctionBefore!.updatedAt.toISOString(),description:correctionBefore!.description,total:500000,reason:'Correct line prices',items:[{serviceId:service.id,total:300000},{serviceId:lineService.id,total:200000}]};
+      await assert.rejects(call('updateInvoice',correctionPayload),/hoa hồng theo dòng/i);
       const correctionAfter=await Invoice.findById(correctionBill.id);
+      assert.deepEqual(correctionAfter!.toObject(),correctionBefore!.toObject());
+      assert.deepEqual(await InvoiceLineCommission.find({spaId,invoiceId:correctionBill.id}).lean(),correctionLinesBefore);
+      assert.equal(await Audit.countDocuments({spaId,action:'updateInvoice',targetId:correctionBefore!._id}),correctionAuditCount);
       assert.deepEqual(correctionAfter!.serviceItems.map((item:any)=>({lineId:String(item.lineId),performerId:String(item.performerId)})),originalLines);
-      await assert.rejects(call('updateInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionAfter!.updatedAt.toISOString(),description:correctionAfter!.description,total:300000,reason:'Unsupported line replacement',items:[{serviceId:service.id,total:300000}]}),/chưa có quy trình adjustment/i);
+      await assert.rejects(call('updateInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionAfter!.updatedAt.toISOString(),description:correctionAfter!.description,total:300000,reason:'Unsupported line replacement',items:[{serviceId:service.id,total:300000}]}),/hoa hồng theo dòng/i);
       await call('cancelInvoice',{id:correctionBill.id,expectedUpdatedAt:correctionAfter!.updatedAt.toISOString(),reason:'Duplicate multi-performer invoice'});
       const cancelledLines=await InvoiceLineCommission.find({spaId,invoiceId:correctionBill.id});
       assert.equal(cancelledLines.length,2);assert.ok(cancelledLines.every(row=>row.amount===0 && row.cancelledAt));
@@ -1782,17 +1810,58 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.deepEqual(await call('savePayroll', draftData, draftKey), draft);
       await assert.rejects(call('savePayroll', draftData), status(409));
       const original = (await Payroll.findById(draft.id))!;
+      assert.equal(original.invoiceLineCommissionIds.length,4);
+      const initialDraftLineRows=await InvoiceLineCommission.find({_id:{$in:original.invoiceLineCommissionIds}}).lean();
+      assert.deepEqual(initialDraftLineRows.map((row:any)=>String(row._id)).sort(),original.invoiceLineCommissionIds.map(String).sort());
+      assert.ok(initialDraftLineRows.every((row:any)=>!row.payrollId),'saving a draft must leave all line ledgers unassigned');
       assert.equal(original.total, 5000000 + 25000 + 25000 + 99999 + 99999 + 50000 - 10000);
       const extraBill = await call('invoice', { customerId: customer.id, serviceId: service.id });
       await call('completeInvoiceService', { id: extraBill.id, staffId: who.id });
+      const extraCommission=(await InvoiceLineCommission.findOne({spaId,invoiceId:extraBill.id}))!;
+      assert.equal(String(extraCommission.staffId),who.id);
       await assert.rejects(call('approvePayroll', { id: draft.id, expectedTotal: original.total }), status(409));
+      const afterRejectedApproval=await InvoiceLineCommission.find({_id:{$in:original.invoiceLineCommissionIds}}).lean();
+      assert.ok(afterRejectedApproval.every((row:any)=>!row.payrollId),'a failed approval must roll back every payrollId assignment');
+      assert.equal((await InvoiceLineCommission.findById(extraCommission._id))!.payrollId,undefined,'failed approval must leave the newly earned line pending');
       await call('savePayroll', { ...draftData, id: draft.id });
       const refreshed = (await Payroll.findById(draft.id))!;
+      assert.equal(refreshed.invoiceLineCommissionIds.length,original.invoiceLineCommissionIds.length+1);
+      assert.ok(refreshed.invoiceLineCommissionIds.some((id:any)=>String(id)===String(extraCommission._id)),'updated draft must include the newly earned line ledger');
+      const refreshedLineRows=await InvoiceLineCommission.find({_id:{$in:refreshed.invoiceLineCommissionIds}}).lean();
+      assert.deepEqual(refreshedLineRows.map((row:any)=>String(row._id)).sort(),refreshed.invoiceLineCommissionIds.map(String).sort());
+      assert.ok(refreshedLineRows.every((row:any)=>!row.payrollId),'updating a draft must not assign its commission ledgers');
+      const refreshedLegacyRows=await Commission.find({_id:{$in:refreshed.commissionIds}}).lean();
+      assert.deepEqual(refreshedLegacyRows.map((row:any)=>String(row._id)).sort(),refreshed.commissionIds.map(String).sort());
+      assert.ok(refreshedLegacyRows.every((row:any)=>!row.payrollId));
+      // A recovered/retried approval may encounter a ledger already owned by this exact draft.
+      // It may retain that owner, but may never claim a ledger assigned to another payroll.
+      const retryOwnedLineId=refreshed.invoiceLineCommissionIds[0];
+      const otherPayrollStaff=await User.create({spaId,name:'Other payroll owner',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'STAFF'});
+      const otherPayroll=await Payroll.create({spaId,staffId:otherPayrollStaff._id,staffName:otherPayrollStaff.name,month,baseSalary:0,commissionTotal:0,total:0,commissionIds:[],invoiceLineCommissionIds:[retryOwnedLineId],status:'APPROVED',approvedBy:actor.id,approvedAt:new Date()});
+      const assignedToOtherPayroll=await InvoiceLineCommission.updateOne({_id:retryOwnedLineId,spaId,payrollId:{$exists:false}},{$set:{payrollId:otherPayroll._id}});
+      assert.equal(assignedToOtherPayroll.matchedCount,1);
+      const draftBeforeForeignOwnerReject=(await Payroll.findById(draft.id))!.toObject();
+      await assert.rejects(call('approvePayroll',{id:draft.id,expectedTotal:refreshed.total}),/hoa hồng đã thay đổi/i);
+      assert.deepEqual((await Payroll.findById(draft.id))!.toObject(),draftBeforeForeignOwnerReject,'approval must leave the draft unchanged when a snapshot ledger belongs to another payroll');
+      assert.ok((await Payroll.findById(otherPayroll._id))!.invoiceLineCommissionIds.some((id:any)=>String(id)===String(retryOwnedLineId)),'foreign payroll snapshot retains the ledger ID');
+      assert.equal(String((await InvoiceLineCommission.findById(retryOwnedLineId))!.payrollId),String(otherPayroll._id),'rejected approval must not reassign a ledger from another payroll');
+      const releasedForeignOwner=await InvoiceLineCommission.updateOne({_id:retryOwnedLineId,spaId,payrollId:otherPayroll._id},{$unset:{payrollId:1}});
+      assert.equal(releasedForeignOwner.matchedCount,1);
+      assert.equal((await InvoiceLineCommission.findById(retryOwnedLineId))!.payrollId,undefined);
+      const claimedForSameDraft=await InvoiceLineCommission.updateOne({_id:retryOwnedLineId,spaId,payrollId:{$exists:false}},{$set:{payrollId:refreshed._id}});
+      assert.equal(claimedForSameDraft.matchedCount,1);
+      assert.equal(String((await InvoiceLineCommission.findById(retryOwnedLineId))!.payrollId),String(refreshed._id));
       await call('approvePayroll', { id: draft.id, expectedTotal: refreshed.total });
-      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, payrollId: draft.id }), 4);
+      const approvedPayroll=(await Payroll.findById(draft.id))!;
+      assert.equal(approvedPayroll.status,'APPROVED');
+      const approvedLineRows=await InvoiceLineCommission.find({_id:{$in:approvedPayroll.invoiceLineCommissionIds}}).lean();
+      assert.ok(approvedLineRows.every((row:any)=>String(row.payrollId)===String(approvedPayroll._id)));
+      const approvedLegacyRows=await Commission.find({_id:{$in:approvedPayroll.commissionIds}}).lean();
+      assert.ok(approvedLegacyRows.every((row:any)=>String(row.payrollId)===String(approvedPayroll._id)));
+      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, payrollId: draft.id }), refreshed.invoiceLineCommissionIds.length);
       const approvedLineInvoice=await Invoice.findById(lineBill.id);
       const protectedCorrection={id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),description:approvedLineInvoice!.description,total:approvedLineInvoice!.total,reason:'Must use adjustment'};
-      await assert.rejects(call('updateInvoice',protectedCorrection),/chưa có quy trình adjustment/i);
+      await assert.rejects(call('updateInvoice',protectedCorrection),/hoa hồng theo dòng/i);
       await assert.rejects(call('cancelInvoice',{id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),reason:'Must use adjustment'}),/chưa có quy trình adjustment/i);
       await assert.rejects(call('deleteInvoice',{id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),reason:'Must use adjustment',confirmDelete:true}),/chốt\/chi lương/);
       assert.notEqual((await Invoice.findById(lineBill.id))!.status,'CANCELLED');
@@ -1821,8 +1890,59 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const lateBill = await call('invoice', { customerId: customer.id, serviceId: service.id });
       await call('completeInvoiceService', { id: lateBill.id, staffId: who.id });
       assert.equal((await Payroll.findById(draft.id))!.total, refreshed.total);
-      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, staffId: who.id, payrollId: { $exists: false } }), 1);
+      assert.equal(await InvoiceLineCommission.countDocuments({ spaId, invoiceId: lateBill.id, staffId: who.id, payrollId: { $exists: false }, cancelledAt: { $exists: false } }), 1);
       assert.equal((await Payroll.findById(draft.id))!.total,refreshed.total);
+    });
+    await t.test('payroll commissions stay in their Vietnam month through preview, draft and approval', async () => {
+      const month = spaDay().slice(0, 7);
+      const period = monthBounds(month);
+      const previousMonth = new Date(period.start.getTime() - 1).toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
+      const person = await User.create({
+        spaId, name: 'Payroll period boundary', email: randomUUID() + '@example.test',
+        passwordHash: hashPassword(randomUUID()), role: 'STAFF', baseSalary: 0,
+      });
+      const amounts = [700, 100, 200, 300];
+      const earnedAt = [
+        new Date(period.start.getTime() - 1),
+        period.start,
+        new Date(period.end.getTime() - 1),
+        period.end,
+      ];
+      const commissions: { _id: mongoose.Types.ObjectId }[] = await Commission.create(amounts.map((amount, index) => ({
+        spaId, staffId: person._id, staffName: person.name, customerId: customer.id,
+        invoiceId: new mongoose.Types.ObjectId(), sourceType: 'INVOICE',
+        sourceId: new mongoose.Types.ObjectId(), amount, earnedAt: earnedAt[index],
+      })));
+
+      const readMonth = (targetMonth: string, view: 'salary' | 'commission' = 'salary') =>
+        readPayroll(actor, payrollQuery(new URLSearchParams({
+          month: targetMonth, view, employee: String(person._id),
+        })));
+      const preview = async (targetMonth: string) => (await readMonth(targetMonth)).rows[0];
+      assert.equal((await preview(previousMonth)).serviceCommissionTotal, 700);
+      const monthPreview = await readMonth(month);
+      assert.equal(monthPreview.rows[0].serviceCommissionTotal, 300);
+      assert.equal(monthPreview.summary.unsettled, 300);
+      const nextMonth = period.end.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
+      assert.equal((await preview(nextMonth)).serviceCommissionTotal, 300);
+      assert.equal((await readMonth(month, 'commission')).summary.unsettled, 300);
+
+      const draft = await call('savePayroll', { staffId: String(person._id), month, baseSalary: 0 });
+      const saved = await Payroll.findById(draft.id);
+      assert.equal(saved!.serviceCommissionTotal, 300);
+      assert.equal(saved!.commissionIds.length, 2);
+      assert.equal(saved!.carryoverCount, 0);
+      await call('approvePayroll', { id: draft.id, expectedTotal: 300 });
+      const approved = await Payroll.findById(draft.id);
+      assert.equal(approved!.status, 'APPROVED');
+      assert.equal(approved!.serviceCommissionTotal, 300);
+      assert.equal((await readMonth(month)).summary.unsettled, 0);
+      const afterApproval = await Commission.find({ _id: { $in: commissions.map(row => row._id) } }).sort({ earnedAt: 1 });
+      assert.equal(afterApproval.filter((row: { payrollId?: mongoose.Types.ObjectId }) => String(row.payrollId) === draft.id).length, 2);
+      assert.equal(afterApproval[0].payrollId, undefined);
+      assert.equal(afterApproval[3].payrollId, undefined);
+      assert.equal((await preview(previousMonth)).serviceCommissionTotal, 700);
+      assert.equal((await preview(nextMonth)).serviceCommissionTotal, 300);
     });
     await t.test('legacy approved and paid line commissions are settled, correction-protected and tenant-scoped',async()=>{
       const person=await User.create({spaId,name:'Legacy line payroll',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'STAFF',baseSalary:4000000});
@@ -1853,11 +1973,23 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const crossTenantLine=(await InvoiceLineCommission.findOne({spaId,invoiceId:crossTenantBill.id}))!;
       const foreignSpa=await Spa.create({name:'Foreign legacy payroll '+randomUUID()});extraSpaIds.push(foreignSpa._id);
       await Payroll.create({spaId:foreignSpa._id,staffId:person._id,staffName:person.name,month:priorMonth,baseSalary:0,earnedBase:0,commissionTotal:12000,serviceCommissionTotal:12000,saleCommissionTotal:0,commissionCount:1,commissionIds:[crossTenantLine._id],bonus:0,deductions:0,total:12000,note:'Foreign tenant reference',status:'APPROVED'});
-      await call('updateInvoice',{id:crossTenantBill.id,expectedUpdatedAt:crossTenantInvoice.updatedAt.toISOString(),description:crossTenantInvoice.description,total:crossTenantInvoice.total,reason:'Foreign payroll must not block'});
+      const crossTenantInvoiceBefore=JSON.stringify(crossTenantInvoice.toObject());
+      const crossTenantLineBefore=JSON.stringify(crossTenantLine.toObject());
+      const crossTenantAuditCount=await Audit.countDocuments({spaId,targetId:crossTenantInvoice._id});
+      await assert.rejects(call('updateInvoice',{id:crossTenantBill.id,expectedUpdatedAt:crossTenantInvoice.updatedAt.toISOString(),description:crossTenantInvoice.description,total:crossTenantInvoice.total,reason:'Line commission history blocks edits'}),/hoa hồng theo dòng/i);
+      assert.equal(JSON.stringify((await Invoice.findById(crossTenantInvoice._id))!.toObject()),crossTenantInvoiceBefore);
+      assert.equal(JSON.stringify((await InvoiceLineCommission.findById(crossTenantLine._id))!.toObject()),crossTenantLineBefore);
+      assert.equal(await Audit.countDocuments({spaId,targetId:crossTenantInvoice._id}),crossTenantAuditCount);
+      await call('cancelInvoice',{id:crossTenantBill.id,expectedUpdatedAt:crossTenantInvoice.updatedAt.toISOString(),reason:'Foreign tenant payroll must not block'});
+      assert.equal((await Invoice.findById(crossTenantInvoice._id))!.status,'CANCELLED');
+      assert.equal((await InvoiceLineCommission.findById(crossTenantLine._id))!.amount,0);
+
+      const payrollPreviewBill=await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:lineService.id,total:100000,performerId:String(person._id)}]});
+      const payrollPreviewLine=(await InvoiceLineCommission.findOne({spaId,invoiceId:payrollPreviewBill.id}))!;
 
       const draft=await call('savePayroll',{staffId:String(person._id),month:currentMonth,bonus:0,deductions:0,note:''});
       const saved=(await Payroll.findById(draft.id))!;
-      assert.equal(saved.commissionTotal,12000);assert.equal(saved.invoiceLineCommissionIds.length,1);
+      assert.equal(saved.commissionTotal,12000);assert.deepEqual(saved.invoiceLineCommissionIds.map(String),[String(payrollPreviewLine._id)]);
       const view=await readPayroll(actor,payrollQuery(new URLSearchParams({month:currentMonth,employee:String(person._id)})));
       assert.equal(view.summary.unsettled,12000);assert.equal(view.summary.unsettledCount,1);
     });
@@ -2042,6 +2174,158 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(treatment!.startsOn,spaDay()); assert.equal(treatment!.packageType,'TIME'); assert.equal(treatment!.remaining,undefined);
       const visit=await operate(who,'appointment',{customerId:String(guest._id),serviceId:String(service!._id),staffId:who.id,startAt: spaDay(new Date(Date.now()+86400000))+'T22:00:00+07:00'},randomUUID());
       assert.equal((await Appointment.findById(visit.id))!.endAt,undefined);
+    });
+    await t.test('multi-use and shared sessions, multi-package checkout, due date preservation, rollback and concurrency', async () => {
+      const spa = await Spa.create({ name: 'Multi-use integration ' + randomUUID() }); extraSpaIds.push(spa._id);
+      const scope = { spaId: spa._id };
+      await Control.create(scope);
+      const owner = await User.create({ ...scope, name: 'Owner Multi', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'OWNER', cashier: true });
+      const staff = await User.create({ ...scope, name: 'Staff Multi', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'STAFF', cashier: false });
+      const who: Actor = { id: String(owner._id), spaId: String(spa._id), name: owner.name, role: 'OWNER', cashier: true };
+      const callOp = (action: string, data: unknown, key = randomUUID()) => operate(who, action, data, key);
+
+      await callOp('openDay', { day: spaDay(), opening: 0 });
+      const customerA = await Customer.create({ ...scope, name: 'Khách A', phone: '0901111111' });
+      const customerB = await Customer.create({ ...scope, name: 'Người thân B', phone: '0902222222' });
+      const service = await Service.create({ ...scope, name: 'Chăm sóc da', price: 500000, duration: 60, commission: 25000, active: true });
+      const template = await PackageTemplate.create({ ...scope, serviceId: service._id, name: 'Gói chăm sóc da 10 buổi', price: 4000000, totalSessions: 10, packageType: 'SESSIONS', active: true });
+
+      // 1. Sell multiple packages of the SAME template in one invoice via checkout
+      const cartKey = randomUUID();
+      const multiCart = {
+        customerId: String(customerA._id),
+        actions: [
+          { action: 'sellPackage', data: { cartId: 'c1', templateId: String(template._id), dueDate: spaDay() } },
+          { action: 'sellPackage', data: { cartId: 'c2', templateId: String(template._id), dueDate: spaDay() } },
+        ]
+      };
+      const cartResult = await callOp('checkout', multiCart, cartKey);
+      const replayResult = await callOp('checkout', multiCart, cartKey);
+      assert.equal(cartResult.invoiceId, replayResult.invoiceId);
+      const invoice = await Invoice.findById(cartResult.invoiceId);
+      assert.ok(invoice);
+      assert.equal(invoice!.packageItems?.length, 2);
+      assert.equal(invoice!.total, 8000000);
+      assert.equal(invoice!.paid, 0);
+
+      const treatments = await Treatment.find({ ...scope, invoiceId: invoice!._id });
+      assert.equal(treatments.length, 2);
+      const treatment1 = treatments[0];
+
+      // 2. Multi-use batch treatment & sharing with family in one transaction
+      const sig1 = { version: 1 as const, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]] as [number, number][][] };
+      const sig2 = { version: 1 as const, strokes: [[[0.4, 0.4], [0.5, 0.5], [0.6, 0.6]]] as [number, number][][] };
+      const useBatchKey = randomUUID();
+      const useBatchPayload = {
+        treatmentId: String(treatment1._id),
+        remainingBefore: 10,
+        sessions: [
+          {
+            recipientCustomerId: String(customerB._id),
+            recipientName: 'Người thân B',
+            recipientPhone: '0902222222',
+            staffId: String(staff._id),
+            signature: sig1,
+          },
+          {
+            recipientName: 'Bạn C',
+            recipientPhone: '0903333333',
+            staffId: String(staff._id),
+            signature: sig2,
+          }
+        ]
+      };
+      const firstUseBatch=await callOp('use',useBatchPayload,useBatchKey);
+      assert.deepEqual(await callOp('use',useBatchPayload,useBatchKey),firstUseBatch);
+
+      const refreshedTreatment1 = await Treatment.findById(treatment1._id);
+      assert.equal(refreshedTreatment1!.remaining, 8, 'Deducted exactly 2 sessions');
+
+      const uses = await TreatmentUse.find({ ...scope, treatmentId: treatment1._id }).sort({ createdAt: 1 });
+      assert.equal(uses.length, 2);
+      assert.equal(String(uses[0].ownerCustomerId), String(customerA._id));
+      assert.equal(String(uses[0].recipientCustomerId), String(customerB._id));
+      assert.equal(uses[0].isShared, true);
+      assert.equal(uses[1].recipientName, 'Bạn C');
+      assert.equal(uses[1].isShared, true);
+
+      // 3. Signature independence: cannot use same signature for different recipients
+      await assert.rejects(callOp('use', {
+        treatmentId: String(treatment1._id),
+        remainingBefore: 8,
+        sessions: [
+          { recipientName: 'Khách 1', signature: sig1 },
+          { recipientName: 'Khách 2', signature: sig1 },
+        ]
+      }), (e: any) => e.status === 409);
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 8);
+
+      // 4. Concurrency: race condition between two competing batch use requests
+      const sigA = { version: 1 as const, strokes: [[[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]] as [number, number][][] };
+      const sigB = { version: 1 as const, strokes: [[[0.2, 0.3], [0.4, 0.5], [0.6, 0.7]]] as [number, number][][] };
+      const sigC = { version: 1 as const, strokes: [[[0.3, 0.4], [0.5, 0.6], [0.7, 0.8]]] as [number, number][][] };
+      const sigD = { version: 1 as const, strokes: [[[0.4, 0.5], [0.6, 0.7], [0.8, 0.9]]] as [number, number][][] };
+      const sigE = { version: 1 as const, strokes: [[[0.5, 0.6], [0.7, 0.8], [0.9, 0.1]]] as [number, number][][] };
+      const competingUses1 = [
+        { recipientName: 'K1', signature: sigA }, { recipientName: 'K2', signature: sigB },
+        { recipientName: 'K3', signature: sigC }, { recipientName: 'K4', signature: sigD },
+        { recipientName: 'K5', signature: sigE }
+      ];
+      const competingUses2 = [
+        { recipientName: 'K6', signature: sigA }, { recipientName: 'K7', signature: sigB },
+        { recipientName: 'K8', signature: sigC }, { recipientName: 'K9', signature: sigD },
+        { recipientName: 'K10', signature: sigE }
+      ];
+      const results = await Promise.allSettled([
+        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 8, sessions: competingUses1 }),
+        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 8, sessions: competingUses2 })
+      ]);
+      const fulfilled = results.filter(r => r.status === 'fulfilled');
+      const rejected = results.filter(r => r.status === 'rejected');
+      assert.equal(fulfilled.length, 1, 'Only one competing request succeeds');
+      assert.equal(rejected.length, 1, 'Competing request exceeding quota is rejected');
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 3);
+
+      // 5. Preserving due date on invoice update
+      const standaloneService = await callOp('serviceInvoice', {
+        customerId: String(customerA._id),
+        dueDate: '2026-12-31',
+        items: [{ serviceId: String(service._id), total: 500000 }]
+      });
+      const bill = await Invoice.findById(standaloneService.id);
+      assert.equal(bill!.dueDate, '2026-12-31');
+
+      // Pay in full
+      await callOp('payment', {
+        invoiceId: String(bill!._id),
+        amount: 500000,
+        method: 'CASH',
+        receivedConfirmation: true
+      });
+      assert.equal((await Invoice.findById(bill!._id))!.paid, 500000);
+
+      // Paid invoices are protected from content edits; the UI routes them to the date-only form.
+      const beforeUpdate = (await Invoice.findById(bill!._id))!.toObject();
+      const paymentsBefore=await Payment.find({spaId:scope.spaId,invoiceId:bill!._id}).lean();
+      const receiptsBefore=await CashEntry.find({_id:{$in:paymentsBefore.map(row=>row.receiptId)}}).lean();
+      const commissionsBefore=await Commission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean();
+      const lineCommissionsBefore=await InvoiceLineCommission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean();
+      const updateAuditCount=await Audit.countDocuments({spaId:scope.spaId,action:'updateInvoice',targetId:bill!._id});
+      await assert.rejects(callOp('updateInvoice', {
+        id: String(bill!._id),
+        expectedUpdatedAt: beforeUpdate.updatedAt.toISOString(),
+        description: 'Đã cập nhật ghi chú',
+        total: 500000,
+        reason: 'Sửa ghi chú'
+      }),/đã phát sinh giao dịch/i);
+      const afterUpdate = await Invoice.findById(bill!._id);
+      assert.deepEqual(afterUpdate!.toObject(),beforeUpdate,'rejected paid-invoice edit leaves the full invoice unchanged');
+      assert.equal(afterUpdate!.dueDate, '2026-12-31', 'dueDate remains unchanged after rejected content edit');
+      assert.deepEqual(await Payment.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),paymentsBefore,'payment history is unchanged');
+      assert.deepEqual(await CashEntry.find({_id:{$in:paymentsBefore.map(row=>row.receiptId)}}).lean(),receiptsBefore,'cash receipts are unchanged');
+      assert.deepEqual(await Commission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),commissionsBefore,'legacy commission ledger is unchanged');
+      assert.deepEqual(await InvoiceLineCommission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),lineCommissionsBefore,'per-line commission ledger is unchanged');
+      assert.equal(await Audit.countDocuments({spaId:scope.spaId,action:'updateInvoice',targetId:bill!._id}),updateAuditCount,'rejected edit writes no audit');
     });
   } finally {
     if (spaId) {

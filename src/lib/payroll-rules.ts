@@ -19,6 +19,10 @@ export function monthBounds(month: string) {
   const nextMonth = number === 12 ? `${year + 1}-01` : `${year}-${String(number + 1).padStart(2, '0')}`;
   return { start, end: new Date(nextMonth + '-01T00:00:00+07:00') };
 }
+export function payrollCommissionPeriod(scope: Record<string, unknown>, month: string) {
+  const { start, end } = monthBounds(month);
+  return { ...scope, earnedAt: { $gte: start, $lt: end } };
+}
 export function salaryTotal(base: number, commission: number, bonus: number, deductions: number) {
   for (const value of [base, commission, bonus, deductions]) money.parse(value);
   return money.parse(base + commission + bonus - deductions);

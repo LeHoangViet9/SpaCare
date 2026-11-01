@@ -2,11 +2,16 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('push', event => {
-  let data;
-  try { data = event.data.json(); } catch { return; }
+  let data = {};
+  if (event.data) {
+    try { data = event.data.json(); } catch { data = { body: event.data.text() }; }
+  }
   event.waitUntil(self.registration.showNotification(data.title || 'SpaCare', {
-    body: data.body, tag: data.tag || 'spacare', icon: '/icons/spacare-192.png',
-    data: { url: data.url },
+    body: data.body || 'Bạn có thông báo mới từ SpaCare',
+    tag: data.tag || 'spacare',
+    icon: '/icons/spacare-192.png',
+    badge: '/icons/spacare-192.png',
+    data: { url: data.url || '/workspace' },
   }));
 });
 self.addEventListener('notificationclick', event => {

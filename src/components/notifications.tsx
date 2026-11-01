@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { urlBase64ToUint8Array } from '../lib/push-validation';
 
 export async function disablePush() {
   if (!('serviceWorker' in navigator)) return;
@@ -54,8 +55,11 @@ export default function Notifications() {
       if (permission !== 'granted') throw new Error('Chưa được cấp quyền. Bạn có thể bật trong cài đặt thông báo của trình duyệt.');
       await navigator.serviceWorker.register('/sw.js', { scope: '/' });
       const registration = await navigator.serviceWorker.ready;
-      const bytes = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0));
-      const subscription = await registration.pushManager.getSubscription() || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes });
+      const bytes = urlBase64ToUint8Array(key);
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes });
+      }
       const response = await fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'subscribe', subscription: subscription.toJSON() }) });
       if (!response.ok) { await subscription.unsubscribe(); throw new Error('Chưa lưu được thiết bị nhận thông báo.'); }

@@ -61,9 +61,21 @@ export async function dispatchNotifications(scope?: { spaId: string; userId?: st
       try {
         await sendPush({ endpoint: device.endpoint, keys: device.keys }, JSON.stringify(notificationPayload(row)), config, ttl);
       } catch (error) {
-        const code = (error as { statusCode?: number }).statusCode;
-        if (code === 404 || code === 410) await PushDevice.deleteOne({ _id: device._id });
-        else retry = true;
+        const err = error as { statusCode?: number; responseBody?: string };
+        const code = err.statusCode;
+        const body = err.responseBody || '';
+        // 404/410: RFC 8030 expired or gone.
+        // 400: only delete if the response specifically confirms an invalid/unregistered token or device.
+        const isPermanentTokenError = code === 400 &&
+          /BadDeviceToken|DeviceTokenNotForTopic|Unregistered|InvalidRegistration|NotRegistered/i.test(body);
+        if (code === 404 || code === 410 || isPermanentTokenError) {
+          await PushDevice.deleteOne({ _id: device._id });
+        } else {
+          retry = true;
+          if (code === 400) {
+            console.warn('Push delivery returned HTTP 400 with unclassified or payload error; keeping device subscription.');
+          }
+        }
       }
     }
     if (!retry) await source.updateOne({ _id: row._id }, { pushState: 'SENT' });

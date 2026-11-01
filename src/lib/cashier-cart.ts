@@ -16,6 +16,13 @@ export function removeServiceItem(items:Row[],lineId:string):Row[]{
 export function updateServiceItemPerformers(items:Row[],lineId:string,performerIds:string[]):Row[]{
   return items.map(item=>item.lineId===lineId?{...item,performerIds}:item);
 }
+export function addPackageItem(items:Row[],row:Row):Row[]{
+  if(items.length>=30)throw new Error('Tối đa 30 gói trong giỏ.');
+  return [...items,{...row,cartId:crypto.randomUUID(),total:String(row.price),startsOn:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}),promotion:'',giftCashCardAmount:'0',gifts:[]}];
+}
+export function removePackageItem(items:Row[],cartId:string):Row[]{
+  return items.filter(item=>item.cartId!==cartId);
+}
 export function cashierActions(input:{
   customerId:string;services:Row[];sessions:Row[];products:Row[];packages:Row[];staffId?:string;participantIds:string[];dueDate:string;signature?:unknown;cashCard?:unknown;
 }){

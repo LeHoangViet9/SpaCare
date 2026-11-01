@@ -19,7 +19,7 @@ import { staffPhone } from './login-identity';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package-input';
-import { payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
+import { payrollCommissionPeriod, payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
 import { productInputs, productNameKey, stockBalance, productTotal } from './product-rules';
 import type { Actor } from './auth';
 import { hashPassword } from './password';
@@ -118,7 +118,7 @@ const schemas = {
   }),
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
-  completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore})).min(1).max(30).optional() }),
+  completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore:remainingBefore.optional(),recipientCustomerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional() }),
   completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
   deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
@@ -162,7 +162,27 @@ const schemas = {
     name: text,
     totalSessions: z.number().int().min(1).max(1000),
   }),
-  use: z.object({ treatmentId: objectId, signature: signature.optional(), remainingBefore, staffId: objectId.optional() }),
+  use: z.object({
+    treatmentId: objectId,
+    signature: signature.optional(),
+    remainingBefore: remainingBefore.optional(),
+    staffId: objectId.optional(),
+    recipientCustomerId: objectId.optional(),
+    recipientName: text.optional(),
+    recipientPhone: phone.optional(),
+    appointmentId: objectId.optional(),
+    sessions: z.array(z.object({
+      treatmentId: objectId.optional(),
+      signature: signature.optional(),
+      remainingBefore: remainingBefore.optional(),
+      staffId: objectId.optional(),
+      recipientCustomerId: objectId.optional(),
+      recipientName: text.optional(),
+      recipientPhone: phone.optional(),
+      appointmentId: objectId.optional(),
+      notes: note.optional(),
+    }).strict()).min(1).max(30).optional(),
+  }).strict(),
   pauseTreatment: z.object({ id: objectId, holdUntil: dateOnly, reason: text }),
   extendTreatmentHold: z.object({ id: objectId, holdUntil: dateOnly, reason: text }),
   resumeTreatment: z.object({ id: objectId, reason: text, expiresOn: dateOnly.optional() }),
@@ -415,8 +435,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         } else if (delta) await create(SaleCommission,{staffId:invoice.sellerId,staffName:invoice.sellerName,serviceId:invoice.serviceId || invoice.packageItems?.[0]?.serviceId,serviceName:invoice.description,customerId:invoice.customerId,invoiceId:invoice._id,sourceType,sourceId,amount:delta,earnedAt:new Date()});
         invoice.saleCommissionAccrued=total; await invoice.save({session});
       };
-      const pendingCommissions = async (staffId: string, month: string) => {
-        const filter = {...scope,staffId,payrollId:{$exists:false},earnedAt:{$lt:monthBounds(month).end}};
+      const pendingCommissions = async (staffId: string, month: string, ownerPayrollId?: unknown) => {
+        const ownership = ownerPayrollId
+          ? {$or:[{payrollId:{$exists:false}},{payrollId:null},{payrollId:ownerPayrollId}]}
+          : {payrollId:{$exists:false}};
+        const filter = {...payrollCommissionPeriod({...scope,staffId,...ownership},month)};
         const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         const lineCandidates = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         // Production drafts before invoiceLineCommissionIds stored line IDs in commissionIds.
@@ -428,7 +451,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const line = lineCandidates.filter(c=>!legacySettled.has(String(c._id)));
         const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
         const shared = await SharedSaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
-        return [...service,...line,...sale,...shared];
+        return [
+          ...service.map(c=>({...c.toObject(),ledgerType:'commission'})),
+          ...line.map(c=>({...c.toObject(),ledgerType:'invoiceLineCommission'})),
+          ...sale.map(c=>({...c.toObject(),ledgerType:'saleCommission'})),
+          ...shared.map(c=>({...c.toObject(),ledgerType:'sharedSaleCommission'})),
+        ];
       };
       const newLineId = () => new mongoose.Types.ObjectId();
       const performerFor = async (requested: string | undefined, fallback: string | undefined) => {
@@ -449,15 +477,17 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           attendanceDigest:sha(JSON.stringify({policy:staff?.salaryPolicy,leaves:leaves.map(r=>r.toObject()),work:work.map(r=>r.toObject())}))};
       };
       const fillPayroll = (payroll: any, commissions: any[]) => {
-        payroll.serviceCommissionTotal = commissions.filter(c=>c.category !== 'PACKAGE_SALE').reduce((n,c)=>n+c.amount,0);
-        payroll.saleCommissionTotal = commissions.filter(c=>c.category === 'PACKAGE_SALE').reduce((n,c)=>n+c.amount,0);
-        payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
         payroll.commissionCount = commissions.length;
         payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
-        payroll.commissionIds = commissions.filter(c=>c.category !== 'PACKAGE_SALE' && c.sourceType !== 'INVOICE_LINE').map(c=>c._id);
-        payroll.invoiceLineCommissionIds = commissions.filter(c=>c.sourceType === 'INVOICE_LINE').map(c=>c._id);
-        payroll.saleCommissionIds = commissions.filter(c=>c.category === 'PACKAGE_SALE' && !c.sharedSale).map(c=>c._id);
-        payroll.sharedSaleCommissionIds = commissions.filter(c=>c.sharedSale).map(c=>c._id);
+        const serviceLedgers = commissions.filter(c=>c.ledgerType === 'commission' || c.ledgerType === 'invoiceLineCommission');
+        const saleLedgers = commissions.filter(c=>c.ledgerType === 'saleCommission' || c.ledgerType === 'sharedSaleCommission');
+        payroll.serviceCommissionTotal = serviceLedgers.reduce((n,c)=>n+c.amount,0);
+        payroll.saleCommissionTotal = saleLedgers.reduce((n,c)=>n+c.amount,0);
+        payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
+        payroll.commissionIds = commissions.filter(c=>c.ledgerType === 'commission').map(c=>c._id);
+        payroll.invoiceLineCommissionIds = commissions.filter(c=>c.ledgerType === 'invoiceLineCommission').map(c=>c._id);
+        payroll.saleCommissionIds = commissions.filter(c=>c.ledgerType === 'saleCommission').map(c=>c._id);
+        payroll.sharedSaleCommissionIds = commissions.filter(c=>c.ledgerType === 'sharedSaleCommission').map(c=>c._id);
         let base; try { base = attendanceSalary(payroll.baseSalary,payroll.salaryPolicy,payroll.workdays,payroll.leaveStats || {permitted:0,unpermitted:0,paid:0,unpaid:0}); } catch(e) { ensure(false,(e as Error).message); }
         Object.assign(payroll,base);
         payroll.total = money(payroll.earnedBase + payroll.commissionTotal + payroll.bonus - payroll.deductions - (payroll.advance || 0), true);
@@ -468,40 +498,65 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         ensure(candidates.every(value=>JSON.stringify(value)===JSON.stringify(candidates[0])), 'Một hóa đơn chỉ dùng một chữ ký chung.');
         return candidates[0];
       };
-      const recordUse = async (d: z.infer<typeof schemas.use>, appointmentId: string | undefined = checkoutAppointmentId, staffId: string | null | undefined = d.staffId || actor.id, sharedInvoice?: any) => {
+      const recordUse = async (d: any, appointmentId: string | undefined = checkoutAppointmentId, staffId: string | null | undefined = d.staffId || actor.id, sharedInvoice?: any) => {
         const resolvedStaffId = staffId || undefined;
         ensure(!d.staffId || d.staffId === actor.id || actor.role === 'OWNER' || actor.cashier, 'Chỉ chủ spa hoặc thu ngân được chọn nhân viên thực hiện khác.', 403);
         const treatment = await get(Treatment, d.treatmentId);
         ensure(treatmentAvailable(treatment), 'Gói chưa đến ngày dùng, đã hết hạn, bảo lưu hoặc hết buổi.');
-        ensure(useToken(treatment) === d.remainingBefore, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
-        const customer = await get(Customer, String(treatment.customerId));
+        if (d.remainingBefore !== undefined) {
+          ensure(useToken(treatment) === d.remainingBefore, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
+        }
+        const ownerCustomer = await get(Customer, String(treatment.customerId));
+        let recipientCustomer = ownerCustomer;
+        let recipientName = d.recipientName ? String(d.recipientName).trim() : undefined;
+        let recipientPhone = d.recipientPhone ? String(d.recipientPhone).trim() : undefined;
+        let isShared = false;
+        if (d.recipientCustomerId) {
+          recipientCustomer = await get(Customer, String(d.recipientCustomerId));
+          recipientName = recipientCustomer.name;
+          recipientPhone = recipientCustomer.phone;
+          isShared = String(recipientCustomer._id) !== String(ownerCustomer._id);
+        } else if (recipientName && recipientName !== ownerCustomer.name) {
+          isShared = true;
+        } else {
+          recipientName = ownerCustomer.name;
+          recipientPhone = ownerCustomer.phone;
+        }
         const staff = resolvedStaffId ? await get(User, resolvedStaffId) : undefined;
         ensure(!staff || staff.active && ['OWNER','STAFF'].includes(staff.role), 'Nhân viên thực hiện không hoạt động.');
         const performedAt = new Date();
         const signatureDigest = d.signature ? sha(JSON.stringify(d.signature)) : undefined;
-        const confirmationUseId = sharedInvoice?.treatmentUseId;
+        // Do not inherit package owner's signature for a shared service recipient
+        const confirmationUseId = isShared ? undefined : sharedInvoice?.treatmentUseId;
         const confirmationMethod = d.signature ? (confirmationUseId ? 'INVOICE_SIGNATURE' : 'DRAWN_SIGNATURE') : 'STAFF_RECORDED';
         const sessionNumber = nextSessionNumber(treatment);
         const snapshot = JSON.stringify({ treatmentId: d.treatmentId, ...(appointmentId ? { appointmentId } : {}),
-          customerId: String(customer._id), customerName: customer.name, name: treatment.name,
+          customerId: String(ownerCustomer._id), customerName: ownerCustomer.name,
+          ownerCustomerId: String(ownerCustomer._id), ownerCustomerName: ownerCustomer.name,
+          ...(isShared ? { recipientCustomerId: d.recipientCustomerId ? String(d.recipientCustomerId) : undefined, recipientName, recipientPhone, isShared: true } : {}),
+          name: treatment.name,
           ...(staff ? {staffId:resolvedStaffId, staffName: staff.name} : {}), actorId: actor.id, sessionNumber, remainingBefore: useToken(treatment), packageType: treatment.packageType || 'SESSIONS', startsOn: treatment.startsOn, expiresOn: treatment.expiresOn,
           performedAt: performedAt.toISOString(), method: confirmationMethod, signatureDigest, ...(confirmationUseId ? {confirmationUseId:String(confirmationUseId)} : {}),
-          confirmationText: d.signature ? 'Khách ký chung xác nhận các dịch vụ đã thực hiện trên hóa đơn.' : 'Nhân viên ghi nhận đã thực hiện; không có chữ ký khách hàng.' });
+          confirmationText: d.signature ? (isShared ? 'Người nhận dịch vụ ký xác nhận buổi.' : 'Khách ký chung xác nhận các dịch vụ đã thực hiện trên hóa đơn.') : 'Nhân viên ghi nhận đã thực hiện; không có chữ ký khách hàng.' });
         const recorded = await create(TreatmentUse, { treatmentId: d.treatmentId, ...(appointmentId && !sharedInvoice ? { appointmentId } : {}),
-          actorId: actor.id, ...(staff ? {staffId:resolvedStaffId} : {}), customerId: customer._id, sessionNumber, method: confirmationMethod,
+          actorId: actor.id, ...(staff ? {staffId:resolvedStaffId} : {}), customerId: ownerCustomer._id,
+          ownerCustomerId: ownerCustomer._id,
+          ...(isShared ? { recipientCustomerId: d.recipientCustomerId, recipientName, recipientPhone, isShared: true } : {}),
+          sessionNumber, method: confirmationMethod,
           ...(confirmationUseId ? {confirmationUseId} : d.signature ? {signature:d.signature} : {}), signatureDigest, performedAt, snapshot, digest: sha(snapshot) });
         const purchase = await get(Invoice, String(treatment.invoiceId));
         const serviceId = treatment.serviceId || purchase.serviceId;
         const service = serviceId ? await get(Service, String(serviceId)) : null;
-        const line = { lineId: newLineId(), serviceId, name: treatment.name + ' · Buổi ' + sessionNumber, total: 0, commission: staff ? service?.commission || 0 : 0, ...(staff ? {performerId:staff._id} : {}) };
-        const sessionInvoice = sharedInvoice || await create(Invoice, { customerId: customer._id, ...(service ? { serviceId: service._id } : {}),
+        const displayName = treatment.name + ' · Buổi ' + sessionNumber + (isShared && recipientName ? ' (' + recipientName + ')' : '');
+        const line = { lineId: newLineId(), serviceId, name: displayName, total: 0, commission: staff ? service?.commission || 0 : 0, ...(staff ? {performerId:staff._id} : {}) };
+        const sessionInvoice = sharedInvoice || await create(Invoice, { customerId: ownerCustomer._id, ...(service ? { serviceId: service._id } : {}),
           ...(appointmentId ? { appointmentId } : {}), treatmentId: treatment._id, treatmentUseId: recorded._id,
           kind: 'SESSION', description: line.name, total: 0, paid: 0, status: 'PAID',
           commission: line.commission, ...(staff ? {performedBy:staff._id} : {}), performedAt, serviceItems: service ? [line] : undefined,
-          ...(purchase.consultantId ? { consultantId: purchase.consultantId, consultantName: purchase.consultantName } : await consultant(customer)) });
+          ...(purchase.consultantId ? { consultantId: purchase.consultantId, consultantName: purchase.consultantName } : await consultant(ownerCustomer)) });
         const reference = {lineId:line.lineId,treatmentId:treatment._id,treatmentUseId:recorded._id,name:line.name,...(staff ? {performerId:staff._id} : {}),total:0};
         if (sharedInvoice) {
-          ensure(String(sharedInvoice.customerId) === String(customer._id), 'Các liệu trình phải thuộc cùng khách.');
+          ensure(String(sharedInvoice.customerId) === String(ownerCustomer._id), 'Các liệu trình phải thuộc cùng khách.');
           sessionInvoice.description += ' + ' + line.name;
           sessionInvoice.serviceItems.push(line);
           sessionInvoice.commission = money((sessionInvoice.commission || 0) + line.commission, true);
@@ -769,7 +824,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           financialBefore = existing ? payrollSnapshot(existing) : { status: null };
           const baseSalary = d.baseSalary ?? existing?.baseSalary ?? staff.baseSalary;
           ensure(baseSalary !== undefined, 'Cần cài lương cơ bản hoặc nhập lương tháng trước.');
-          const commissions = await pendingCommissions(d.staffId, d.month);
+          const commissions = await pendingCommissions(d.staffId, d.month, existing?._id);
           const { id, ...input } = d;
           const attendance = await attendanceFor(d.staffId,d.month,d.attendanceConfirmed);
           const values: any = { ...input, ...attendance, baseSalary, staffName: staff.name };
@@ -784,7 +839,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure((await get(User,String(target.staffId))).role === 'STAFF','Bảng lương chỉ áp dụng cho nhân viên.',403);
           financialBefore = payrollSnapshot(target);
           if (target.status !== 'DRAFT') { ensure(target.total === d.expectedTotal, 'Số tiền bảng lương đã thay đổi.', 409); break; }
-          const commissions = await pendingCommissions(String(target.staffId), target.month);
+          const commissions = await pendingCommissions(String(target.staffId), target.month, target._id);
           const ids = commissions.map(c => String(c._id)).sort().join(',');
           const attendance = await attendanceFor(String(target.staffId),target.month,target.attendanceConfirmed);
           ensure(target.attendanceDigest ? attendance.attendanceDigest === target.attendanceDigest : !attendance.salaryPolicy,'Ngày nghỉ, công hoặc chính sách đã đổi. Cập nhật nháp trước khi duyệt.',409);
@@ -796,7 +851,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const attachPayroll = async (model: mongoose.Model<any>, commissionIds: any[]) => {
             const selected = commissionIds || [];
             if (!selected.length) return;
-            const result = await model.updateMany({ ...scope, _id: { $in: selected }, payrollId: { $exists: false } }, { $set: { payrollId: target._id } }, { session });
+            const candidates = await model.find({ ...scope, _id: { $in: selected } }).select('_id payrollId').session(session).lean();
+            ensure(candidates.length === selected.length && candidates.every(row => !row.payrollId || String(row.payrollId) === String(target._id)), 'Hoa hồng đã được chốt ở bảng lương khác. Cập nhật bản nháp trước khi duyệt.', 409);
+            const result = await model.updateMany({ ...scope, _id: { $in: selected }, $or: [{ payrollId: { $exists: false } }, { payrollId: null }, { payrollId: target._id }] }, { $set: { payrollId: target._id } }, { session });
             ensure(result.matchedCount === selected.length, 'Hoa hồng đã được chốt ở bảng lương khác. Cập nhật bản nháp trước khi duyệt.', 409);
           };
           await attachPayroll(Commission,target.commissionIds);
@@ -1007,8 +1064,21 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           }
           const ids = target.treatmentIds?.length ? target.treatmentIds.map(String) : [String(target.treatmentId)];
           const selections = d.treatments || [{treatmentId:String(target.treatmentId),signature:d.signature,remainingBefore:d.remainingBefore}];
-          const invoiceSignature = commonSignature(d.signature,selections);
-          ensure(selections.length === ids.length && new Set(selections.map(item=>item.treatmentId)).size === ids.length && selections.every(item=>ids.includes(item.treatmentId)), 'Xác nhận đủ từng liệu trình trong lịch.');
+          const hasDifferentRecipients = selections.some(s => (s.recipientCustomerId && String(s.recipientCustomerId) !== String(target.customerId)) || (s.recipientName && s.recipientName !== ''));
+          const invoiceSignature = hasDifferentRecipients ? undefined : commonSignature(d.signature,selections);
+          if (hasDifferentRecipients) {
+            const sigMap: { rec: string; sigStr: string }[] = [];
+            for (const s of selections) {
+              const rec = s.recipientCustomerId ? String(s.recipientCustomerId) : (s.recipientName ? s.recipientName.trim().toLowerCase() : String(target.customerId));
+              if (s.signature) {
+                const sigStr = JSON.stringify(s.signature);
+                const dup = sigMap.find(item => item.sigStr === sigStr && item.rec !== rec);
+                ensure(!dup, 'Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ.', 409);
+                sigMap.push({ rec, sigStr });
+              }
+            }
+          }
+          ensure(selections.every(item=>ids.includes(item.treatmentId)) && ids.every((id: string)=>selections.some(item=>item.treatmentId===id)), 'Xác nhận đủ từng liệu trình trong lịch.');
           ensure(!await Invoice.exists({ ...scope, appointmentId: target._id }).session(session), 'Lịch đã có hóa đơn; cần đối chiếu trước.', 409);
           appointmentBefore = target.toObject();
           if (!target.staffId) {
@@ -1021,7 +1091,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           for (const item of selections) {
             const treatment = await get(Treatment,item.treatmentId);
             ensure(String(treatment.customerId) === String(target.customerId), 'Gói không khớp khách.');
-            const recorded = await recordUse(schemas.use.parse({...item,signature:invoiceSignature}),String(target._id),String(target.staffId),combined);
+            const itemSig = hasDifferentRecipients ? item.signature : (item.signature || invoiceSignature);
+            const recorded = await recordUse({...item,signature:itemSig},String(target._id),String(target.staffId),combined);
             treatmentUseId ||= String(recorded._id);
             combined = await get(Invoice,linkedInvoiceId!);
           }
@@ -1173,7 +1244,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               // existing 5% consultant commission rules.
               invoice.kind='PACKAGE';
             }
-            invoice.packageItems=[...(invoice.packageItems || []),{lineId:newLineId(),templateId:template._id,treatmentId:target._id,serviceId:service._id,name:template.name+' · '+service.name,total:money(d.total ?? template.price),paid:0,promotion:d.promotion,giftCashCardAmount:d.giftCashCardAmount || 0}];
+            invoice.packageItems=[...(invoice.packageItems || []),{lineId:newLineId(),templateId:template._id,treatmentId:target._id,serviceId:service._id,name:template.name+' · '+service.name,total:money(d.total ?? template.price),paid:0,promotion:d.promotion,giftCashCardAmount:d.giftCashCardAmount || 0,packageType:template.packageType || 'SESSIONS',totalSessions:template.packageType === 'TIME' ? undefined : template.totalSessions,durationMonths:template.packageType === 'TIME' ? template.durationMonths : undefined,startsOn,sellerId:seller.staffId,sellerName:seller.staffName}];
             invoice.description=invoice.packageItems.map((item:any)=>item.name).join(' + ');
             invoice.promotion=[...new Set(invoice.packageItems.map((item:any)=>item.promotion).filter(Boolean))].join('; ');
             await invoice.save({session});packageInvoice=invoice;
@@ -1392,7 +1463,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             }
             target.serviceItems=items;target.serviceId=items.length===1 ? items[0].serviceId : undefined;target.commission=amount;
           }
-          target.description=d.items && d.description===target.description ? target.serviceItems.map((item:any)=>item.name).join(' + ') : d.description; target.total=d.total; target.dueDate=d.dueDate; target.status=invoiceState(d.total,0);
+          target.description=d.items && d.description===target.description ? target.serviceItems.map((item:any)=>item.name).join(' + ') : d.description; target.total=d.total; if (d.dueDate !== undefined) target.dueDate=d.dueDate; target.status=invoiceState(d.total,target.paid || 0);
           await target.save({session});
           if(correctedDate) {
             // Mongoose timestamps make createdAt immutable by default. This scoped
@@ -1448,7 +1519,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               const purchase = await get(Invoice,String(plan.invoiceId));
               ensure(String(plan.customerId) === d.customerId && (index > 0 || String(plan.serviceId || purchase.serviceId) === d.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
               const performerId = 'performerId' in item ? item.performerId : undefined;
-              const recorded = await recordUse(schemas.use.parse({...item,signature:invoiceSignature,...(performerId ? {staffId:performerId} : {})}),undefined,performerId || null,combined);
+              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore}),undefined,performerId || null,combined);
               treatmentUseId ||= String(recorded._id);
               combined = await get(Invoice,linkedInvoiceId!);
             }
@@ -1663,7 +1734,49 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           break;
         }
         case 'use': {
-          target = await recordUse(schemas.use.parse(data));
+          const d = schemas.use.parse(data);
+          const treatment = await get(Treatment, d.treatmentId);
+          ensure(treatmentAvailable(treatment), 'Gói chưa đến ngày dùng, đã hết hạn, bảo lưu hoặc hết buổi.');
+          if (d.sessions && d.sessions.length > 0) {
+            const sessions = d.sessions;
+            if (!timedPackage(treatment)) {
+              ensure((treatment.remaining || 0) >= sessions.length, 'Số lượt dùng (' + sessions.length + ') vượt quá số buổi còn lại (' + (treatment.remaining || 0) + ').', 409);
+            }
+            // Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ
+            const signedRecipients: { recipient: string; sigStr: string }[] = [];
+            for (const s of sessions) {
+              const rec = s.recipientCustomerId ? String(s.recipientCustomerId) : (s.recipientName ? s.recipientName.trim().toLowerCase() : String(treatment.customerId));
+              if (s.signature) {
+                const sigStr = JSON.stringify(s.signature);
+                const duplicate = signedRecipients.find(item => item.sigStr === sigStr && item.recipient !== rec);
+                ensure(!duplicate, 'Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ.', 409);
+                signedRecipients.push({ recipient: rec, sigStr });
+              }
+            }
+            let combinedInvoice: any;
+            const uses = [];
+            const initialRemaining = useToken(treatment);
+            for (const [index, s] of sessions.entries()) {
+              const currentTreatment = await get(Treatment, s.treatmentId || d.treatmentId);
+              const currentToken = useToken(currentTreatment);
+              const expectedToken = s.remainingBefore !== undefined ? s.remainingBefore : (initialRemaining - index);
+              ensure(currentToken === expectedToken, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
+              const recorded = await recordUse({
+                treatmentId: s.treatmentId || d.treatmentId,
+                staffId: s.staffId || d.staffId,
+                signature: s.signature,
+                remainingBefore: currentToken,
+                recipientCustomerId: s.recipientCustomerId || d.recipientCustomerId,
+                recipientName: s.recipientName || d.recipientName,
+                recipientPhone: s.recipientPhone || d.recipientPhone,
+              }, s.appointmentId || d.appointmentId || checkoutAppointmentId, s.staffId || d.staffId || actor.id, combinedInvoice);
+              uses.push(recorded);
+              combinedInvoice = await get(Invoice, linkedInvoiceId!);
+            }
+            target = uses[0];
+          } else {
+            target = await recordUse(d);
+          }
           break;
         }
         case 'openDay': {
@@ -1774,7 +1887,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         }
         const packageLines=batch.actions.filter(line=>line.action==='sellPackage');
         const baseLines=batch.actions.filter(line=>line.action!=='sellPackage');
-        const kinds=batch.actions.map(line=>line.action==='sellPackage' ? 'package:'+String(line.data.templateId).toLowerCase() : 'base');
+        const kinds=batch.actions.map((line: any)=> {
+          if (line.action === 'sellPackage') {
+            return line.data.cartId ? `package:cart:${line.data.cartId}` : `package:${String(line.data.templateId).toLowerCase()}`;
+          }
+          return line.action;
+        });
         ensure(new Set(kinds).size===kinds.length,'Không chọn trùng gói mới hoặc tạo lặp hóa đơn dịch vụ/sản phẩm trong giỏ.');
         const mixedPackageCheckout=packageLines.length>0 && baseLines.length>0;
         ensure(!mixedPackageCheckout || !baseLines.some(line => !!(line.data as any).cashCard), 'Thẻ tiền chỉ áp dụng cho hóa đơn dịch vụ lẻ không kèm gói.', 409);

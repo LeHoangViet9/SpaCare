@@ -204,7 +204,7 @@ Chữ ký trong chi tiết hóa đơn: hiển thị ngay hình ký theo từng b
 
 ## Giao diện Lương / Hoa hồng — 22/10/2026
 Mở hai mục trong Quản trị > Nhân viên, bỏ trạng thái chưa triển khai. STAFF chỉ đọc của mình, OWNER có chọn nhân viên và tháng.
-Lương: cấu hình lương từng người; lập nháp tháng với cơ bản/thưởng/khấu trừ/lý do; xem phân rã, số buổi và khoản tồn trước tháng; duyệt; ghi nhận chi qua tiền mặt/chuyển khoản có checkbox thực chi. Bảng duyệt/chi không có sửa/xóa. Danh sách phân trang10. Cài lương không đồng nghĩa đã chi; duyệt không tạo phiếu chi.
+Lương: cấu hình lương từng người; lập nháp tháng với cơ bản/thưởng/khấu trừ/lý do; xem phân rã, số buổi và hoa hồng phát sinh đúng tháng đang chọn; duyệt; ghi nhận chi qua tiền mặt/chuyển khoản có checkbox thực chi. Hoa hồng tháng trước chưa chốt vẫn ở kỳ tháng trước. Bảng duyệt/chi không có sửa/xóa. Danh sách phân trang10. Cài lương không đồng nghĩa đã chi; duyệt không tạo phiếu chi.
 Hoa hồng: tổng tiền/số ca-buổi/thành phần chưa chốt, từng dòng dịch vụ/người làm/ngày/nguồn và trạng thái vào bảng/đã chi. Không lấy doanh thu khách trả làm hoa hồng.
 Hóa đơn lẻ không lịch có nút Hoàn thành dịch vụ / ghi hoa hồng, chọn người trực tiếp làm; tạo hóa đơn hoặc bán gói chưa ghi Commission. Buổi gói không lịch cho người có quyền chọn nhân viên trước ký; đổi người xóa chữ ký. Có lịch giữ người của lịch.
 Các phiếu chi PAYROLL hiển thị Chi lương và không có Đảo sai sót thông thường. Không có chuyển tiền thật hoặc tài khoản ngân hàng nhân viên trong MVP này.

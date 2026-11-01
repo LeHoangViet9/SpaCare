@@ -307,7 +307,7 @@ PROPOSED kỹ thuật đang triển khai:
 - Buổi không lịch mặc định nhân viên phiên; OWNER/thu ngân có thể chỉ định người trực tiếp làm. STAFF không chọn người khác. Đổi người trước ký phải xóa chữ ký cũ; snapshot ký/Commission dùng cùng người thực hiện.
 - OWNER nhập thưởng/phụ cấp và khấu trừ với lý do, không tự suy từ chấm công. Tiền nguyên VNĐ, thực nhận không âm; một bảng/người/tháng. Tháng tương lai chưa lập bảng.
 - Nháp lưu snapshot; cập nhật nháp phải đúng id, không vô tình ghi đè bảng đã có. Duyệt kiểm tra expectedTotal và tập hoa hồng chưa chốt, thay đổi trả409 yêu cầu cập nhật nháp. Duyệt gắn các khoản vào đúng bảng trong transaction.
-- Mỗi bảng gom hoa hồng chưa chốt trước đầu tháng sau (gồm tồn trước tháng); không lấy từ bảng đã duyệt khác. Sau duyệt khoản đến muộn giữ chưa chốt để kỳ sau. Lương cơ bản không tự chia theo công hoặc ngày vào/nghỉ.
+- CONFIRMED theo yêu cầu mới nhất, thay thế đề xuất gom tồn trước tháng: bảng lương chỉ lấy hoa hồng có earnedAt trong đúng tháng của bảng. Hoa hồng tháng trước chưa chốt vẫn thuộc kỳ tháng trước, không tự chuyển sang tháng sau. Xem trước, lưu nháp và duyệt dùng cùng khoảng tháng theo giờ Việt Nam; khoản đến muộn vẫn ở tháng earnedAt của nó. Lương cơ bản không tự chia theo công hoặc ngày vào/nghỉ.
 - Chỉ OWNER chi bảng APPROVED, phải xác nhận thực chi. Tiền dương cần sổ hôm nay OPEN, BANK_TRANSFER cần ghi chú/tham chiếu. Tiền0 chuyển PAID không tạo CashEntry0. Một bảng chỉ có một CashEntry PAYROLL; retry không chi hai lần.
 - Không sửa bảng APPROVED/PAID, không hard delete khoản hoa hồng/bảng lương. Chưa có mở lại hoặc đảo chi lương; reverseCash thông thường từ chối PAYROLL để tránh lệch bảng và sổ. Quy trình xử lý trả lương nhầm cần thiết kế riêng.
 
@@ -731,6 +731,8 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 
 CONFIRMED, ưu tiên mới nhất. Mỗi `InvoiceLineCommission` chỉ thuộc tối đa một payroll; duyệt payroll phải khóa toàn bộ ID của các ledger trong cùng transaction và rollback nếu không gắn đủ. Khoản đã thuộc payroll duyệt/đã chi là bất biến; sửa/hủy/vô hiệu hóa hóa đơn phải trả 409 cho đến khi có quy trình adjustment được phê duyệt.
 
+Khi tiếp tục duyệt một draft, ledger đã mang `payrollId` đúng bằng ID của draft đó được xem là thuộc chính lần duyệt đang tiếp tục và không bị gắn lại sang bảng lương khác. Ledger chưa gắn được claim cho draft; ledger mang ID payroll khác bị từ chối. Cập nhật draft cũng giữ các ledger đã gắn chính draft đó trong snapshot để lần duyệt sau đối chiếu cùng tập ID.
+
 Không xóa cứng hóa đơn tài chính. Xử lý hóa đơn nhập nhầm giữ bản ghi gốc ở trạng thái CANCELLED, giữ mã và audit, đồng thời đảo tuần tự các khoản thu, cọc, thẻ, kho, quyền lợi và hoa hồng chưa chốt theo các guard hiện hành. Sửa hóa đơn nhiều dòng chỉ được giữ nguyên tập dịch vụ/người thực hiện/lineId khi đã có line commission; thay dòng hoặc đổi người thực hiện chưa có chính sách adjustment nên bị chặn.
 
 Ledger commission được xem là đã chốt khi có `payrollId` hoặc ID nằm trong snapshot tương ứng của payroll APPROVED/PAID cùng spa (`commissionIds`, `invoiceLineCommissionIds`, `saleCommissionIds`, `sharedSaleCommissionIds`; line ledger legacy cũng có thể nằm trong `commissionIds`). Hóa đơn có ledger như vậy không được sửa, hủy hay vô hiệu hóa khi chưa có adjustment được phê duyệt; không backfill payroll cũ. Invoice đã CANCELLED không được xử lý reversal lần hai. Retry cùng Idempotency-Key trả kết quả cũ, key mới trả 409.
@@ -751,3 +753,38 @@ Khắc phục 29/10/2026: nếu nhiều dòng còn nợ, thu một phần phải
 PROPOSED kỹ thuật, không phải chính sách spa mới: khi chỉ một dòng còn nợ hoặc tất toán toàn bộ, backend có duy nhất một cách phân bổ và lưu tường minh vào ledger. Hóa đơn cũ hoàn toàn thiếu mã dòng giữ luồng tổng cũ. Hóa đơn có mã dòng nhưng số dư không khớp hoặc thiếu mã một phần bị chặn thu thêm để đối soát; không tự backfill hay chia tiền lịch sử. Đảo chứng từ cũ thiếu phân bổ giữ cách ghi tổng cũ.
 
 `performerId` đã dùng cho dòng có hoa hồng không được sửa khi Commission đã gắn payroll. OWNER chỉ được sửa trước khi chốt lương, với expected version, audit và đối soát lại ledger.
+
+## Cải tiến liệu trình, hóa đơn và thông báo đẩy — 01/11/2026
+
+### BR-TRT-003 — Dùng liệu trình nhiều lượt và chia sẻ cho người thân
+Trạng thái: CONFIRMED theo yêu cầu người dùng.
+- Cho phép ghi nhận nhiều lượt dùng từ cùng một gói liệu trình trong một lần thao tác (batch use).
+- Mỗi lượt dùng trừ đúng một buổi (`remaining -= 1`); tổng số lượt dùng trong thao tác không được vượt quá số buổi còn lại của gói (`treatment.remaining >= sessions.length`).
+- Phân biệt rõ chủ gói (`ownerCustomerId`) và người thực nhận dịch vụ (`recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared`).
+- Mỗi lượt dùng lưu thông tin người nhận riêng, thời điểm, nhân viên thực hiện, dịch vụ và xác nhận/chữ ký riêng.
+- Invariant bất biến: Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ. Các người nhận khác nhau trong cùng lượt ghi nhận phải có chữ ký/xác nhận riêng biệt.
+- Toàn bộ lượt dùng trong một thao tác được thực hiện nhất quán trong một transaction; nếu lỗi giữa chừng, toàn bộ thay đổi (số buổi, lượt dùng, hóa đơn buổi 0đ, audit) phải rollback toàn bộ.
+- Bảo đảm chống gửi lặp qua `Idempotency-Key` và ngăn ngừa race condition ghi nhận vượt số buổi còn lại.
+- Quy tắc PROPOSED: Hiện tại tính năng chia sẻ áp dụng an toàn cho gói tính theo số buổi (`SESSIONS`). Với gói không giới hạn theo thời gian (`TIME`), chính sách chia sẻ người thân (có giới hạn lượt/ngày hay không) cần chủ spa xác nhận trước khi cho phép chia sẻ; hiện giữ nguyên quy tắc sử dụng cá nhân cho gói TIME.
+
+### BR-INV-003 — Rút gọn form hóa đơn khi đã thanh toán đủ
+Trạng thái: CONFIRMED theo yêu cầu người dùng.
+- Khi hóa đơn đã thanh toán đủ và số dư còn phải thu bằng 0 (`total - paid <= 0`), ẩn trường nhập hạn thanh toán (`dueDate`) trên giao diện thu ngân và sửa hóa đơn để form ngắn gọn hơn.
+- Chỉ ẩn trường khi thực sự không còn công nợ; hóa đơn chưa thanh toán hoặc thanh toán một phần vẫn giữ luồng nhập `dueDate` như hiện tại.
+- Ẩn trường trên giao diện không xóa hoặc ghi đè `dueDate` đã lưu trong database: backend chỉ cập nhật `dueDate` khi client truyền giá trị tường minh (`d.dueDate !== undefined`); nếu client không truyền trường này (do form ẩn), giá trị `dueDate` ban đầu được giữ nguyên để bảo toàn lịch sử và đối soát công nợ.
+
+### BR-PKG-006 — Bán nhiều gói trong cùng một hóa đơn
+Trạng thái: CONFIRMED theo yêu cầu người dùng.
+- Cho phép thêm từ hai gói trở lên vào cùng một hóa đơn bán gói, bao gồm cả trường hợp mua nhiều gói cùng loại mẫu (`templateId`). Phân biệt các dòng gói trong giỏ hàng qua `cartId` duy nhất.
+- Mỗi gói là một dòng riêng (`packageItems`), giữ đúng dịch vụ, số buổi, giá, giảm giá, người bán và thông tin hoa hồng tương ứng.
+- Tạo riêng từng hồ sơ `Treatment` độc lập cho từng gói được mua, liên kết chung về `invoiceId`.
+- Thanh toán, phân bổ tiền, công nợ, thẻ tiền mặt và báo cáo xác định đúng từng dòng gói; không cộng nhầm số buổi hay hoa hồng giữa các gói.
+- Hóa đơn, các gói `Treatment`, payment/ledger, audit và idempotency xử lý trong cùng transaction. Gửi lại request với cùng `Idempotency-Key` trả về hóa đơn hiện có, không tạo trùng hóa đơn, gói hay hoa hồng.
+
+### BR-NOTIF-002 — Khôi phục và bảo đảm toàn vẹn thông báo đẩy Web Push
+Trạng thái: CONFIRMED & PROPOSED kỹ thuật.
+- Phân biệt rõ thông báo nội bộ trong ứng dụng (`ActivityNotification`, `Notification` đọc từ MongoDB) với Web Push Notification của trình duyệt qua Service Worker và giao thức RFC 8291 / RFC 8292.
+- Chuẩn hóa Base64URL padding cho VAPID public key 87 ký tự (bổ sung padding `=` để đạt độ dài chia hết cho 4 trước khi giải mã qua `atob()`), loại bỏ lỗi DOMException/InvalidCharacterError trên trình duyệt di động.
+- Mở rộng whitelist máy chủ push được phép (`allowedPushEndpoint`): hỗ trợ Android FCM/GCM (`android.googleapis.com`), Apple APNs Web Push (`*.push.apple.com`, `api.push.apple.com`, `web.push.apple.com`), Mozilla (`updates.push.services.mozilla.com`), Windows WNS (`*.notify.windows.com`).
+- Tự động dọn dẹp subscription hết hạn/lỗi: khi endpoint phản hồi HTTP 400 (Bad Request / DeviceTokenNotForTopic / InvalidRegistration), HTTP 404 hoặc HTTP 410, hệ thống tự động xóa bản ghi `PushDevice` tương ứng để ngăn chặn gửi lặp và spam log.
+- Bảo mật: Tuyệt đối không log subscription token, push endpoint đầy đủ, private key hay dữ liệu định danh khách hàng. Không dùng khóa production trong môi trường test.
