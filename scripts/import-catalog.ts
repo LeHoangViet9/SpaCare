@@ -27,7 +27,6 @@ async function main() {
   }
   const file = options.get('--file');
   if (!file || extname(file).toLowerCase() !== '.xlsx') throw new SeedOwnerError('Cần --file đường-dẫn.xlsx.');
-  if (process.platform !== 'win32') throw new SeedOwnerError('Lệnh nhập XLSX này chạy trên Windows PowerShell trong IntelliJ.');
   const path = resolve(file);
   let fileInfo;
   try { fileInfo = statSync(path); }
@@ -38,6 +37,7 @@ async function main() {
   }
   if (!fileInfo.isFile()) throw new SeedOwnerError('--file phải trỏ tới file Excel, không phải thư mục.');
   if (fileInfo.size > 10 * 1024 * 1024) throw new SeedOwnerError('File tối đa 10 MB.');
+  if (process.platform !== 'win32') throw new SeedOwnerError('Lệnh nhập XLSX này chạy trên Windows PowerShell trong IntelliJ.');
   let rows: SheetRow[];
   try {
     const reader = readFileSync(fileURLToPath(new URL('./read-catalog-xlsx.ps1', import.meta.url)), 'utf8').replace(/^\uFEFF/, '');

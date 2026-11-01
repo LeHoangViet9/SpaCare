@@ -212,8 +212,13 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         await call('payment',{invoiceId:String(invoice._id),amount:invoice.total,method:'CASH',receivedConfirmation:true});
         return (await Invoice.findById(invoice._id))!;
       };
+      // Preserve coverage for the legacy Commission ledger with an invoice created
+      // before serviceItems/InvoiceLineCommission were introduced.
+      const legacyAppointment=await Appointment.create({spaId,customerId:customer.id,serviceId:earningService.id,staffId:earners[0]._id,startAt:new Date(Date.now()-86400000),endAt:new Date(Date.now()-82800000),status:'CONFIRMED'});
+      const legacyInvoice=await Invoice.create({spaId,appointmentId:legacyAppointment._id,customerId:customer.id,serviceId:earningService.id,description:earningService.name,total:100000,paid:0,commission:12000,kind:'SERVICE'});
+      await call('completeAppointment',{id:String(legacyAppointment._id),existingInvoiceId:String(legacyInvoice._id)});
       const invoices=[
-        {kind:'Commission',invoice:(await call('serviceInvoice',{customerId:customer.id,staffId:String(earners[0]._id),items:[{serviceId:earningService.id,total:100000}]})).id},
+        {kind:'Commission',invoice:String(legacyInvoice._id)},
         {kind:'InvoiceLineCommission',invoice:(await call('serviceInvoice',{customerId:customer.id,items:[
           {serviceId:earningService.id,total:100000,performerId:String(earners[1]._id)},
           {serviceId:secondService.id,total:150000,performerId:String(earners[2]._id)},
@@ -770,7 +775,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const customerView=await readCustomerHistory(actor,customer.id,'invoices',1);
       assert.ok(customerView.rows.some(row=>String(row._id)===created.id && row.status==='CANCELLED'));
       const audit=await Audit.findOne({spaId,action:'cancelInvoice',targetId:changed!._id});
-      assert.equal(audit!.details.before.commissions[0].amount,commission!.amount);
+      assert.equal(audit!.details.before.lineCommissions[0].amount,commission!.amount);
       assert.equal(audit!.details.after.status,'CANCELLED');
     });
     await t.test('mistaken invoice correction preserves the original document, retry and references',async()=>{

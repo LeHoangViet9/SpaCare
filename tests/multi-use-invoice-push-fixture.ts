@@ -192,7 +192,6 @@ await call('use', {
   remainingBefore: 4,
   sessions: [
     {
-      customerId: customerB,
       recipientCustomerId: customerB,
       recipientName: 'Người thân B',
       recipientPhone: '0902222222',
