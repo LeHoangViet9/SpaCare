@@ -1861,7 +1861,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await InvoiceLineCommission.countDocuments({ spaId, payrollId: draft.id }), refreshed.invoiceLineCommissionIds.length);
       const approvedLineInvoice=await Invoice.findById(lineBill.id);
       const protectedCorrection={id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),description:approvedLineInvoice!.description,total:approvedLineInvoice!.total,reason:'Must use adjustment'};
-      await assert.rejects(call('updateInvoice',protectedCorrection),/chưa có quy trình adjustment/i);
+      await assert.rejects(call('updateInvoice',protectedCorrection),/hoa hồng theo dòng/i);
       await assert.rejects(call('cancelInvoice',{id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),reason:'Must use adjustment'}),/chưa có quy trình adjustment/i);
       await assert.rejects(call('deleteInvoice',{id:lineBill.id,expectedUpdatedAt:approvedLineInvoice!.updatedAt.toISOString(),reason:'Must use adjustment',confirmDelete:true}),/chốt\/chi lương/);
       assert.notEqual((await Invoice.findById(lineBill.id))!.status,'CANCELLED');
