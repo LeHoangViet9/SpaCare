@@ -132,7 +132,7 @@ const schemas = {
       .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
   }),
   invoice: z.object({
-    treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore,performerId:objectId.optional()})).min(1).max(30).optional(),
+    treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore,performerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional(),
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).max(30).optional(),
     additionalServices:z.array(z.object({serviceId:objectId,total:moneySchema,performerId:objectId.optional()})).max(30).optional(),
     cashCard: invoiceCardInput.optional(),
@@ -1511,15 +1511,16 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(!(d.treatmentId && d.treatments), 'Chỉ gửi một danh sách liệu trình.');
           const selections = d.treatments || (d.treatmentId ? [{treatmentId:d.treatmentId,signature:d.signature,remainingBefore:d.remainingBefore}] : []);
           if (selections.length) {
-            const invoiceSignature = commonSignature(d.signature,selections);
-            ensure(new Set(selections.map(item=>item.treatmentId)).size === selections.length, 'Không chọn trùng liệu trình.');
+            const sharedRecipients = selections.some(item=>'recipientName' in item && !!item.recipientName);
+            ensure(!sharedRecipients || (!d.signature && selections.every(item=>!item.signature)), 'Không dùng chữ ký chung cho các người nhận khác nhau.');
+            const invoiceSignature = sharedRecipients ? undefined : commonSignature(d.signature,selections);
             let combined: any;
             for (const [index,item] of selections.entries()) {
               const plan = await get(Treatment,item.treatmentId);
               const purchase = await get(Invoice,String(plan.invoiceId));
               ensure(String(plan.customerId) === d.customerId && (index > 0 || String(plan.serviceId || purchase.serviceId) === d.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
               const performerId = 'performerId' in item ? item.performerId : undefined;
-              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore}),undefined,performerId || null,combined);
+              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore,...('recipientName' in item ? {recipientName:item.recipientName,recipientPhone:item.recipientPhone} : {})}),undefined,performerId || null,combined);
               treatmentUseId ||= String(recorded._id);
               combined = await get(Invoice,linkedInvoiceId!);
             }
