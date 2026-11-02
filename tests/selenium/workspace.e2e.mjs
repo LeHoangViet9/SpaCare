@@ -289,6 +289,27 @@ try {
     await heading('Hóa đơn & công nợ');
     assert.equal(new URL(await driver.getCurrentUrl()).pathname, '/workspace/invoices');
   }, true);
+  await run('SEL-PACKAGE-GROUP-MOBILE', 'Bán gói mobile chỉ hiện gói sau khi chọn nhóm', async () => {
+    await login();
+    await driver.manage().window().setRect({ width: 390, height: 844 });
+    await go('/workspace/cashier');
+    await heading('Thu ngân');
+    await (await visible(By.xpath("//div[@aria-label='Danh mục thu ngân']/button[normalize-space(.)='Bán gói mới']"))).click();
+    assert.equal((await driver.findElements(css('.cashier-catalog > .cashier-cards'))).length, 0);
+    const group = await visible(css('.cashier-service-groups .cashier-card'));
+    const name = await (await group.findElement(By.css('strong'))).getText();
+    await group.click();
+    const items = await visible(css('.cashier-catalog > .cashier-cards'));
+    assert.ok((await items.findElements(By.css('button'))).length > 0, 'Selected group contains package templates');
+    assert.equal(await (await visible(css('.cashier-service-groups strong'))).getText(), name);
+    assert.equal(await driver.executeScript('return document.documentElement.scrollWidth <= innerWidth + 1'), true);
+    await (await visible(By.xpath("//button[normalize-space(.)='← Các nhóm dịch vụ']"))).click();
+    assert.equal((await driver.findElements(css('.cashier-catalog > .cashier-cards'))).length, 0);
+    await visible(css('.cashier-service-groups .cashier-card'));
+    await (await visible(By.xpath("//div[@aria-label='Danh mục thu ngân']/button[normalize-space(.)='Dịch vụ lẻ']"))).click();
+    assert.equal((await driver.findElements(css('.cashier-catalog > .cashier-cards'))).length, 0);
+    await visible(css('.cashier-service-groups .cashier-card'));
+  }, true);
   await run('SEL-CASH-FILTER-MOBILE', 'Sổ thu chi mobile thu gọn, lọc tất cả và tìm kiếm giữ sau reload', async () => {
     await login();
     await driver.manage().window().setRect({ width: 390, height: 844 });

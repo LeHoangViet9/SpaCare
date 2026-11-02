@@ -652,3 +652,6 @@ Latest clarification (2026-11-02): remove the payment deadline input entirely fr
 
 ### Sổ thu chi: bộ lọc thu gọn (02/11/2026)
 Theo yêu cầu: dùng cùng thanh mở rộng Tìm kiếm / Lọc như Hóa đơn, mặc định hôm nay theo giờ Việt Nam. Ô tìm kiếm, người tạo, khoảng ngày, phương thức và Thu / Chi nằm trong phần mở rộng. Tất cả ngày và bộ lọc lưu URL; tìm kiếm hoặc liên kết có bộ lọc vẫn tra cứu lịch sử. Tổng thu, chi, chênh lệch tiếp tục theo toàn bộ bộ lọc trước phân trang. Không đổi quyền hay cách ghi sổ.
+
+### Nhóm gói tại thu ngân (02/11/2026)
+Theo yêu cầu: mục Bán gói mới hiển thị các nút nhóm giống Dịch vụ lẻ, lấy nhóm từ dịch vụ gắn với gói. Chỉ hiện gói sau khi chọn nhóm, có nút quay lại Các nhóm dịch vụ; gói chưa có nhóm nằm ở Chưa phân nhóm. Tìm kiếm vẫn lọc tên gói/dịch vụ, số gói trong nhóm phản ánh kết quả hiện tại. Không đổi lựa chọn trong giỏ, giá hay thao tác bán gói. Selenium mobile kiểm tra mở nhóm, quay lại và đổi danh mục trước khi đưa lên main.
