@@ -22,6 +22,7 @@ import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package
 import { payrollCommissionPeriod, payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
 import { productInputs, productNameKey, stockBalance, productTotal } from './product-rules';
 import type { Actor } from './auth';
+import { cashFlowMatch, cashFlowNet } from './cash-flow';
 import { hashPassword } from './password';
 import { connect } from './db';
 import {
@@ -1795,11 +1796,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(d.day <= today, 'Không chốt ngày tương lai.');
           target = await Day.findOne({ ...scope, day: d.day, status: 'OPEN' }).session(session);
           ensure(target, 'Ngày chưa mở hoặc đã chốt.');
-          const entries = await CashEntry.find({ ...scope, day: d.day }).session(session);
-          const net = (method: string) =>
-            entries
-              .filter(e => e.method === method)
-              .reduce((s, e) => s + (e.direction === 'IN' ? e.amount : -e.amount), 0);
+          const entries = await CashEntry.find(cashFlowMatch({ ...scope, day: d.day })).session(session);
+          const net = (method: 'CASH' | 'BANK_TRANSFER') => cashFlowNet(entries, method);
           const expected=target.opening + net('CASH');
           ensure(d.expectedPreview===undefined || d.expectedPreview===expected,'Thu chi đã thay đổi từ lúc xem trước. Tải lại và đối chiếu trước khi chốt.',409);
           target.expected = expected;

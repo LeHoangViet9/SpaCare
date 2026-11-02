@@ -1,3 +1,4 @@
+import { cashFlowIntegration } from './cash-flow-integration';
 import { readReport } from '../src/lib/report-read';
 import { parseOpening, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
 import { ServiceGroup } from '../src/lib/models';
@@ -135,17 +136,18 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(await Notification.countDocuments({spaId,appointmentId:created.id,userId:otherStaff._id}),0);
       await Appointment.updateOne({ _id: created.id, spaId }, { $set: { status: 'CANCELLED' } });
     });
-    await t.test('open day preview includes all cash and reversals, excludes bank and rejects stale closing',async()=>{
+    await t.test('open day preview excludes linked corrections, separates bank and rejects stale closing',async()=>{
       const spa=await Spa.create({name:'Day preview test'});extraSpaIds.push(spa._id);
       const owner=await User.create({spaId:spa._id,name:'Day owner',email:randomUUID()+'@example.test',passwordHash:hashPassword(randomUUID()),role:'OWNER'});
       await Control.create({spaId:spa._id,revision:0});
       const day=await Day.create({spaId:spa._id,day:spaDay(),opening:100,status:'OPEN'});
       const a:Actor={id:String(owner._id),spaId:String(spa._id),name:'Day owner',role:'OWNER',cashier:true};
       const base={spaId:spa._id,actorId:owner._id,day:spaDay(),method:'CASH',kind:'INCOME'};
-      await CashEntry.create([{...base,direction:'IN',amount:500},{...base,direction:'OUT',amount:200,kind:'EXPENSE'},{...base,direction:'IN',amount:100,reversed:true},{...base,direction:'OUT',amount:100,kind:'REVERSAL'},{...base,direction:'IN',amount:900,method:'BANK_TRANSFER'}]);
+      const originalId=new mongoose.Types.ObjectId();
+      await CashEntry.create([{...base,direction:'IN',amount:500},{...base,direction:'OUT',amount:200,kind:'EXPENSE'},{...base,_id:originalId,direction:'IN',amount:100,reversed:true},{...base,direction:'OUT',amount:100,kind:'REVERSAL',originalId},{...base,direction:'IN',amount:900,method:'BANK_TRANSFER'}]);
       const view=await readWorkspace(a,workspaceQuery(new URLSearchParams({section:'days',pageSize:'5'})));
       const preview=view.pages.days.rows.find((r:any)=>String(r._id)===String(day._id));
-      assert.equal(preview.cashIn,600);assert.equal(preview.cashOut,300);assert.equal(preview.liveExpected,400);assert.equal(preview.liveBankNet,900);
+      assert.equal(preview.cashIn,500);assert.equal(preview.cashOut,200);assert.equal(preview.liveExpected,400);assert.equal(preview.liveBankNet,900);
       assert.equal((await Day.findById(day._id))!.expected,undefined);
       await assert.rejects(operate(a,'closeDay',{day:spaDay(),counted:400,expectedPreview:399},randomUUID()),/Thu chi đã thay đổi/);
       assert.equal((await Day.findById(day._id))!.status,'OPEN');
@@ -153,6 +155,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await operate(a,'closeDay',{day:spaDay(),counted:390,expectedPreview:400},key);
       const closed=await Day.findById(day._id);assert.equal(closed!.expected,400);assert.equal(closed!.difference,-10);
     });
+    await t.test('cash summary: synthetic 3880000, refund, filters, history and closing',()=>cashFlowIntegration(extraSpaIds));
     await t.test('owner removes a paid mistaken invoice with cash correction; invoice date is optional',async()=>{
       const bill=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:service.id,total:100000}],issuedOn:'2026-10-01'});
       const before=await Invoice.findById(bill.id);assert.equal(spaDay(before!.createdAt),'2026-10-01');assert.ok(before!.recordedAt);

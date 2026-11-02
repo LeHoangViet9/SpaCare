@@ -32,7 +32,7 @@ export default function Reports({ report, today, period, onPeriod, pending, owne
     const rows = activeTab === 'staff'
       ? [['Nhân viên', 'Lịch được giao', 'Lịch hoàn thành', 'Buổi liệu trình', 'Hóa đơn tư vấn', 'Giá trị tư vấn', 'Hoa hồng dịch vụ', 'Hoa hồng bán gói'], ...employees.map(s => [s.name, s.appointments, s.completed, s.sessions, s.invoices, s.sales, s.commission, s.saleCommission || 0])]
       : activeTab === 'cash'
-        ? [['Ngày', 'Thực thu', 'Thực chi', 'Chênh lệch'], ...(r.days || []).map((d: Row) => [d._id, d.incoming, d.outgoing, d.incoming - d.outgoing])]
+        ? [['Ngày', 'Thực thu', 'Thực chi', 'Chênh lệch'], ...(r.days || []).map((d: Row) => [d._id, d.incoming, d.outgoing, d.incoming - d.outgoing]), [], ['Theo phương thức'], ['Phương thức', 'Thực thu', 'Thực chi', 'Chênh lệch'], ...(r.methods || []).map((m: Row) => [m._id === 'CASH' ? 'Tiền mặt' : m._id === 'BANK_TRANSFER' ? 'Chuyển khoản' : 'Chưa xác định', m.incoming, m.outgoing, m.incoming - m.outgoing])]
         : [['Ngày tạo', 'Số hóa đơn', 'Giá trị hóa đơn'], ...(r.dailyInvoices || []).map((d: Row) => [d._id, d.count, d.total])];
     // Text prefix prevents spreadsheet formula execution from staff names.
     const cell = (v: unknown) => '"' + String(typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : v ?? '').replace(/"/g, '""') + '"';
@@ -63,7 +63,7 @@ export default function Reports({ report, today, period, onPeriod, pending, owne
     </>}
     {activeTab === 'cash' && <>
       <div className="report-stats"><Stat title="Thực thu" value={display(r.inflow)} /><Stat title="Thực chi" value={display(r.outflow)} /><Stat title="Dòng tiền ròng" value={display(r.inflow - r.outflow)} /></div>
-      <p className="inline-note">Theo ngày ghi sổ, gồm cọc, thu hóa đơn, thu chi khác và bút toán đảo. Phân bổ cọc không tạo dòng tiền mới. Dòng tiền ròng chưa phải lợi nhuận.</p>
+      <p className="inline-note">Theo ngày ghi sổ, gồm cọc, thu hóa đơn, thu chi khác và hoàn tiền thật. Dòng gốc đã đảo cùng bút toán đảo vẫn được giữ trong sổ/audit nhưng không tính vào thực thu/chi. Phân bổ cọc không tạo dòng tiền mới; dòng tiền ròng chưa phải lợi nhuận.</p>
       <section className="panel"><div className="section-head"><h3>Phương thức thanh toán</h3></div><Grid headers={['Phương thức', 'Thực thu', 'Thực chi']} rows={(r.methods || []).map((m: Row) => [m._id === 'CASH' ? 'Tiền mặt' : m._id === 'BANK_TRANSFER' ? 'Chuyển khoản' : 'Chưa xác định', money(m.incoming), money(m.outgoing)])} /></section>
       <section className="panel"><div className="section-head"><h3>Dòng tiền theo ngày</h3></div><div className="flow-chart">{(r.days || []).slice(-14).map((d: Row) => <div className="flow-row" key={d._id}><span>{d._id.slice(5)}</span><div className="bars"><div className="bar incoming" style={{ width: `${d.incoming / Math.max(1, ...r.days.map((x: Row) => Math.max(x.incoming, x.outgoing))) * 100}%` }} /><div className="bar outgoing" style={{ width: `${d.outgoing / Math.max(1, ...r.days.map((x: Row) => Math.max(x.incoming, x.outgoing))) * 100}%` }} /></div><small>Thu {money(d.incoming)} · Chi {money(d.outgoing)}</small></div>)}</div><p className="inline-note">Biểu đồ hiển thị 14 ngày có giao dịch gần nhất. Tổng số và CSV bao gồm toàn bộ khoảng lọc.</p></section>
     </>}
