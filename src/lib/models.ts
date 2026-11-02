@@ -143,6 +143,10 @@ const serviceItemSchema = new Schema({ lineId: optionalId, serviceId: id, name: 
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  // One operational invoice, immutable prior document snapshots. Replacements
+  // are not new sales and never enter financial aggregates as extra invoices.
+  activeDocumentId: optionalId, effectiveCode: String,
+  documentHistory: { type: [Schema.Types.Mixed], default: undefined },
   treatmentSessions: {type:[new Schema({lineId:optionalId,treatmentId:id,treatmentUseId:id,name:String,performerId:optionalId,total:amount,paid:{...amount,default:0}},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
   packageItems: {type:[new Schema({lineId:optionalId,templateId:optionalId,treatmentId:id,serviceId:id,name:String,total:amount,paid:{...amount,default:0},promotion:String,giftCashCardAmount:Number,performerId:optionalId,packageType:String,totalSessions:Number,durationMonths:Number,startsOn:String,sellerId:optionalId,sellerName:String},{_id:false,versionKey:false,strict:'throw'})],default:undefined},
   recordedAt:Date,
@@ -325,6 +329,7 @@ export const InvoiceLineCommission = model('InvoiceLineCommission', {
 }, [[{ spaId: 1, invoiceId: 1, lineId: 1, category: 1 }, { unique: true }], [{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
 
 export const SaleCommission = model('SaleCommission', {
+  paymentId: optionalId,
   cancelledAt: Date,
   staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
   category: {type:String, default:'PACKAGE_SALE'}, sourceType:String, sourceId:id,
@@ -332,6 +337,7 @@ export const SaleCommission = model('SaleCommission', {
 }, [[{spaId:1,sourceType:1,sourceId:1},{unique:true}], [{spaId:1,staffId:1,earnedAt:-1}]]);
 // Additive ledger: keeps the legacy single-seller unique index unchanged.
 export const SharedSaleCommission = model('SharedSaleCommission', {
+  paymentId: optionalId,
   cancelledAt: Date,
   staffId: id, staffName: String, invoiceId: id, serviceId: id, serviceName: String, customerId: id,
   category: { type: String, default: 'PACKAGE_SALE' }, sharedSale: { type: Boolean, default: true },
@@ -345,6 +351,7 @@ export const StaffLeave = model('StaffLeave', {
 }, [[{ spaId: 1, staffId: 1, day: 1, period:1 }], [{ spaId: 1, day: -1 }]]);
 
 export const Payroll = model('Payroll', {
+  needsRecalculation: Boolean,
   staffId: id, staffName: String, month: { type: String, required: true }, baseSalary: amount,
   commissionTotal: {...amount,min:-1_000_000_000_000}, commissionCount: Number, carryoverCount: Number,
   attendanceDigest:String, earnedBase: Number, leaveDeduction:Number, attendanceConfirmed:Boolean, workdays:Number, leaveStats:Schema.Types.Mixed, salaryPolicy:Schema.Types.Mixed, advance:{...amount,default:0}, saleCommissionTotal:Number, serviceCommissionTotal:Number, saleCommissionIds:[{type:Schema.Types.ObjectId}], sharedSaleCommissionIds:[{type:Schema.Types.ObjectId}], invoiceLineCommissionIds:[{type:Schema.Types.ObjectId}],

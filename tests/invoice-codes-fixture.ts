@@ -17,4 +17,17 @@ assert.deepEqual(rows.map(row=>[row.total,row.paid]),amounts);assert.equal(await
 rows.push({_id:'new-a',spaId:'spa',total:10,paid:0},{_id:'new-b',spaId:'spa',total:20,paid:0});
 const before=structuredClone({rows,counter});failAt=2;updates=0;await assert.rejects(backfillInvoiceCodes(),/CODE_FAILURE/);assert.deepEqual({rows,counter},before);
 assert.ok(Invoice.schema.indexes().some(([keys,options])=>keys.code===1&&options.unique&&options.partialFilterExpression));
+// Both the new legacy identity and the old pre-fix fallback must survive
+// sequence recovery without interpreting an ObjectId decimal as a counter.
+failAt=0;
+const legacyId='a'.repeat(24),oldLegacyId='b'.repeat(24);
+const legacyHistory=[{documentId:legacyId,legacyInvoiceId:legacyId,snapshot:{}}];
+const oldHistory=[{documentId:oldLegacyId,code:'HD'+BigInt('0x'+oldLegacyId).toString(),snapshot:{}}];
+rows.push({_id:legacyId,spaId:'spa',effectiveCode:'HD000042',documentHistory:legacyHistory},
+  {_id:oldLegacyId,spaId:'spa',effectiveCode:'HD000043',documentHistory:oldHistory});
+const histories=structuredClone([legacyHistory,oldHistory]);
+await backfillInvoiceCodes();
+assert.ok(counter.invoiceSequence>43);
+assert.deepEqual([rows.find(r=>r._id===legacyId).documentHistory,rows.find(r=>r._id===oldLegacyId).documentHistory],histories);
+assert.equal(await backfillInvoiceCodes(),0);
 console.log('Invoice code migration: sequence recovery, stable codes, unchanged financial amounts, idempotency and rollback verified.');
