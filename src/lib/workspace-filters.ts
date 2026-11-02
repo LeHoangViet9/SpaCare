@@ -41,8 +41,8 @@ export function datePreset(kind: 'today' | 'week' | 'month', today: string) {
   return { from: today, to: new Date(new Date(today + 'T00:00:00Z').getTime() + 6 * 86400000).toISOString().slice(0, 10) };
 }
 
-// Only the unfiltered invoice landing page defaults to today's Vietnam date.
-// Searches and deep links retain access to historical invoices.
+// Unfiltered invoice and cash ledger landing pages default to today's Vietnam date.
+// Searches and deep links retain access to historical records.
 export function invoiceLandingFilters(params: URLSearchParams, today: string): ListFilters {
   const values = Object.fromEntries(['status', 'employee', 'method', 'direction', 'category', 'customer', 'from', 'to'].map(key => [key, params.get(key) || ''])) as ListFilters;
   if (!params.has('dateScope') && !params.get('search')?.trim() && !Object.values(values).some(Boolean)) {

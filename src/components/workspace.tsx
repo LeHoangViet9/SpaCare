@@ -113,11 +113,11 @@ export default function Workspace() {
   const [period, setPeriod] = useState({ from: '', to: '' });
   const [auditFilters, setAuditFilters] = useState({ search: '', actor: '', action: '', from: '', to: '' });
   const filterValues = Object.fromEntries(['status', 'employee', 'method', 'direction', 'category', 'customer', 'from', 'to'].map(key => [key, searchParams.get(key) || ''])) as ListFilters;
-  if (tab === 'invoices') Object.assign(filterValues, invoiceLandingFilters(new URLSearchParams(searchParams.toString()), data?.today || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })));
+  if (['invoices', 'cash'].includes(tab)) Object.assign(filterValues, invoiceLandingFilters(new URLSearchParams(searchParams.toString()), data?.today || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })));
   const agendaView = searchParams.get('layout') === 'agenda';
   function setFilters(changes: Partial<ListFilters>) {
     const params = new URLSearchParams(searchParams.toString());
-    if (tab === 'invoices') {
+    if (['invoices', 'cash'].includes(tab)) {
       params.set('dateScope', 'custom');
       for (const key of ['from', 'to'] as const) if (!(key in changes) && filterValues[key]) params.set(key, filterValues[key]);
     }
@@ -542,13 +542,13 @@ export default function Workspace() {
             <h1>{pageTitle}</h1>
             <p>{headers[tab]}</p>
           </div>
-          {!['invoices', 'cash_cards', 'overview', 'cashier', 'reports', 'days', 'salary', 'commission', 'audit', 'products', 'product_groups', 'inventory'].includes(tab) && (
+          {!['invoices', 'cash', 'cash_cards', 'overview', 'cashier', 'reports', 'days', 'salary', 'commission', 'audit', 'products', 'product_groups', 'inventory'].includes(tab) && (
             <input className="search" maxLength={100} placeholder="Tìm trong danh sách…" aria-label="Tìm kiếm" value={search} onCompositionStart={() => { composingSearch.current = true; clearTimeout(searchTimer.current); }} onCompositionEnd={e => { composingSearch.current = false; setSearch(e.currentTarget.value); }} onChange={e => setSearch(e.target.value)} />
           )}
         </div>
         {error && !modal && <div className="alert error" role="alert">{error}</div>}
         {notice && <div className="alert success" role="status">{notice}</div>}
-        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} searchControl={tab === 'invoices' ? <input className="search" maxLength={100} placeholder="Tìm khách hàng, mã hóa đơn…" aria-label="Tìm kiếm hóa đơn" value={search} onCompositionStart={() => { composingSearch.current = true; clearTimeout(searchTimer.current); }} onCompositionEnd={e => { composingSearch.current = false; setSearch(e.currentTarget.value); }} onChange={e => setSearch(e.target.value)} /> : undefined} onChange={setFilters} />{viewPending && !['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(tab) ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
+        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} searchControl={['invoices', 'cash'].includes(tab) ? <input className="search" maxLength={100} placeholder={tab === 'cash' ? 'Tìm trong sổ thu chi…' : 'Tìm khách hàng, mã hóa đơn…'} aria-label={tab === 'cash' ? 'Tìm kiếm sổ thu chi' : 'Tìm kiếm hóa đơn'} value={search} onCompositionStart={() => { composingSearch.current = true; clearTimeout(searchTimer.current); }} onCompositionEnd={e => { composingSearch.current = false; setSearch(e.currentTarget.value); }} onChange={e => setSearch(e.target.value)} /> : undefined} onChange={setFilters} />{viewPending && !['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(tab) ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
         <footer>SpaCare · MVP nội bộ <span>Giờ Việt Nam · VNĐ</span></footer>
       </div>
     </main>

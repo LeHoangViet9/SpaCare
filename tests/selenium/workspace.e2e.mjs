@@ -289,6 +289,34 @@ try {
     await heading('Hóa đơn & công nợ');
     assert.equal(new URL(await driver.getCurrentUrl()).pathname, '/workspace/invoices');
   }, true);
+  await run('SEL-CASH-FILTER-MOBILE', 'Sổ thu chi mobile thu gọn, lọc tất cả và tìm kiếm giữ sau reload', async () => {
+    await login();
+    await driver.manage().window().setRect({ width: 390, height: 844 });
+    await go('/workspace/cash');
+    await heading('Sổ thu chi');
+    const details = await visible(css('.list-filters details'));
+    assert.equal(await details.getAttribute('open'), null);
+    assert.match(await details.getText(), /Hôm nay/);
+    const searchInput = await driver.findElement(css('input[aria-label="Tìm kiếm sổ thu chi"]'));
+    assert.equal(await searchInput.isDisplayed(), false);
+    await (await details.findElement(By.css('summary'))).click();
+    assert.equal(await searchInput.isDisplayed(), true);
+    await (await visible(By.xpath("//section[@aria-label='Bộ lọc danh sách']//button[normalize-space(.)='Tất cả']"))).click();
+    await driver.wait(async () => new URL(await driver.getCurrentUrl()).searchParams.has('dateScope'), timeout);
+    await driver.navigate().refresh();
+    await heading('Sổ thu chi');
+    const allDetails = await visible(css('.list-filters details'));
+    assert.match(await allDetails.getText(), /Tất cả ngày/);
+    await (await allDetails.findElement(By.css('summary'))).click();
+    const query = 'SELENIUM-NO-CASH-987654';
+    await (await visible(css('input[aria-label="Tìm kiếm sổ thu chi"]'))).sendKeys(query);
+    await driver.wait(async () => new URL(await driver.getCurrentUrl()).searchParams.get('search') === query, timeout);
+    await driver.navigate().refresh();
+    await heading('Sổ thu chi');
+    await (await visible(css('.list-filters summary'))).click();
+    assert.equal(await (await visible(css('input[aria-label="Tìm kiếm sổ thu chi"]'))).getAttribute('value'), query);
+    assert.equal(await driver.executeScript('return document.documentElement.scrollWidth <= innerWidth + 1'), true);
+  }, true);
   await run('SEL-DASH-MOBILE', 'Mobile không tràn ngang và menu neo đáy', async () => {
     await login();
     await go('/workspace');

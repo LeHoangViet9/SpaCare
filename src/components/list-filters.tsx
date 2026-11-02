@@ -13,7 +13,7 @@ export default function ListFiltersBar({ section, values, today, staff, categori
   const options = statusChoices[section] || [];
   if (!dated && !people && !groups && !options.length) return null;
   const changed = Object.values(values).some(Boolean);
-  const compact = section === 'invoices';
+  const compact = ['invoices', 'cash'].includes(section);
   const controls = <>
     {searchControl}
     <div className="filter-shortcuts">
