@@ -645,3 +645,5 @@ CONFIRMED (2026-11-02): repeated selections of the same service, purchased treat
 
 2026-11-02: cashier hides the explanatory commission text and amount preview, retaining consultant selection and the existing commission calculation. Payment deadline is labelled optional and no longer required by the cashier form or package-sale API.
 Latest clarification (2026-11-02): remove the payment deadline input entirely from the cashier, rather than merely making it optional. Cashier submits no deadline for new sales. Existing invoice deadlines and the optional API field remain supported.
+
+2026-11-02 hotfix: grouped cart passes its item renderer as renderItem, not children. ValidatedForm recursively transforms children and cannot preserve function-valued children. Regression test renders empty, single and repeated selections inside the actual ValidatedForm wrapper, preserving recipient fields.
