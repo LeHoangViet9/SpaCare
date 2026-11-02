@@ -1,5 +1,11 @@
 # SpaCare — Business Requirements
 
+## Thay thế chứng từ sửa tư vấn bán gói — 02/11/2026
+
+CONFIRMED theo yêu cầu trên nhánh feature/invoice-replacement: OWNER thay người tư vấn bán gói qua chứng từ thay thế, bắt buộc xem trước, lý do và một lần xác nhận. Giữ bản gốc để tra cứu, cấp mã mới, phân biệt đã thay thế với hủy. Không thu lại tiền/hoàn tiền/hoàn tác buổi thật hoặc sửa nội dung khác. Chỉ tự điều chỉnh hoa hồng chưa chốt; payroll APPROVED/PAID bất biến, kể cả legacy. Ngoại lệ mới chỉ dành cho luồng thay thế, không mở sửa riêng nhân sự trên hóa đơn.
+
+CONFIRMED theo xác nhận chủ spa do người dùng cung cấp ngày 02/11/2026: V1 chỉ hỗ trợ hóa đơn đã thu đủ bằng đúng một khoản trực tiếp, chưa hoàn/đảo tiền; chặn cọc, thẻ, nhiều khoản thu và hóa đơn hỗn hợp. Chủ spa xác nhận mô hình một hóa đơn vận hành, lưu lịch sử bản cũ và cấp mã riêng cho chứng từ thay thế. Giao dịch phát sinh sau thay thế phải gắn với chứng từ hiện hành; giữ chứng từ cũ để tra cứu, không tính trùng doanh thu/hoa hồng. Xác nhận này thay trạng thái PROPOSED trước đây của đúng ba nội dung trên; các chi tiết triển khai khác vẫn là PROPOSED. Xem [INVOICE_REPLACEMENT.md](INVOICE_REPLACEMENT.md).
+
 Cập nhật: 20/10/2026. Phạm vi: MVP nội bộ Next.js + MongoDB.
 
 ## Nhu cầu

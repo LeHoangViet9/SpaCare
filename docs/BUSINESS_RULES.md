@@ -1,5 +1,23 @@
 # SpaCare — Business Rules
 
+## BR-INV-REPLACE-001 — Thay tư vấn qua chứng từ thay thế — 02/11/2026
+
+CONFIRMED — nguồn: xác nhận của chủ spa do người dùng cung cấp ngày 02/11/2026, ưu tiên hơn mô tả PROPOSED trước đây:
+
+- Phạm vi V1: hóa đơn đã thu đủ bằng đúng một khoản trực tiếp, chưa hoàn/đảo tiền; chặn cọc, thẻ, nhiều khoản thu và hóa đơn hỗn hợp.
+- Mọi giao dịch phát sinh sau thay thế phải gắn với chứng từ hiện hành. Chứng từ cũ được giữ để tra cứu, không tính trùng doanh thu hoặc hoa hồng.
+- Mô hình được xác nhận: một hóa đơn vận hành, có lịch sử bản cũ và mã riêng cho chứng từ thay thế. Thay thế không tạo một giao dịch bán hoặc khoản thu thứ hai.
+
+Các tên field, cách liên kết ledger, transaction, version và hạn chế kỹ thuật ngoài phạm vi xác nhận trên vẫn là PROPOSED. Quy tắc gắn phát sinh với chứng từ hiện hành áp dụng cho các nghiệp vụ được phép; không tự mở các action đang bị chặn hoặc mở rộng phạm vi V1.
+
+Sửa P2 theo yêu cầu mới nhất: định danh giao dịch gốc là PAYMENT.sourceId, không phải timestamp trùng mili giây hoặc cùng ngày/tháng. Ledger thay thế/đảo lưu paymentId gốc; nguồn phải khớp đúng khoản thu duy nhất của hóa đơn. Bút toán đảo giữ earnedAt từng ledger; người tư vấn còn lại giữ thời điểm hưởng riêng, người mới nhận thời điểm của người bị thay. Chỉ đánh dấu Payroll DRAFT đúng cặp staffId–tháng chứa các ledger bị đảo/tạo theo quy tắc kỳ hiện có; không chạm nháp tháng khác. Giữ toàn bộ chặn payrollId/snapshot APPROVED/PAID và ngày/kỳ khóa. Các lựa chọn lưu trữ vẫn là PROPOSED kỹ thuật, không chốt thêm tỷ lệ hoa hồng.
+
+CONFIRMED theo yêu cầu mới nhất: OWNER active thay đúng người tư vấn bán gói bằng chứng từ thay thế có lý do, xem trước và xác nhận; ngoại lệ riêng đối với giới hạn sửa hóa đơn đã thu/đã dùng trước đây. Không dùng updateInvoice/hủy/hoàn tiền/hoàn tác buổi. Chỉ thay thành viên saleParticipants được chọn, đồng bộ sellerId/sellerName đại diện và seller snapshot của dòng gói tương ứng. Giữ consultantId/consultantName, createdBy/creatorName, performer và mọi nội dung đã ký.
+
+CONFIRMED: giữ nguyên tiền, bằng chứng thanh toán, khách/giá/ngày bán, quyền lợi, buổi thật/SESSION/chữ ký/snapshot/digest và lịch hẹn. Chỉ chứng từ hiện hành được thay tiếp; bản cũ REPLACED khác CANCELLED, không cộng lần hai vào báo cáo/công nợ/export. Đảo hoa hồng cũ và ghi mới đồng thời theo quy tắc gốc floor((paid-refunded)/20), chia đều/làm tròn theo ID khi nhiều người; saleCommissionAccrued giữ nguyên, không dùng tỷ lệ danh mục hiện tại. Bất kỳ payrollId hoặc ID trong snapshot APPROVED/PAID, kể cả legacy, đều chặn. Lương nháp phải tính lại.
+
+PROPOSED kỹ thuật đang áp dụng để thực hiện mô hình đã CONFIRMED: append snapshot chứng từ trước; Control transaction, expectedUpdatedAt/expectedDocumentId, idempotency, audit bảo vệ toàn bộ thay đổi. Ngoài phạm vi V1 đã CONFIRMED, triển khai còn yêu cầu v1/v2 hoa hồng và ledger khớp, chặn seller khác nhau theo dòng. Ngày bán/ngày hoa hồng/hôm nay CLOSED hoặc kỳ của người mới đã chốt bị chặn. V1 chưa xử lý thay đổi tài chính/nội dung/ngày hay vô hiệu hóa chuỗi sau thay thế; ghi buổi mới và thay tư vấn tiếp vẫn được. Chi tiết: [INVOICE_REPLACEMENT.md](INVOICE_REPLACEMENT.md).
+
 Kiểm toán 29/10/2026 — áp dụng BR-PERFORMER-001 cho sửa hóa đơn: hóa đơn có mã dòng không tự lấy người thực hiện cấp hóa đơn cho dòng chưa chọn, kể cả khi thêm dịch vụ. Giữ guard 409 nếu đã có ledger hoa hồng theo dòng; chưa triển khai luồng điều chỉnh performer riêng. Không chốt chính sách mới.
 
 Cập nhật: 21/10/2026.

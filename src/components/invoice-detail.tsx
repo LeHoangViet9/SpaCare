@@ -1,4 +1,5 @@
 'use client';
+import InvoiceReplacement, { InvoiceDocumentHistory } from './invoice-replacement';
 import InvoiceAppointmentLink from './invoice-appointment-link';
 import InvoiceCorrectionMenu from './invoice-correction-menu';
 import { invoiceCode } from '@/lib/invoice-code';
@@ -11,7 +12,7 @@ import { auditActions } from '@/lib/audit-view';
 import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
-export default function InvoiceDetail({ onLinkAppointment, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { onLinkAppointment?:(values:Row)=>Promise<void>; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
+export default function InvoiceDetail({ replacementStaff, onReplacement, onLinkAppointment, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { replacementStaff?:Row[]; onReplacement?:()=>void; onLinkAppointment?:(values:Row)=>Promise<void>; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
@@ -30,6 +31,8 @@ export default function InvoiceDetail({ onLinkAppointment, record, onClose, onIn
     {record.kind === 'invoice' && data && !error && <InvoiceCorrectionMenu invoice={data.invoice} onCancel={onCancel} onDelete={onDelete}/>}
     {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
 
+    {record.kind === 'invoice' && data && !error && <InvoiceDocumentHistory invoice={data.invoice}/>}
+    {record.kind === 'invoice' && data && !error && replacementStaff && <InvoiceReplacement key={String(data.invoice.activeDocumentId || data.invoice._id)} invoice={data.invoice} staff={replacementStaff} onChanged={()=>{setRevision(v=>v+1);onReplacement?.();}}/>}
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
       <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>
       {record.kind === 'customer' && <>
