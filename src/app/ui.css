@@ -223,6 +223,11 @@ form {
 .report-stat small { display: block; color: var(--muted); font-size: 15px; margin-bottom: 8px; }
 .report-stat strong { display: block; font-size: clamp(22px, 2.3vw, 30px); overflow-wrap: anywhere; }
 .report-pagination { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 18px; }
+.invoice-replacement { margin: 16px 0; overflow-wrap: anywhere; }
+.invoice-replacement form { display: grid; gap: 12px; margin-top: 12px; }
+.invoice-replacement label { display: grid; gap: 6px; }
+.invoice-replacement select, .invoice-replacement textarea { width: 100%; min-width: 0; }
+.invoice-replacement table { width: 100%; table-layout: fixed; }
 .staff-overview { margin-bottom: 20px; }
 .reports-workspace .section-head input { max-width: 320px; }
 @media (max-width: 600px) {

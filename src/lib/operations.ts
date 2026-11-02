@@ -1,4 +1,5 @@
 import { ensureGroupedPackageIndex } from './package-invoice-indexes';
+import { replacePackageAdvisor } from './invoice-replacement';
 import { coversVisit } from './appointment-checkout';
 import { invoiceDeletionBlock, repriceInvoiceItems } from './invoice-correction';
 import { hasSettledCommissionLedgers, legacySettledInvoiceLineIds } from './commission-settlement';
@@ -77,6 +78,8 @@ const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, ''
 
 const schemas = {
   correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,adjustPaymentDates:z.boolean().default(false),reason:text}).strict(),
+  previewPackageAdvisorReplacement: z.object({id:objectId,expectedUpdatedAt:date,expectedDocumentId:objectId,oldStaffId:objectId,newStaffId:objectId}).strict(),
+  replacePackageAdvisor: z.object({id:objectId,expectedUpdatedAt:date,expectedDocumentId:objectId,oldStaffId:objectId,newStaffId:objectId,reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
   productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).min(1).max(30)}),
@@ -195,6 +198,7 @@ const schemas = {
 export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
+  'previewPackageAdvisorReplacement', 'replacePackageAdvisor',
   'serviceGroup',
   'correctInvoiceDate', 'linkAppointmentInvoice', 'updateInvoice', 'cancelInvoice', 'deleteInvoice', 'product', 'updateProduct', 'productStatus', 'productGroup', 'updateProductGroup', 'stockMovement',
   'refundPackage', 'reviewStaffLeave', 'setSalaryPolicy', 'recordWorkday', 'setServiceCommission', 'setStaffSalary', 'savePayroll', 'approvePayroll', 'payPayroll',
@@ -282,6 +286,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const doc = await model.findOne({ ...scope, _id: id }).session(session);
         ensure(doc, 'Không tìm thấy dữ liệu trong spa này.', 404);
         if(model === Invoice) ensure(doc.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể phát sinh thao tác mới.',409);
+        if(model === Invoice && doc.activeDocumentId && ['payment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
+          ensure(false,'Chứng từ đã thay thế: phiên bản này chưa hỗ trợ thay đổi tài chính hoặc nội dung tiếp theo.',409);
         return doc;
       };
       const commissionLedgerSnapshot = async (invoiceIds: unknown[]) => {
@@ -641,6 +647,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const execute = async (op:Operation,data:any) => {
       target=undefined;appointmentBefore=undefined;linkedInvoiceId=undefined;treatmentUseId=undefined;replacementAppointmentId=undefined;financialBefore=undefined;
       switch (op) {
+        case 'previewPackageAdvisorReplacement':
+        case 'replacePackageAdvisor':
+          return replacePackageAdvisor(actor, data, session, op==='replacePackageAdvisor');
         case 'correctInvoiceDate': {
           const d=schemas.correctInvoiceDate.parse(data);
           const invoice=await get(Invoice,d.id);
@@ -828,7 +837,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const commissions = await pendingCommissions(d.staffId, d.month, existing?._id);
           const { id, ...input } = d;
           const attendance = await attendanceFor(d.staffId,d.month,d.attendanceConfirmed);
-          const values: any = { ...input, ...attendance, baseSalary, staffName: staff.name };
+          const values: any = { ...input, ...attendance, baseSalary, staffName: staff.name, needsRecalculation:false };
           fillPayroll(values, commissions);
           if (existing) { Object.assign(existing, values); await existing.save({ session }); target = existing; }
           else target = await create(Payroll, values);
@@ -837,6 +846,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         case 'approvePayroll': {
           const d = schemas.approvePayroll.parse(data);
           target = await get(Payroll, d.id);
+          ensure(!target.needsRecalculation,'Hoa hồng đã thay đổi do chứng từ thay thế. Cập nhật bản nháp trước khi duyệt.',409);
           ensure((await get(User,String(target.staffId))).role === 'STAFF','Bảng lương chỉ áp dụng cho nhân viên.',403);
           financialBefore = payrollSnapshot(target);
           if (target.status !== 'DRAFT') { ensure(target.total === d.expectedTotal, 'Số tiền bảng lương đã thay đổi.', 409); break; }
@@ -1267,6 +1277,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           // Read explicitly: the generic mutation getter deliberately rejects canceled invoices.
           target=await Invoice.findOne({...scope,_id:d.id}).session(session);
           ensure(target,'Không tìm thấy hóa đơn trong spa này.',404);
+          ensure(!target.activeDocumentId,'Chứng từ đã thay thế; chưa hỗ trợ vô hiệu hóa cả chuỗi.',409);
           ensure(target.status !== 'CANCELLED','Hóa đơn đã vô hiệu hóa; không được đảo giao dịch lần nữa.',409);
           ensure(target.updatedAt?.toISOString()===d.expectedUpdatedAt,'Hóa đơn đã thay đổi. Tải lại trước khi xóa.',409);
           const deletionBlock=invoiceDeletionBlock(target);ensure(!deletionBlock,deletionBlock,409);

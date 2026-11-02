@@ -1,5 +1,11 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Thay thế chứng từ sửa tư vấn bán gói — 02/11/2026
+
+CONFIRMED theo xác nhận chủ spa do người dùng cung cấp ngày 02/11/2026: một hóa đơn vận hành với lịch sử bản cũ và mã riêng cho chứng từ thay thế. Mọi phát sinh sau thay thế gắn với chứng từ hiện hành; bản cũ giữ để tra cứu, không cộng trùng doanh thu/hoa hồng. V1 chỉ thu đủ bằng một khoản trực tiếp, chưa hoàn/đảo; chặn cọc, thẻ, nhiều khoản thu và hóa đơn hỗn hợp. Chi tiết giao diện/lưu trữ và các hạn chế kỹ thuật khác bên dưới vẫn PROPOSED; không suy thêm quyền giao dịch từ xác nhận này.
+
+PROPOSED kỹ thuật theo yêu cầu mới nhất: chi tiết hóa đơn PACKAGE của OWNER có nút Thay thế chứng từ sửa tư vấn bán gói; chọn người cũ/mới, xem khoản thu/liên kết và hoa hồng trước/sau, nhập lý do rồi xác nhận một lần. Đổi lựa chọn xóa xem trước; lỗi giữ nội dung/key để retry. Chuỗi chứng từ hiển thị mã hiện hành và bản trước Đã thay thế có liên kết hai chiều, nội dung cũ chỉ đọc. Không tạo thêm Invoice tài chính hoặc đổi tham chiếu vận hành. Lương nháp bị ảnh hưởng hiển thị cần cập nhật và khóa nút duyệt. Thiết kế bảo toàn/giới hạn tại [INVOICE_REPLACEMENT.md](INVOICE_REPLACEMENT.md).
+
 ## Nhật ký dễ đọc - 21/10/2026
 Theo yêu cầu người dùng: nhật ký OWNER hiển thị nhãn thao tác tiếng Việt, tiền VND, giờ Việt Nam, lý do và thay đổi trước → sau khi bản ghi có snapshot. Bản ghi cũ không có snapshot không suy đoán giá trị trước. Tên tham chiếu lấy từ danh mục hiện tại kèm mã ngắn; tham chiếu không tải được giữ mã để đối chiếu. Chỉ trình bày các trường nghiệp vụ cho phép, không hiển thị JSON, mật khẩu, digest hoặc nét ký. Có tìm kiếm, lọc ngày/người/thao tác và phân trang trong tối đa 500 bản ghi API đã trả. Không đổi API, schema, phân quyền hoặc dữ liệu audit gốc; không ghi mutation khi xem nhật ký.
 

@@ -65,7 +65,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     const textFields: Record<string, string[]> = {
       packageTemplates: ['name'],
       customers: ['name', 'phone', 'notes'], services: ['name'], staff: ['name', ...(user.role === 'OWNER' ? ['email', 'phone'] : [])],
-      appointments: ['notes', 'changeReason', 'status'], invoices: ['code', 'description', 'status', 'dueDate'], deposits: ['note'],
+      appointments: ['notes', 'changeReason', 'status'], invoices: ['code', 'effectiveCode', 'documentHistory.code', 'description', 'status', 'dueDate'], deposits: ['note'],
       allocations: ['reason'], cash: ['note', 'transferReference', 'kind', 'method', 'day'], treatments: ['name', 'status'],
       uses: ['reason', 'method'], days: ['day', 'status', 'note'], audit: ['action', 'targetId', 'details.reason', 'details.note', 'details.name', 'details.description', 'details.before.name', 'details.after.name'],
     };

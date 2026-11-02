@@ -1,5 +1,18 @@
 # API nội bộ
 
+## Thay tư vấn qua chứng từ thay thế — 02/11/2026
+
+Trạng thái nghiệp vụ: CONFIRMED theo xác nhận chủ spa do người dùng cung cấp ngày 02/11/2026. V1 chỉ nhận hóa đơn thu đủ bằng đúng một khoản trực tiếp, chưa hoàn/đảo; chặn cọc, thẻ, nhiều khoản thu và hóa đơn hỗn hợp. Mô hình một hóa đơn vận hành, lịch sử bản cũ và mã riêng cho chứng từ thay thế đã được xác nhận. Phát sinh sau thay thế phải gắn với chứng từ hiện hành; bản cũ để tra cứu, không tính trùng doanh thu/hoa hồng. Điều này không mở thêm action đang bị chặn. Payload, tên field và cơ chế API bên dưới vẫn là chi tiết kỹ thuật PROPOSED; cập nhật trạng thái tài liệu không phải xác nhận đã nghiệm thu code.
+
+Khắc phục P2: không đổi payload. Backend liên kết commission với khoản thu gốc bằng sourceType/sourceId, ledger thay thế giữ paymentId; không đòi timestamp các tư vấn giống nhau. Nháp chỉ bị yêu cầu tính lại ở đúng tháng earnedAt của ledger đảo/tạo. documentHistory của chứng từ legacy có thể không có code, thay bằng legacyInvoiceId; client dùng nhãn historicalInvoiceCode, vẫn trỏ documentId/replacedById như cũ. Migration cấp mã không biến định danh legacy thành sequence và không sửa snapshot cũ.
+
+POST /api/operations, active OWNER, Origin và Idempotency-Key như hiện có:
+
+- previewPackageAdvisorReplacement: strict `{id,expectedUpdatedAt,expectedDocumentId,oldStaffId,newStaffId}`; id là Invoice vận hành, expectedDocumentId=activeDocumentId hoặc Invoice._id khi chưa thay. Response before/after, beforeShares/afterShares, pool/formula, payment, treatmentIds và ID buổi/SESSION/lịch. Kiểm điều kiện trong transaction Control, không ghi tài chính.
+- replacePackageAdvisor: cùng payload và reason bắt buộc. Kiểm lại spa/ngày/phiên bản/tiền/ledger/payroll; append snapshot REPLACED, cấp mã mới, cập nhật projection tư vấn bán gói, ghi ledger âm/dương/audit và đánh dấu draft trong một transaction. Response `{id,invoiceId,documentId,code,message}`; invoiceId giữ nguyên, documentId/code mới. Không nhận giá/khách/ngày/performer/consultant/chữ ký.
+
+GET /api/invoices/:id trả activeDocumentId/effectiveCode/documentHistory để tra bản gốc và liên kết chuỗi chỉ đọc. Bản hết hiệu lực gửi expectedDocumentId cũ trả 409; retry cùng key/payload trả kết quả cũ, key mới/phiên bản cũ trả 409. Sai quyền 403, inactive 401, tham chiếu không cùng spa 404 hoặc 409. Ngoài phạm vi v1, khóa ngày/kỳ hoặc payroll đã chốt trả 409. V1 chỉ một khoản thu trực tiếp đủ, chưa hoàn/đảo, không cọc/thẻ/hỗn hợp/dòng seller khác nhau. Chặn sửa tài chính/nội dung/ngày hoặc vô hiệu hóa chuỗi sau thay thế; ghi buổi mới và thay tư vấn tiếp vẫn được. Chi tiết: [INVOICE_REPLACEMENT.md](INVOICE_REPLACEMENT.md).
+
 API dùng cookie session cùng origin. Phải đăng nhập, không chấp nhận `spaId` hay `actorId` do client gửi để quyết định quyền.
 
 | Endpoint | Nội dung |

@@ -569,7 +569,7 @@ export default function Workspace() {
       ))}
     </nav></MobileNavigationLayer>
     {selectedStaff && <StaffDetail key={selectedStaff} id={selectedStaff} onClose={() => setSelectedStaff(null)} onSchedule={id => router.push('/workspace/appointments?employee=' + id)} />}
-    {detail && <InvoiceDetail onLinkAppointment={owner ? async values=>{
+    {detail && <InvoiceDetail replacementStaff={owner ? data.staff : undefined} onReplacement={()=>{void load();}} onLinkAppointment={owner ? async values=>{
         const fingerprint=JSON.stringify({action:'linkAppointmentInvoice',values});
         const key=retryKeys.current.get(fingerprint) || crypto.randomUUID();retryKeys.current.set(fingerprint,key);
         const response=await fetch('/api/operations',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify({action:'linkAppointmentInvoice',data:values})});

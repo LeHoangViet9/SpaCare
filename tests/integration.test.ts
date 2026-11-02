@@ -1,4 +1,5 @@
 import { cashFlowIntegration } from './cash-flow-integration';
+import {invoiceReplacementIntegration,invoiceReplacementP2Integration} from './invoice-replacement-integration';
 import { readReport } from '../src/lib/report-read';
 import { parseOpening, inspectOpening, writeOpening, checkOpeningIndexes } from '../src/lib/opening-balances';
 import { ServiceGroup } from '../src/lib/models';
@@ -2344,6 +2345,8 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.deepEqual(await InvoiceLineCommission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),lineCommissionsBefore,'per-line commission ledger is unchanged');
       assert.equal(await Audit.countDocuments({spaId:scope.spaId,action:'updateInvoice',targetId:bill!._id}),updateAuditCount,'rejected edit writes no audit');
     });
+    await t.test('package advisor replacement: preservation, rounding, chain, payroll, race and rollback',()=>invoiceReplacementIntegration(extraSpaIds));
+    await t.test('P2 replacement: real transfer, distinct ledger timestamps, payroll periods and scoped legacy migration',()=>invoiceReplacementP2Integration(extraSpaIds));
   } finally {
     if (spaId) {
       const fixtureSpaIds = [spaId, ...extraSpaIds];
