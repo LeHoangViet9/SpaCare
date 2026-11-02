@@ -3,6 +3,7 @@ import { Appointment, CashEntry, Commission, InvoiceLineCommission, Customer, In
 import { ensure } from './rules';
 import type { Actor } from './auth';
 import type { workspaceQuery } from './workspace-query';
+import { cashFlowMatch } from './cash-flow';
 
 type Row = Record<string, any>;
 export function reportDateRange(from: string, to: string) {
@@ -15,9 +16,9 @@ export async function readReport(user: Actor, query: ReturnType<typeof workspace
   const range = reportDateRange(query.from, query.to);
   const dated = (field: string) => ({ ...scope, ...(Object.keys(range).length ? { [field]: range } : {}) });
   const [days, methods, invoiceStats, kinds, dailyInvoices, invoiceCount, staff] = await Promise.all([
-    CashEntry.aggregate([{ $match: { ...scope, ...(query.from || query.to ? { day: { ...(query.from ? { $gte: query.from } : {}), ...(query.to ? { $lte: query.to } : {}) } } : {}) } },
+    CashEntry.aggregate([{ $match: cashFlowMatch({ ...scope, ...(query.from || query.to ? { day: { ...(query.from ? { $gte: query.from } : {}), ...(query.to ? { $lte: query.to } : {}) } } : {}) }) },
       { $group: { _id: '$day', incoming: { $sum: { $cond: [{ $eq: ['$direction', 'IN'] }, '$amount', 0] } }, outgoing: { $sum: { $cond: [{ $eq: ['$direction', 'OUT'] }, '$amount', 0] } } } }, { $sort: { _id: 1 } }]),
-    CashEntry.aggregate([{ $match: { ...scope, ...(query.from || query.to ? { day: { ...(query.from ? { $gte: query.from } : {}), ...(query.to ? { $lte: query.to } : {}) } } : {}) } },
+    CashEntry.aggregate([{ $match: cashFlowMatch({ ...scope, ...(query.from || query.to ? { day: { ...(query.from ? { $gte: query.from } : {}), ...(query.to ? { $lte: query.to } : {}) } } : {}) }) },
       { $group: { _id: '$method', incoming: { $sum: { $cond: [{ $eq: ['$direction', 'IN'] }, '$amount', 0] } }, outgoing: { $sum: { $cond: [{ $eq: ['$direction', 'OUT'] }, '$amount', 0] } } } }]),
     Invoice.aggregate([{ $match: dated('createdAt') }, { $group: { _id: null, count: { $sum: 1 }, total: { $sum: '$total' }, paid: { $sum: '$paid' }, refunded:{$sum:{$ifNull:['$refunded',0]}}, debt: { $sum: { $subtract: ['$total', '$paid'] } } } }]),
     Invoice.aggregate([{ $match: dated('createdAt') }, { $group: { _id: { $ifNull: ['$kind', 'LEGACY'] }, count: { $sum: 1 }, total: { $sum: '$total' }, paid: { $sum: '$paid' } } }, { $sort: { total: -1, _id: 1 } }]),

@@ -39,7 +39,7 @@ Các mục này là thiết kế, không được coi là đã có xác nhận b
 - Tiền nguyên VNĐ thay cho NUMERIC(18,2), tối đa 1.000 tỷ mỗi khoản. Nếu nhập từ SQL có phần lẻ phải xử lý riêng, không tự làm tròn.
 - Bản ghi xác nhận append-only qua API hiện tại. Chưa có quy trình sửa/xóa xác nhận, nên không cung cấp nút sửa số buổi lịch sử.
 - Ngày chốt là ngày Việt Nam UTC+7. Tiền đầu ngày nhập tay; chỉ mở sổ ngày hiện tại.
-- Giao dịch sai được đảo bằng bút toán đối ứng ngày hiện tại. Không cập nhật trực tiếp tiền gốc; cờ `reversed` là projection trạng thái, lịch sử nằm ở CashEntry/Allocation/Audit.
+- Giao dịch sai được đảo bằng bút toán đối ứng ngày hiện tại. Không cập nhật trực tiếp tiền gốc; cờ `reversed` là projection trạng thái, lịch sử nằm ở CashEntry/Allocation/Audit. Tổng thực thu/chi loại dòng gốc `reversed=true` và bút toán `REVERSAL` liên kết bằng `originalId`; cả hai vẫn tra cứu được, hoàn tiền thật `REFUND` vẫn tính vào chi.
 - Chốt sổ phản ánh dòng tiền, không lấy tổng hóa đơn; không tự cân chênh lệch.
 - Serialize mutations theo spa bằng Control document trong transaction. Cách đơn giản này ưu tiên tính nhất quán cho spa nhỏ; spa lớn cần khóa theo tài nguyên hoặc ngày sau khi đo tải.
 - Route Handlers chạy Node.js; không dùng Edge runtime cho kết nối Mongoose.
@@ -658,3 +658,8 @@ Latest clarification (2026-11-02): remove the payment deadline input entirely fr
 
 ### Sổ thu chi: bộ lọc thu gọn (02/11/2026)
 Theo yêu cầu: dùng cùng thanh mở rộng Tìm kiếm / Lọc như Hóa đơn, mặc định hôm nay theo giờ Việt Nam. Ô tìm kiếm, người tạo, khoảng ngày, phương thức và Thu / Chi nằm trong phần mở rộng. Tất cả ngày và bộ lọc lưu URL; tìm kiếm hoặc liên kết có bộ lọc vẫn tra cứu lịch sử. Tổng thu, chi, chênh lệch tiếp tục theo toàn bộ bộ lọc trước phân trang. Không đổi quyền hay cách ghi sổ.
+
+
+### Kiểm chứng đảo khác ngày và sổ CLOSED — 02/11/2026
+PROPOSED kỹ thuật, không phải xác nhận chính sách mới: báo cáo và CSV dùng ledger hiện tại theo CashEntry.day, nên khoản gốc đã đảo bị loại cả khi ngày gốc đã CLOSED; bút toán REVERSAL liên kết ở ngày sau cũng bị loại. Ngày chỉ còn các dòng bị loại có thể không xuất hiện trong báo cáo/CSV (không tự thêm hàng 0). Snapshot Day CLOSED (expected, bankNet, counted, difference) giữ nguyên; có thể khác báo cáo tính lại. Xem dữ liệu hoặc export không ghi lại snapshot. Khi OWNER mở lại rồi chốt, preview và backend cùng tính lại theo bộ lọc mới; expectedPreview cũ bị từ chối 409. Không tự mở lại, backfill hoặc tạo khoản cân sổ.
+BR-OPEN-005 vẫn PARTIALLY ANSWERED: spa chưa chốt quy trình xử lý sai sót ở ngày đã chốt, lựa chọn mở lại ngày cũ hay điều chỉnh ngày hiện tại, và cách đối soát chênh giữa snapshot với báo cáo tính lại. Test cash-flow-cross-day dùng định danh giả và model doubles để ghi nhận hành vi kỹ thuật hiện có của reversal, readReport, CSV và closeDay/reopenDay; không thay thế kiểm thử MongoDB thực hoặc nghiệm thu chính sách.
