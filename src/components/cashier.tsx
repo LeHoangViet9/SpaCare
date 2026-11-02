@@ -131,7 +131,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  return <ValidatedForm onSubmit={submit} className="cashier">
  <section className="panel panel-padded cashier-customer">
    <div className="section-head"><h3>1. Khách hàng</h3><div className="actions"><button type="button" disabled={busy} onClick={onNewCustomer}>+ Khách mới</button><button type="button" onClick={onInvoices}>Danh sách hóa đơn</button></div></div>
-   <CustomerPicker label="Khách hàng" value={customer?._id || ''} onChange={()=>{}} onCustomerChange={row=>{setCustomer(row);resetSelection();}} required disabled={busy}/>
+   <CustomerPicker searchOnly label="Khách hàng" value={customer?._id || ''} onChange={id=>{if(!id){setCustomer(null);resetSelection();}}} onCustomerChange={row=>{setCustomer(row);resetSelection();}} required disabled={busy}/>
    {initialAppointmentId && <div hidden>
    <AppointmentCheckoutPicker customerId={customer?._id} initialId={initialAppointmentId} selectedId={appointment?.appointment?._id} busy={busy} onSelect={detail=>{
      resetSelection();if(!detail)return;

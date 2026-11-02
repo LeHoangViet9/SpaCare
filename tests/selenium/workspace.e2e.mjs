@@ -256,6 +256,26 @@ try {
     await heading('Khách hàng');
     assert.equal(await (await visible(css('input[aria-label="Tìm kiếm"]'))).getAttribute('value'), query);
   }, true);
+  await run('SEL-CASHIER-CUSTOMER-MOBILE', 'Thu ngân mobile tìm khách không có thanh phân trang', async () => {
+    await login();
+    await go('/workspace/cashier');
+    await heading('Thu ngân');
+    await driver.manage().window().setRect({width:390,height:844});
+    const input = await visible(css('input[aria-label="Tìm tên khách hàng"]'));
+    assert.equal((await driver.findElements(css('.cashier-customer .customer-picker-pages'))).length, 0);
+    assert.equal((await driver.findElements(css('.cashier-customer .customer-picker-option'))).length, 0);
+    // Read only; do not create customers or invoices in the target environment.
+    const name = await driver.executeAsyncScript("const done=arguments[arguments.length-1];fetch('/api/customers?pageSize=1').then(r=>r.json()).then(d=>done(d.customers?.[0]?.name || null)).catch(()=>done(null));");
+    assert.ok(name, 'A synthetic test customer is required');
+    await input.sendKeys(name);
+    const option = await visible(css('.cashier-customer .customer-picker-option input[type="radio"]'));
+    await option.click();
+    await driver.wait(async () => (await driver.findElements(css('.cashier-customer input[type="hidden"][name="customerId"]'))).length === 1, timeout);
+    assert.equal(await input.getAttribute('value'), name);
+    assert.equal((await driver.findElements(css('.cashier-customer .customer-picker-option'))).length, 0);
+    assert.equal((await driver.findElements(css('.cashier-customer .customer-picker-pages'))).length, 0);
+    assert.equal(await driver.executeScript('return document.documentElement.scrollWidth <= innerWidth + 1'), true);
+  }, true);
   await run('SEL-FLOW-CASHIER', 'Chuyển danh mục thu ngân rồi mở hóa đơn', async () => {
     await login();
     await go('/workspace/cashier');
