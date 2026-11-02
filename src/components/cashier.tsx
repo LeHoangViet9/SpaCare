@@ -1,4 +1,5 @@
 'use client';
+import GroupedCartLines from './grouped-cart-lines';
 import AppointmentCheckoutPicker from './appointment-checkout-picker';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {packageLabel,timedPackage,treatmentDay,packageExpiry} from '@/lib/treatment-rules';
@@ -31,7 +32,7 @@ function PerformerMultiSelect({staffOptions,selectedIds,onChange,disabled}:{
     return ()=>document.removeEventListener('mousedown',handleClickOutside);
   },[open]);
   const selectedStaff=staffOptions.filter((s:Row)=>selectedIds.includes(s._id));
-  const displayText=selectedStaff.length>0 ? selectedStaff.map((s:Row)=>s.name).join(', ') : 'Chọn người thực hiện...';
+  const displayText=selectedStaff.length>0 ? selectedStaff.map((s:Row)=>s.name).join(', ') : 'Chọn kĩ thuật viên...';
   return <div className="relative w-full" ref={containerRef}>
     <button
       type="button"
@@ -75,7 +76,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  const [productItems,setProductItems]=useState<Row[]>([]);
  const [packageItems,setPackageItems]=useState<Row[]>([]);
  const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[catalogPage,setCatalogPage]=useState(1);
- const [performerId,setPerformerId]=useState(''),[issuedOn,setIssuedOn]=useState(''),[dueDate,setDueDate]=useState('');
+ const [performerId,setPerformerId]=useState(''),[issuedOn,setIssuedOn]=useState('');
  const [participantIds,setParticipantIds]=useState<string[]>([data.user.id || data.user._id]);
  const [error,setError]=useState('');
  const staffOptions=data.staff.filter((row:Row)=>row.active && ['OWNER','STAFF'].includes(row.role));
@@ -92,8 +93,9 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  function resetSelection(){setAppointment(null);setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
  useEffect(()=>{if(initialCustomer){setCustomer(initialCustomer);resetSelection();setCatalogPage(1);}},[initialCustomer?._id]);
  const allCatalog=cashierCatalog({services:data.services,products:data.products || [],packageTemplates:data.packageTemplates || [],treatments:data.treatments},browseMode,customer?._id || '',search);
- const categoryOf=(row:Row)=>browseMode==='product' ? data.productGroups?.find((group:Row)=>group._id===row.groupId)?.name : browseMode==='service' ? row.category : data.services.find((service:Row)=>service._id===row.serviceId)?.category;
+ const categoryOf=(row:Row)=>browseMode==='product' ? data.productGroups?.find((group:Row)=>group._id===row.groupId)?.name : browseMode==='service' ? row.category || 'Chưa phân nhóm' : data.services.find((service:Row)=>service._id===row.serviceId)?.category;
  const categories=[...new Set<string>(allCatalog.map(categoryOf).filter(Boolean))].sort();
+ const showServiceGroups=browseMode==='service' && !category;
  const catalog=allCatalog.filter(row=>!category || categoryOf(row)===category);
  const templates=cashierCatalog({services:data.services,packageTemplates:data.packageTemplates || [],treatments:data.treatments},'package','','');
  const pageCount=Math.max(1,Math.ceil(catalog.length/8)),page=Math.min(catalogPage,pageCount);
@@ -119,7 +121,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      const signature=rawSignature ? JSON.parse(String(rawSignature)):undefined;
      if(signature && !isValidSignature(signature))throw new Error('Chữ ký chưa hợp lệ. Ký lại hoặc xóa nét ký để bỏ qua.');
      const cardValue=fd.get('cashCard');
-     const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate,signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
+     const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate:'',signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
      const date=issuedOn?{issuedOn}:{};
      if(appointment)onSubmit('checkout',{customerId:customer._id,appointmentId:appointment.appointment._id,actions,...date});
      else if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date});
@@ -145,25 +147,24 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    <h3>2. Thêm vào giỏ</h3>
    <div className="cashier-modes" role="group" aria-label="Danh mục thu ngân">{([['service','Dịch vụ lẻ'],['session','Dùng gói đã mua'],['package','Bán gói mới'],['product','Sản phẩm']] as const).map(([key,title])=><button type="button" key={key} disabled={busy} aria-pressed={browseMode===key} onClick={()=>{setBrowseMode(key);setSearch('');setCategory('');setCatalogPage(1);}}>{title}</button>)}</div>
    <label>{browseMode==='product'?'Tìm sản phẩm':browseMode==='package'?'Tìm gói để bán mới':browseMode==='session'?'Tìm gói đã mua':'Tìm dịch vụ lẻ'}<input type="search" maxLength={100} value={search} disabled={busy} placeholder="Nhập tên để tìm…" onChange={e=>{setSearch(e.target.value);setCatalogPage(1);}}/></label>
-   <label>{browseMode==='product'?'Nhóm sản phẩm':'Nhóm dịch vụ'}<select value={category} disabled={busy} onChange={e=>{setCategory(e.target.value);setCatalogPage(1);}}><option value="">Tất cả nhóm</option>{[...new Set([...categories,...(category?[category]:[])])].map(name=><option key={name} value={name}>{name}</option>)}</select></label>
-   <div className="cashier-cards">{visibleCatalog.map(row=>{
+   {browseMode==='service' ? <div className="cashier-service-groups">{category ? <div className="section-head"><strong>{category}</strong><button type="button" disabled={busy} onClick={()=>{setCategory('');setSearch('');setCatalogPage(1);}}>← Các nhóm dịch vụ</button></div> : <><p>Chọn nhóm để xem dịch vụ</p><div className="cashier-cards" role="group" aria-label="Nhóm dịch vụ">{categories.map(name=><button type="button" className="cashier-card" key={name} disabled={busy} onClick={()=>{setCategory(name);setCatalogPage(1);}}><strong>{name}</strong><span>{allCatalog.filter(row=>categoryOf(row)===name).length} dịch vụ</span></button>)}</div></>}</div> : <label>{browseMode==='product'?'Nhóm sản phẩm':'Nhóm dịch vụ'}<select value={category} disabled={busy} onChange={e=>{setCategory(e.target.value);setCatalogPage(1);}}><option value="">Tất cả nhóm</option>{[...new Set([...categories,...(category?[category]:[])])].map(name=><option key={name} value={name}>{name}</option>)}</select></label>}
+   {!showServiceGroups && <div className="cashier-cards">{visibleCatalog.map(row=>{
      const serviceCount=browseMode==='service' ? serviceItems.filter((item:Row)=>item._id===row._id).length : 0;
      const packageCount=browseMode==='package' ? packageItems.filter((item:Row)=>item._id===row._id).length : 0;
      const selected=browseMode==='service' ? serviceCount>0 : browseMode==='package' ? packageCount>0 : selectedItems.some(item=>item._id===row._id);
      return <button type="button" key={row._id} className={'cashier-card'+(selected?' is-selected':'')} aria-pressed={browseMode!=='service' ? selected : undefined} disabled={busy || !customer || (browseMode!=='service' && !selected && selectedItems.length>=30) || (browseMode==='service' && serviceItems.length>=30) || (browseMode==='product' && row.stock<1 && !selected)} onClick={()=>choose(row)}><strong>{row.name}</strong><span>{browseMode==='product'?'Tồn '+row.stock+' '+row.unit:browseMode==='package' || browseMode==='session'?packageLabel(row):row.category || 'Dịch vụ'}</span><b>{money(browseMode==='session'?0:row.price)}</b>{selected && <small>{browseMode==='service' ? 'Đã chọn x'+serviceCount : browseMode==='package' ? 'Đã chọn x'+packageCount : browseMode==='session' ? 'Đã chọn x'+sessionItems.filter(item=>item._id===row._id).length : 'Đã chọn ✓'}</small>}</button>;
-   })}</div>
+   })}</div>}
    {!catalog.length && <p>{browseMode==='session'?'Chọn khách để xem các gói khả dụng, hoặc khách chưa có gói phù hợp.':'Không có mục phù hợp.'}</p>}
-   {actualPages>1 && <div className="customer-picker-pages"><button type="button" disabled={page<=1 || busy} onClick={()=>setCatalogPage(page-1)}>Trước</button><span>{page}/{actualPages}</span><button type="button" disabled={page>=actualPages || busy} onClick={()=>setCatalogPage(page+1)}>Sau</button></div>}
+   {!showServiceGroups && actualPages>1 && <div className="customer-picker-pages"><button type="button" disabled={page<=1 || busy} onClick={()=>setCatalogPage(page-1)}>Trước</button><span>{page}/{actualPages}</span><button type="button" disabled={page>=actualPages || busy} onClick={()=>setCatalogPage(page+1)}>Sau</button></div>}
  </section>
  <section className="panel panel-padded cashier-receipt">
-   <div className="section-head"><h3>3. Giỏ đã chọn ({basketCount})</h3>{basketCount>0 && <button type="button" disabled={busy} onClick={resetSelection}>Xóa giỏ</button>}</div>
-   <div className="cashier-receipt-heading"><strong>{customer?.name || 'Chưa chọn khách'}</strong><small>{customer?.phone}</small></div>
+   <div className="section-head"><h3>3. Giỏ đã chọn ({basketCount})</h3>{basketCount>0 && <button type="button" className="cashier-clear-cart" aria-label="Xóa tất cả mục trong giỏ" title="Xóa tất cả mục trong giỏ" disabled={busy} onClick={resetSelection}>×</button>}</div>
    {!basketCount && <p>Chọn một hoặc nhiều dịch vụ, liệu trình, gói mới hoặc sản phẩm.</p>}
    <fieldset disabled={busy} className="cashier-fields">
-   {serviceItems.map(item=><div className="cashier-service-line" key={item.lineId || item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setServiceItems(old=>removeServiceItem(old,item.lineId))}>Bỏ dịch vụ</button></div><label>Giá dịch vụ (VNĐ)<MoneyInput value={item.total} min={1} required onValueChange={total=>setServiceItems(old=>old.map(row=>row.lineId===item.lineId?{...row,total}:row))}/></label><div className="cashier-performers"><span>Người thực hiện</span><PerformerMultiSelect staffOptions={staffOptions} selectedIds={item.performerIds || []} onChange={next=>setServiceItems(old=>updateServiceItemPerformers(old,item.lineId,next))} disabled={busy}/></div></div>)}
-   {sessionItems.map(item=><div className="cashier-service-line" key={item.cartId || item._id}><div className="section-head"><strong>{item.name} · 0đ</strong><button type="button" onClick={()=>setSessionItems(old=>old.filter(row=>(row.cartId || row._id)!==(item.cartId || item._id)))}>Bỏ lượt</button></div><label>Người thực hiện lượt này<select aria-label="Người thực hiện lượt này" value={item.performerId || ''} onChange={e=>setSessionItems(old=>old.map(row=>(row.cartId || row._id)===(item.cartId || item._id)?{...row,performerId:e.target.value}:row))}><option value="">Chưa chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label><label>Người nhận dịch vụ<input value={item.recipientName || ''} placeholder={customer?.name || 'Chủ gói'} onChange={e=>setSessionItems(old=>old.map(row=>(row.cartId || row._id)===(item.cartId || item._id)?{...row,recipientName:e.target.value}:row))}/></label><label>Số điện thoại người nhận<input type="tel" value={item.recipientPhone || ''} onChange={e=>setSessionItems(old=>old.map(row=>(row.cartId || row._id)===(item.cartId || item._id)?{...row,recipientPhone:e.target.value}:row))}/></label></div>)}
+   <GroupedCartLines items={serviceItems} label="Dịch vụ">{item=><div className="cashier-service-line" key={item.lineId || item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setServiceItems(old=>removeServiceItem(old,item.lineId))}>Bỏ dịch vụ</button></div><label>Giá dịch vụ (VNĐ)<MoneyInput value={item.total} min={1} required onValueChange={total=>setServiceItems(old=>old.map(row=>row.lineId===item.lineId?{...row,total}:row))}/></label><div className="cashier-performers"><span>Kĩ thuật viên</span><PerformerMultiSelect staffOptions={staffOptions} selectedIds={item.performerIds || []} onChange={next=>setServiceItems(old=>updateServiceItemPerformers(old,item.lineId,next))} disabled={busy}/></div></div>}</GroupedCartLines>
+   <GroupedCartLines items={sessionItems} label="Lượt dùng gói">{item=><div className="cashier-service-line" key={item.cartId || item._id}><div className="section-head"><strong>{item.name} · 0đ</strong><button type="button" onClick={()=>setSessionItems(old=>old.filter(row=>(row.cartId || row._id)!==(item.cartId || item._id)))}>Bỏ lượt</button></div><label>Kĩ thuật viên lượt này<select aria-label="Kĩ thuật viên lượt này" value={item.performerId || ''} onChange={e=>setSessionItems(old=>old.map(row=>(row.cartId || row._id)===(item.cartId || item._id)?{...row,performerId:e.target.value}:row))}><option value="">Chưa chọn</option>{staffOptions.map((row:Row)=><option key={row._id} value={row._id}>{row.name}</option>)}</select></label><label>Người nhận dịch vụ<input value={item.recipientName || ''} placeholder={customer?.name || 'Chủ gói'} onChange={e=>setSessionItems(old=>old.map(row=>(row.cartId || row._id)===(item.cartId || item._id)?{...row,recipientName:e.target.value}:row))}/></label><label>Số điện thoại người nhận<input type="tel" value={item.recipientPhone || ''} onChange={e=>setSessionItems(old=>old.map(row=>(row.cartId || row._id)===(item.cartId || item._id)?{...row,recipientPhone:e.target.value}:row))}/></label></div>}</GroupedCartLines>
    {productItems.map(item=><div className="cashier-service-line" key={item._id}><div className="section-head"><strong>{item.name}</strong><button type="button" onClick={()=>setProductItems(old=>old.filter(row=>row._id!==item._id))}>Bỏ sản phẩm</button></div><label>Số lượng ({item.unit})<input type="number" min={1} max={item.stock} step={1} required value={item.quantity} onChange={e=>setProductItems(old=>old.map(row=>row._id===item._id?{...row,quantity:e.target.value}:row))}/></label><label>Đơn giá (VNĐ)<MoneyInput value={item.unitPrice} min={1} required onValueChange={unitPrice=>setProductItems(old=>old.map(row=>row._id===item._id?{...row,unitPrice}:row))}/></label></div>)}
-   {packageItems.map(item=>{
+   <GroupedCartLines items={packageItems} label="Gói mới">{item=>{
      const pkgId = item.cartId || item._id;
      return <section className="cashier-service-line" key={pkgId}>
      <div className="section-head"><strong>Gói mới: {item.name} · {packageLabel(item)}</strong><button type="button" onClick={()=>setPackageItems(old=>old.filter(row=>(row.cartId || row._id)!==pkgId))}>Bỏ gói mới</button></div>
@@ -174,9 +175,8 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      <button type="button" disabled={item.gifts.length>=20 || !data.services.some((s:Row)=>s.active)} onClick={()=>updatePackage(pkgId,{gifts:[...item.gifts,{id:crypto.randomUUID(),serviceId:''}]})}>+ Tặng dịch vụ lẻ 0đ</button>
      <label>Thẻ tiền tặng kèm (VNĐ)<MoneyInput value={item.giftCashCardAmount} min={0} required onValueChange={giftCashCardAmount=>updatePackage(pkgId,{giftCashCardAmount})}/></label>
    </section>;
-   })}
-   {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy}/></>}
-   {basketCount>0 && (amount - appliedCard > 0) && <label>Hạn thanh toán{packageItems.length?'':' (nếu có)'}<input type="date" required={packageItems.length>0} min={packageItems.length?data.today:undefined} value={dueDate} onChange={e=>setDueDate(e.target.value)}/></label>}
+   }}</GroupedCartLines>
+   {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy} showPreview={false}/></>}
    {sessionItems.length>0 && !sessionItems.some(item=>item.recipientName?.trim()) && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
    {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard}/></section>}
    {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ và phân bổ riêng tiền thẻ, tiền thu thêm cho từng dịch vụ.</p>}

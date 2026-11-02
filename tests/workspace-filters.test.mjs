@@ -45,3 +45,13 @@ test('cancelled treatments stay out of operational lists even when searching gif
   assert.ok(filter.$and.some(c=>c.status?.$ne==='CANCELLED'));
  }
 });
+
+test('invoice landing defaults today but preserves all dates, historical searches and deep links', async () => {
+  const { invoiceLandingFilters } = await import('../src/lib/workspace-filters.ts');
+  const today = '2026-11-02';
+  assert.equal(invoiceLandingFilters(new URLSearchParams(), today).from, today);
+  for (const query of ['dateScope=custom', 'search=HD000058', 'customer=' + 'a'.repeat(24), 'status=DEBT']) {
+    assert.equal(invoiceLandingFilters(new URLSearchParams(query), today).from, '');
+  }
+  assert.equal(invoiceLandingFilters(new URLSearchParams('from=2026-10-01&to=2026-10-31'), today).from, '2026-10-01');
+});

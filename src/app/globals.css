@@ -2131,3 +2131,17 @@ label textarea { margin-top: 8px; }
 .hover\:bg-gray-100:hover { background-color: #f3f4f6; }
 .hover\:border-gray-400:hover { border-color: #9ca3af; }
 
+
+.invoice-filter-details > summary { cursor: pointer; font-weight: 600; color: var(--green); padding: 4px 0; }
+.invoice-filter-details[open] > summary { margin-bottom: 12px; }
+.invoice-filter-details > .search { width: 100%; max-width: 100%; margin-bottom: 12px; }
+
+.cashier-cart-group { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.cashier-cart-group > summary, .cashier-cart-unit > summary { cursor: pointer; padding: 8px 0; }
+.cashier-cart-group > summary small { display: block; margin-top: 4px; color: var(--muted); }
+.cashier-cart-unit { border-top: 1px solid var(--line); margin-top: 8px; }
+.cashier-cart-unit .cashier-service-line { margin-bottom: 0; }
+
+.cashier-receipt > .section-head { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.cashier-receipt > .section-head h3 { flex: 1; min-width: 0; }
+.cashier-receipt > .section-head .cashier-clear-cart { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; font-size: 26px; line-height: 1; }

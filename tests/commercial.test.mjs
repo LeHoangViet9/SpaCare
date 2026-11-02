@@ -24,3 +24,10 @@ test('standalone invoice permits price override; covered session is always zero'
 });
 
 test('gifts cannot grant an entire package template',()=>assert.equal(packageSaleInput.safeParse({customerId:id,templateId:id,dueDate:'2026-10-26',promotion:'Gift',gifts:[{templateId:id}]}).success,false));
+
+test('package sale accepts no deadline or blank deadline without assigning a default', () => {
+  const sale = {customerId:id,templateId:id};
+  assert.equal(packageSaleInput.parse(sale).dueDate, undefined);
+  assert.equal(packageSaleInput.parse({...sale,dueDate:''}).dueDate, undefined);
+  assert.equal(packageSaleInput.safeParse({...sale,dueDate:'invalid'}).success, false);
+});

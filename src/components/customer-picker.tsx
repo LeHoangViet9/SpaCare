@@ -51,7 +51,8 @@ export default function CustomerPicker({ label, value, onChange, required, disab
       </label>)}
       {!pending && !error && rows.length === 0 && <p>Không tìm thấy khách hàng.</p>}
     </div>
-    <div className="customer-picker-pages"><button type="button" disabled={disabled || pending || page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><small role="status">{error ? 'Không tải được kết quả' : pending ? 'Đang tìm…' : `${result.total} khách · Trang ${page}/${Math.max(1, Math.ceil(result.total / 20))}`}</small><button type="button" disabled={disabled || pending || page * 20 >= result.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>
+    {result.total > 20 && <div className="customer-picker-pages"><button type="button" disabled={disabled || pending || page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><small role="status">{error ? 'Không tải được kết quả' : pending ? 'Đang tìm…' : `${result.total} khách · Trang ${page}/${Math.max(1, Math.ceil(result.total / 20))}`}</small><button type="button" disabled={disabled || pending || page * 20 >= result.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>}
+    {pending && <small role="status">Đang tìm…</small>}
     {fieldError && <small className="field-error" role="alert">{fieldError}</small>}{error && <p className="negative" role="alert">{error}</p>}
   </div>;
 }

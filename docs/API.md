@@ -685,3 +685,5 @@ PROPOSED compatibility: invoices entirely lacking line IDs retain aggregate paym
 - Tạo một hóa đơn bán gói `PACKAGE` chứa nhiều dòng `packageItems`, gán đầy đủ `packageType`, `totalSessions`, `durationMonths`, `startsOn`, `sellerId`, `sellerName`.
 - Khởi tạo số lượng bản ghi `Treatment` tương ứng cho từng dòng gói.
 - Giữ vững tính bất biến Idempotency: retry cùng `Idempotency-Key` trả về đúng hóa đơn ban đầu và không nhân đôi số lượng `Treatment` hay hoa hồng tư vấn 5%.
+
+2026-11-02: sellPackage.dueDate is optional. Blank input is normalized to undefined; no default deadline is assigned. Supplied dates retain calendar and sale-day validation. Applies equally inside checkout.

@@ -29,7 +29,7 @@ import StaffDetail from '@/components/staff-detail';
 import PayrollPanel from '@/components/payroll';
 import Products from '@/components/products';
 import ProductImagePicker from '@/components/product-image-picker';
-import type { ListFilters } from '@/lib/workspace-filters';
+import { invoiceLandingFilters, type ListFilters } from '@/lib/workspace-filters';
 import InvoiceDetail from '@/components/invoice-detail';
 import CustomerPicker from '@/components/customer-picker';
 import AuditLog from '@/components/audit-log';
@@ -113,9 +113,14 @@ export default function Workspace() {
   const [period, setPeriod] = useState({ from: '', to: '' });
   const [auditFilters, setAuditFilters] = useState({ search: '', actor: '', action: '', from: '', to: '' });
   const filterValues = Object.fromEntries(['status', 'employee', 'method', 'direction', 'category', 'customer', 'from', 'to'].map(key => [key, searchParams.get(key) || ''])) as ListFilters;
+  if (tab === 'invoices') Object.assign(filterValues, invoiceLandingFilters(new URLSearchParams(searchParams.toString()), data?.today || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })));
   const agendaView = searchParams.get('layout') === 'agenda';
   function setFilters(changes: Partial<ListFilters>) {
     const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'invoices') {
+      params.set('dateScope', 'custom');
+      for (const key of ['from', 'to'] as const) if (!(key in changes) && filterValues[key]) params.set(key, filterValues[key]);
+    }
     for (const [key, value] of Object.entries(changes)) { if (value) params.set(key, value); else params.delete(key); }
     window.history.replaceState(null, '', pathname + (params.size ? '?' + params.toString() : ''));
   }
@@ -537,13 +542,13 @@ export default function Workspace() {
             <h1>{pageTitle}</h1>
             <p>{headers[tab]}</p>
           </div>
-          {!['cash_cards', 'overview', 'cashier', 'reports', 'days', 'salary', 'commission', 'audit', 'products', 'product_groups', 'inventory'].includes(tab) && (
+          {!['invoices', 'cash_cards', 'overview', 'cashier', 'reports', 'days', 'salary', 'commission', 'audit', 'products', 'product_groups', 'inventory'].includes(tab) && (
             <input className="search" maxLength={100} placeholder="Tìm trong danh sách…" aria-label="Tìm kiếm" value={search} onCompositionStart={() => { composingSearch.current = true; clearTimeout(searchTimer.current); }} onCompositionEnd={e => { composingSearch.current = false; setSearch(e.currentTarget.value); }} onChange={e => setSearch(e.target.value)} />
           )}
         </div>
         {error && !modal && <div className="alert error" role="alert">{error}</div>}
         {notice && <div className="alert success" role="status">{notice}</div>}
-        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} onChange={setFilters} />{viewPending && !['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(tab) ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
+        <ListFiltersBar section={tab} values={filterValues} today={data.today} staff={data.staff} categories={serviceGroupNames(data.serviceGroups||[],data.services)} searchControl={tab === 'invoices' ? <input className="search" maxLength={100} placeholder="Tìm khách hàng, mã hóa đơn…" aria-label="Tìm kiếm hóa đơn" value={search} onCompositionStart={() => { composingSearch.current = true; clearTimeout(searchTimer.current); }} onCompositionEnd={e => { composingSearch.current = false; setSearch(e.currentTarget.value); }} onChange={e => setSearch(e.target.value)} /> : undefined} onChange={setFilters} />{viewPending && !['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(tab) ? <p role="status">{'Đang tải dữ liệu...'}</p> : content}
         <footer>SpaCare · MVP nội bộ <span>Giờ Việt Nam · VNĐ</span></footer>
       </div>
     </main>

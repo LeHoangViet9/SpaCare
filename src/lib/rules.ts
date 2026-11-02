@@ -61,7 +61,8 @@ export function confirmation(method: string, reason: string, evidence: string) {
 }
 
 // The date is selected for this sale; no default 7/14-day policy is inferred.
-export function packagePaymentDeadline(dueDate: string, today = spaDay()) {
+export function packagePaymentDeadline(dueDate: string | undefined, today = spaDay()) {
+  if (!dueDate) return undefined;
   dayBounds(dueDate);
   ensure(dueDate >= today, 'Hạn thanh toán không được trước ngày bán.');
   return dueDate;

@@ -1,10 +1,11 @@
 'use client';
+import type { ReactNode } from 'react';
 import CompactDateInput from './compact-date-input';
 import { statusChoices } from '@/lib/workspace-query';
 import { datePreset, type ListFilters } from '@/lib/workspace-filters';
 type Row = Record<string, any>;
-export default function ListFiltersBar({ section, values, today, staff, categories, onChange }: {
-  section: string; values: ListFilters; today: string; staff: Row[]; categories: string[]; onChange: (values: Partial<ListFilters>) => void;
+export default function ListFiltersBar({ section, values, today, staff, categories, onChange, searchControl }: {
+  searchControl?: ReactNode; section: string; values: ListFilters; today: string; staff: Row[]; categories: string[]; onChange: (values: Partial<ListFilters>) => void;
 }) {
   const dated = ['appointments', 'invoices', 'cash', 'packages', 'deposits', 'days', 'treatment_uses'].includes(section);
   const people = ['appointments', 'cash', 'treatment_uses'].includes(section);
@@ -12,7 +13,9 @@ export default function ListFiltersBar({ section, values, today, staff, categori
   const options = statusChoices[section] || [];
   if (!dated && !people && !groups && !options.length) return null;
   const changed = Object.values(values).some(Boolean);
-  return <section className="list-filters" aria-label="Bộ lọc danh sách">
+  const compact = section === 'invoices';
+  const controls = <>
+    {searchControl}
     <div className="filter-shortcuts">
       {dated && <><button type="button" aria-pressed={values.from === today && values.to === today} onClick={() => onChange(datePreset('today', today))}>Hôm nay</button>
         <button type="button" onClick={() => onChange(datePreset(section === 'appointments' ? 'week' : 'month', today))}>{section === 'appointments' ? '7 ngày tới' : 'Tháng này'}</button></>}
@@ -26,5 +29,11 @@ export default function ListFiltersBar({ section, values, today, staff, categori
       {groups && <label>Nhóm dịch vụ<select value={values.category} onChange={e => onChange({ category: e.target.value })}><option value="">Tất cả nhóm</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label>}
       {section === 'cash' && <><label>Phương thức<select value={values.method} onChange={e => onChange({ method: e.target.value })}><option value="">Tất cả</option><option value="CASH">Tiền mặt</option><option value="BANK_TRANSFER">Ngân hàng</option></select></label><label>Thu / Chi<select value={values.direction} onChange={e => onChange({ direction: e.target.value })}><option value="">Tất cả</option><option value="IN">Thu</option><option value="OUT">Chi</option></select></label></>}
     </div>
+  </>;
+  return <section className="list-filters" aria-label="Bộ lọc danh sách">
+    {compact ? <details className="invoice-filter-details">
+      <summary>{values.from === today && values.to === today ? 'Hôm nay' : values.from || values.to ? `${values.from || '…'} → ${values.to || '…'}` : 'Tất cả ngày'}{values.status ? ` · ${options.find(([key]) => key === values.status)?.[1] || values.status}` : ''} · Tìm kiếm / Lọc</summary>
+      {controls}
+    </details> : controls}
   </section>;
 }

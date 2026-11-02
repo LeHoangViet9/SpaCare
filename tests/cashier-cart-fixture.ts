@@ -78,3 +78,7 @@ assert.equal(optionalSession.data.staffId,undefined);
 assert.equal(optionalSession.data.treatments[0].performerId,'b');
 assert.equal(optionalSession.data.additionalServices[0].performerId,undefined);
 assert.throws(()=>cashierActions({...base,products:[],packages:[]}),/ít nhất/);
+
+const noDeadline = cashierActions({...base,dueDate:''}).filter(row=>row.action==='sellPackage');
+assert.ok(noDeadline.length>0);
+assert.ok(noDeadline.every(row=>!Object.hasOwn(row.data,'dueDate')));

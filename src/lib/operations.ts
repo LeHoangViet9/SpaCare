@@ -1230,7 +1230,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             participants.push({staffId:person._id,staffName:person.name});
           }
           const seller = participants[0];
-          const invoice = groupedPackageSale && packageInvoice ? packageInvoice : await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, dueDate: d.dueDate, kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
+          const invoice = groupedPackageSale && packageInvoice ? packageInvoice : await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, ...(d.dueDate ? { dueDate: d.dueDate } : {}), kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
           target = await create(Treatment, { customerId: d.customerId, serviceId: service._id, templateId: template._id, invoiceId: invoice._id, name: template.name, ...packageSnapshot(template, startsOn) });
           if(groupedPackageSale) {
             if(packageInvoice) {

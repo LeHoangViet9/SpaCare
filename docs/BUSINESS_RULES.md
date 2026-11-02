@@ -788,3 +788,6 @@ Trạng thái: CONFIRMED & PROPOSED kỹ thuật.
 - Mở rộng whitelist máy chủ push được phép (`allowedPushEndpoint`): hỗ trợ Android FCM/GCM (`android.googleapis.com`), Apple APNs Web Push (`*.push.apple.com`, `api.push.apple.com`, `web.push.apple.com`), Mozilla (`updates.push.services.mozilla.com`), Windows WNS (`*.notify.windows.com`).
 - Tự động dọn dẹp subscription hết hạn/lỗi: khi endpoint phản hồi HTTP 400 (Bad Request / DeviceTokenNotForTopic / InvalidRegistration), HTTP 404 hoặc HTTP 410, hệ thống tự động xóa bản ghi `PushDevice` tương ứng để ngăn chặn gửi lặp và spam log.
 - Bảo mật: Tuyệt đối không log subscription token, push endpoint đầy đủ, private key hay dữ liệu định danh khách hàng. Không dùng khóa production trong môi trường test.
+
+## Optional payment deadline (2026-11-02)
+CONFIRMED latest user request supersedes the required package-sale deadline: payment deadline is optional, including package sales in cashier. Blank or omitted means no due date, without an inferred default. An entered package deadline must still be valid and not precede the sale day. Existing invoice deadlines are not changed by this update. Outstanding balances remain payable regardless of whether a deadline exists.

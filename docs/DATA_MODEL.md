@@ -588,3 +588,5 @@ Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment l
 - `Invoice.packageItems[].sellerId?: ObjectId`: Nhân viên tư vấn/bán gói tương ứng cho dòng này.
 - `Invoice.packageItems[].sellerName?: string`: Tên nhân viên tư vấn/bán gói tương ứng cho dòng này.
 - Cho phép lưu trữ độc lập từng dòng gói khi khách mua cùng lúc từ 2 gói trở lên (kể cả cùng một mẫu `templateId`) trên cùng một hóa đơn thanh toán.
+
+2026-11-02: PACKAGE invoices may omit dueDate, as other invoice kinds already can. No migration or index change; existing deadlines remain intact. Overdue filtering continues to require an actual deadline and outstanding debt.

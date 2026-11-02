@@ -114,3 +114,9 @@ test('arrival hours accept closing time without requiring an end time', () => {
   for (const time of ['08:59','22:01']) assert.equal(withinArrivalHours(at(time)), false);
   assert.equal(withinArrivalHours(new Date('invalid')), false);
 });
+
+test('optional package deadline leaves no due date and preserves supplied-date validation', () => {
+  assert.equal(packagePaymentDeadline(undefined, '2026-11-02'), undefined);
+  assert.equal(packagePaymentDeadline('', '2026-11-02'), undefined);
+  assert.throws(() => packagePaymentDeadline('2026-11-01', '2026-11-02'));
+});
