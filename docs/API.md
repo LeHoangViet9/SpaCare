@@ -22,6 +22,23 @@ API dùng cookie session cùng origin. Phải đăng nhập, không chấp nhậ
 | GET /api/workspace | Dữ liệu theo spa/quyền; danh sách phân trang, số tổng quan aggregate toàn bộ |
 | POST /api/operations | `{action,data}` + header `Idempotency-Key` |
 
+Tra cứu dòng đảo trong sổ thu chi (03/11/2026): `pages.cash.rows` và `cash` bổ sung
+`reversalInvoiceCode` khi dòng REVERSAL có `originalId` trỏ đến CashEntry PAYMENT,
+Payment có `receiptId` tương ứng và Invoice có mã gốc hợp lệ. Mỗi truy vấn tham
+chiếu đều giới hạn `spaId` từ phiên; chỉ nạp tham chiếu cho trang đang đọc, kể cả
+Payment đã đảo và Invoice CANCELLED. Dùng helper `invoiceCode` với riêng `code`
+gốc, không dùng `effectiveCode` hoặc fallback từ ObjectId. Thiếu liên kết/mã hợp
+lệ thì không trả trường này. Đây là projection chỉ đọc; giữ nguyên `originalId`,
+mã giao dịch, phạm vi dòng được xem, phân trang và tổng thu/chi. UI hiển thị
+“Hóa đơn: HD…” riêng với mã giao dịch gốc, không mở rộng quyền xem chi tiết hóa đơn.
+
+Bổ sung 03/11/2026: dòng `PAYMENT` của trang sổ thu chi có `paymentInvoiceCode`
+khi `CashEntry._id` → `Payment.receiptId` → `Payment.invoiceId` → `Invoice.code`
+liên kết hợp lệ cùng spa. Dùng chung lookup theo lô với REVERSAL, không lọc bỏ
+khoản thu đã đảo khi tra cứu lịch sử. Thiếu liên kết hoặc mã gốc hợp lệ thì không
+trả trường này; không dựng mã từ ObjectId. Projection không đổi dữ liệu, bộ lọc
+loại cặp đảo hay công thức tổng tiền.
+
 Ví dụ tạo lịch, thời gian phải có UTC offset:
 
 ```json

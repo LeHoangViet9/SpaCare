@@ -1,6 +1,5 @@
 'use client';
 import InvoiceReplacement, { InvoiceDocumentHistory } from './invoice-replacement';
-import InvoiceAppointmentLink from './invoice-appointment-link';
 import InvoiceCorrectionMenu from './invoice-correction-menu';
 import { invoiceCode } from '@/lib/invoice-code';
 import CashCards from './cash-cards';
@@ -12,7 +11,7 @@ import { auditActions } from '@/lib/audit-view';
 import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
-export default function InvoiceDetail({ replacementStaff, onReplacement, onLinkAppointment, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { replacementStaff?:Row[]; onReplacement?:()=>void; onLinkAppointment?:(values:Row)=>Promise<void>; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
+export default function InvoiceDetail({ replacementStaff, onReplacement, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCancel, onDelete, canManageCards }: { replacementStaff?:Row[]; onReplacement?:()=>void; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
@@ -26,13 +25,12 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, onLinkA
   }, [record.id, record.kind, page, historyKind, revision]);
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
-    {record.kind === 'invoice' && data && !error && onLinkAppointment && <InvoiceAppointmentLink invoice={data.invoice} onLink={onLinkAppointment}/>}
     {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button></div>}
     {record.kind === 'invoice' && data && !error && <InvoiceCorrectionMenu invoice={data.invoice} onCancel={onCancel} onDelete={onDelete}/>}
-    {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
+    {record.kind === 'invoice' && data && !error && <PdfExport key={`pdf:${record.id}`} endpoint={`/api/invoices/${record.id}/export`} />}
 
     {record.kind === 'invoice' && data && !error && <InvoiceDocumentHistory invoice={data.invoice}/>}
-    {record.kind === 'invoice' && data && !error && replacementStaff && <InvoiceReplacement key={String(data.invoice.activeDocumentId || data.invoice._id)} invoice={data.invoice} staff={replacementStaff} onChanged={()=>{setRevision(v=>v+1);onReplacement?.();}}/>}
+    {record.kind === 'invoice' && data && !error && replacementStaff && <InvoiceReplacement key={`replacement:${data.invoice.activeDocumentId || data.invoice._id}`} invoice={data.invoice} staff={replacementStaff} onChanged={()=>{setRevision(v=>v+1);onReplacement?.();}}/>}
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
       <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>
       {record.kind === 'customer' && <>
@@ -46,7 +44,6 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, onLinkA
         <h3 className="customer-history-title">{({invoices:'Hóa đơn và chữ ký',appointments:'Lịch hẹn của khách',treatments:'Liệu trình đã mua',cards:'Thẻ tiền mặt của khách'} as Record<string,string>)[historyKind]}</h3>
       </>}
       {record.kind === 'customer' && historyKind === 'cards' && canManageCards && <CashCards customerId={record.id} onChanged={()=>setRevision(v=>v+1)} />}
-      {record.kind === 'invoice' && (!data.invoice.kind || data.invoice.kind === 'SERVICE') && (data.invoice.serviceId || data.invoice.serviceItems?.length) && !data.invoice.productItems?.length && !data.invoice.treatmentId && !data.invoice.treatmentUseId && <CashCards customerId={String(data.invoice.customerId)} invoice={data.invoice} onChanged={()=>setRevision(v=>v+1)} />}
       {record.kind === 'customer' ? historyKind === 'cards' ? null : <><div className="invoice-history">{data.rows.map((i: Row) => data.kind === 'invoices' ? <button key={i._id} onClick={() => onInvoice(i._id)}><strong className="invoice-code">{invoiceCode(i)}</strong><strong>{i.description}</strong><span>{new Date(i.createdAt).toLocaleString('vi-VN')} · {money(i.total)}</span></button> : <article key={i._id}><strong>{data.kind === 'treatments' ? i.name : new Date(i.startAt).toLocaleString('vi-VN')}</strong>{i.serviceName && <p>{i.serviceName}{i.staffName ? ' · ' + i.staffName : ''}</p>}<p>{({ ACTIVE: 'Đang dùng', PAUSED: 'Bảo lưu', COMPLETED: 'Hoàn thành', CONFIRMED: 'Đã đặt', POSTPONED: 'Đã hoãn', CANCELLED: 'Đã hủy' } as Record<string, string>)[i.status] || i.status}{data.kind === 'treatments' ? ` · ${packageLabel(i)}${i.giftOfInvoiceId ? ' · Quà tặng' : ''}` : i.notes ? ' · ' + i.notes : ''}</p></article>)}{!data.total && <p>{historyKind === 'appointments' ? 'Khách chưa có lịch hẹn trong phạm vi được xem.' : historyKind === 'treatments' ? 'Khách chưa có liệu trình trong phạm vi được xem.' : 'Khách chưa có hóa đơn trong phạm vi được xem.'}</p>}</div>
         {data.total > 10 && <div className="customer-picker-pages"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</> : <>
         <p><strong className="invoice-code">{invoiceCode(data.invoice)}</strong> · {new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</p>

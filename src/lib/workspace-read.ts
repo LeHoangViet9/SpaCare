@@ -1,4 +1,5 @@
 import { staffReadScope } from './staff-read-scope';
+import { cashReversalReferences } from './cash-reversal-reference';
 import { ServiceGroup } from './models';
 import { availableTreatmentFilter } from './treatment-rules';
 import mongoose from 'mongoose';
@@ -127,6 +128,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     ]),
   ]);
   if (collection) pages[collection] = primaryPage;
+  if (pages.cash) pages.cash.rows = await cashReversalReferences(user.spaId, listed('cash'));
   if(finance && pages.days) {
     const openDays=listed('days').filter(day=>day.status==='OPEN');
     const flows=openDays.length ? await CashEntry.aggregate([
