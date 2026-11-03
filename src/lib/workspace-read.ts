@@ -12,6 +12,7 @@ import { auditActions } from './audit-view';
 import { sectionCollection, literalPattern, workspaceQuery } from './workspace-query';
 import { listFilter } from './workspace-filters';
 import type { Actor } from './auth';
+import { cashFlowMatch } from './cash-flow';
 
 type Row = Record<string, any>;
 export async function readWorkspace(user: Actor, query: ReturnType<typeof workspaceQuery>) {
@@ -99,7 +100,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     let summary;
     if (collection === 'cash') {
       const match = models.cash.find(filter).cast(models.cash);
-      const result = await CashEntry.aggregate([{ $match: match }, { $group: { _id: null,
+      const result = await CashEntry.aggregate([{ $match: cashFlowMatch(match) }, { $group: { _id: null,
         incoming: { $sum: { $cond: [{ $eq: ['$direction', 'IN'] }, '$amount', 0] } },
         outgoing: { $sum: { $cond: [{ $eq: ['$direction', 'OUT'] }, '$amount', 0] } },
       } }]);
@@ -131,7 +132,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   if(finance && pages.days) {
     const openDays=listed('days').filter(day=>day.status==='OPEN');
     const flows=openDays.length ? await CashEntry.aggregate([
-      {$match:{spaId:new mongoose.Types.ObjectId(user.spaId),day:{$in:openDays.map(day=>day.day)}}},
+      {$match:cashFlowMatch({spaId:new mongoose.Types.ObjectId(user.spaId),day:{$in:openDays.map(day=>day.day)}})},
       {$group:{_id:{day:'$day',method:'$method',direction:'$direction'},amount:{$sum:'$amount'}}},
     ]) : [];
     pages.days.rows=listed('days').map(day=>{
@@ -183,7 +184,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const [debt, credit, flow, bookings, treatmentStats, useCount] = await Promise.all([
     user.role === 'OWNER' && query.section === 'overview' ? Invoice.aggregate([{ $match: aggregateScope }, { $group: { _id: null, total: { $sum: { $subtract: ['$total', '$paid'] } } } }]) : [],
     user.role === 'OWNER' && query.section === 'overview' ? Deposit.aggregate([{ $match: aggregateScope }, { $group: { _id: null, total: { $sum: '$balance' } } }]) : [],
-    user.role === 'OWNER' && query.section === 'overview' ? CashEntry.aggregate([{ $match: { ...aggregateScope, day: today } }, { $group: { _id: '$direction', total: { $sum: '$amount' } } }]) : [],
+    user.role === 'OWNER' && query.section === 'overview' ? CashEntry.aggregate([{ $match: cashFlowMatch({ ...aggregateScope, day: today }) }, { $group: { _id: { method: '$method', direction: '$direction' }, total: { $sum: '$amount' } } }]) : [],
     query.section === 'overview' ? Appointment.countDocuments({ ...filters.appointments, startAt: { $gte: new Date(today + 'T00:00:00+07:00'), $lt: new Date(new Date(today + 'T00:00:00+07:00').getTime() + 86400_000) }, status: { $in: finance && query.section === 'overview' ? ['CONFIRMED', 'COMPLETED'] : ['CONFIRMED'] } }) : 0,
     query.section === 'treatment_uses' ? Treatment.aggregate([{ $match: Treatment.find(access.treatments).cast(Treatment) }, { $group: { _id: null, count: { $sum: 1 }, remaining: { $sum: '$remaining' }, active: { $sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] } } } }]) : [],
     query.section === 'treatment_uses' ? TreatmentUse.countDocuments(access.uses) : 0,
@@ -192,7 +193,11 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   if (query.section === 'reports') {
     report = await readReport(user, query);
   }
+  const overviewFlow = (method: string, direction: string) =>
+    flow.find(f => f._id.method === method && f._id.direction === direction)?.total || 0;
+  const overviewTotal = (direction: string) =>
+    flow.filter(f => f._id.direction === direction).reduce((sum, f) => sum + f.total, 0);
   const paymentInfo = finance || invoices.length ? { bankName: process.env.BANK_NAME || '', accountNumber: process.env.BANK_ACCOUNT_NUMBER || '', accountName: process.env.BANK_ACCOUNT_NAME || '', qrImagePath: /^\/[a-zA-Z0-9_./-]+$/.test(process.env.BANK_QR_IMAGE_PATH || '') && !(process.env.BANK_QR_IMAGE_PATH || '').includes('..') && !(process.env.BANK_QR_IMAGE_PATH || '').startsWith('//') ? process.env.BANK_QR_IMAGE_PATH : '' } : undefined;
   return { user, today, todayDay, pages, products, productGroups, serviceGroups, packageTemplates, customers, services, staff, appointments, invoices, deposits, allocations: listed('allocations'), cash: listed('cash'), treatments: packages, uses: listed('uses'), days: listed('days'), audit: listed('audit'), paymentInfo, report,
-    totals: { debt: debt[0]?.total || 0, credit: credit[0]?.total || 0, inflow: flow.find(f => f._id === 'IN')?.total || 0, outflow: flow.find(f => f._id === 'OUT')?.total || 0, bookings, treatments: treatmentStats[0]?.count || 0, remaining: treatmentStats[0]?.remaining || 0, activeTreatments: treatmentStats[0]?.active || 0, uses: useCount } };
+    totals: { debt: debt[0]?.total || 0, credit: credit[0]?.total || 0, inflow: overviewTotal('IN'), outflow: overviewTotal('OUT'), cashInflow: overviewFlow('CASH', 'IN'), bankInflow: overviewFlow('BANK_TRANSFER', 'IN'), bookings, treatments: treatmentStats[0]?.count || 0, remaining: treatmentStats[0]?.remaining || 0, activeTreatments: treatmentStats[0]?.active || 0, uses: useCount } };
 }

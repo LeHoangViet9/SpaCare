@@ -9,6 +9,7 @@ const { default: CashEntryNote } = await tsImport('../src/components/cash-entry-
 const { CashEntry, Payment, Invoice, allModels } = await tsImport('../src/lib/models.ts', import.meta.url);
 const { readWorkspace } = await tsImport('../src/lib/workspace-read.ts', import.meta.url);
 const { workspaceQuery } = await tsImport('../src/lib/workspace-query.ts', import.meta.url);
+const { cashFlowEntries } = await tsImport('../src/lib/cash-flow.ts', import.meta.url);
 const spaId = 'a'.repeat(24), foreignSpa = 'f'.repeat(24);
 const id = n => n.toString(16).padStart(24, '0');
 const originals = [
@@ -121,19 +122,25 @@ test('workspace enriches its cash page without changing summary aggregation, amo
   let aggregations = 0;
   t.mock.method(CashEntry, 'aggregate', async pipeline => {
     aggregations++;
-    assert.deepEqual(pipeline[0].$match.$and[0], { spaId });
+    assert.deepEqual(pipeline[0].$match.$and[0].$and[0], { spaId });
+    assert.deepEqual(pipeline[0].$match.$and.slice(1), [
+      { reversed: { $ne: true } },
+      { $nor: [{ kind: 'REVERSAL', originalId: { $exists: true, $ne: null } }] },
+    ]);
     assert.deepEqual(pipeline[1], { $group: { _id: null,
       incoming: { $sum: { $cond: [{ $eq: ['$direction', 'IN'] }, '$amount', 0] } },
       outgoing: { $sum: { $cond: [{ $eq: ['$direction', 'OUT'] }, '$amount', 0] } },
     } });
-    return [{ incoming: 150, outgoing: 100 }];
+    return [cashFlowEntries(ledger).reduce((total, entry) => {
+      total[entry.direction === 'IN' ? 'incoming' : 'outgoing'] += entry.amount;
+      return total;
+    }, { incoming: 0, outgoing: 0 })];
   });
   const result = await readWorkspace({ id: id(200), spaId, role: 'OWNER', name: 'Test' }, workspaceQuery(new URLSearchParams({ section: 'cash' })));
   assert.equal(aggregations, 1);
-  assert.deepEqual(result.pages.cash.summary, { incoming: 150, outgoing: 100 });
+  assert.deepEqual(result.pages.cash.summary, { incoming: 50, outgoing: 0 });
   assert.equal(result.pages.cash.total, ledger.length);
   assert.equal(result.pages.cash.rows[1].reversalInvoiceCode, 'HD000067');
   assert.deepEqual(result.cash.map(({ reversalInvoiceCode, ...row }) => row), ledger);
-  const active = entries => entries.filter(row => !row.reversed && row.kind !== 'REVERSAL');
-  assert.deepEqual(active(result.cash), active(ledger), 'existing exclusion of reversal pairs remains identical');
+  assert.deepEqual(cashFlowEntries(result.cash), cashFlowEntries(ledger), 'production exclusion of reversal pairs remains identical');
 });
