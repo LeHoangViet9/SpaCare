@@ -1,5 +1,18 @@
 # SpaCare — Business Rules
 
+## Giao diện xử lý hóa đơn nhập sai
+
+CONFIRMED theo yêu cầu giao diện: gom sửa nội dung, sửa ngày, thay tư vấn và vô
+hiệu hóa vào một điểm vào trong chi tiết hóa đơn; giữ luồng hủy chưa thanh toán.
+Không mở rộng quyền hoặc bỏ guard của bất kỳ action nào. Gói đã có lượt dùng
+không được sửa nội dung trực tiếp; sửa ngày và thay tư vấn là luồng riêng, không
+đổi giá, số buổi, TreatmentUse hay chữ ký. Chưa có chính sách điều chỉnh nội dung
+gói đã dùng; không tự tạo chứng từ hoặc đảo tiền để thay thế luồng còn thiếu.
+
+PROPOSED kỹ thuật: dùng projection lý do chỉ đọc để giải thích chặn đã biết. Mỗi
+action vẫn kiểm quyền/phiên bản/ngày/ledger và tham chiếu trong transaction khi
+xác nhận; UI không coi projection là giấy phép ghi.
+
 ## BR-INV-REPLACE-001 — Thay tư vấn qua chứng từ thay thế — 02/11/2026
 
 CONFIRMED — nguồn: xác nhận của chủ spa do người dùng cung cấp ngày 02/11/2026, ưu tiên hơn mô tả PROPOSED trước đây:

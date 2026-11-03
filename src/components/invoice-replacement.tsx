@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { historicalInvoiceCode, invoiceCode } from '@/lib/invoice-code';
 import { formatCurrency as money } from '@/lib/currency';
 type Row=Record<string,any>;
-export default function InvoiceReplacement({invoice,staff,onChanged}:{invoice:Row;staff:Row[];onChanged:()=>void}) {
+export default function InvoiceReplacement({invoice,staff,onChanged,buttonLabel='Thay thế chứng từ sửa tư vấn bán gói'}:{invoice:Row;staff:Row[];onChanged:()=>void;buttonLabel?:string}) {
   const [open,setOpen]=useState(false),[oldStaffId,setOld]=useState(''),[newStaffId,setNew]=useState('');
   const [reason,setReason]=useState(''),[preview,setPreview]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const keys=useRef(new Map<string,string>()),sending=useRef(false);
@@ -25,7 +25,7 @@ export default function InvoiceReplacement({invoice,staff,onChanged}:{invoice:Ro
   };
   if(invoice.kind!=='PACKAGE' || invoice.status==='CANCELLED' || invoice.openingBalance)return null;
   return <section className="invoice-replacement" aria-label="Thay thế chứng từ bán gói">
-    <button type="button" disabled={busy} onClick={()=>setOpen(!open)}>Thay thế chứng từ sửa tư vấn bán gói</button>
+    <button type="button" disabled={busy} onClick={()=>setOpen(!open)}>{buttonLabel}</button>
     {open && <form onSubmit={e=>{e.preventDefault();void perform(!!preview);}}>
       <p>Chứng từ hiện hành: <strong>{invoiceCode(invoice)}</strong>. Chỉ sửa người tư vấn bán gói; giữ nguyên khoản thu, gói và buổi thật.</p>
       <label>Người tư vấn cũ<select required disabled={busy} value={oldStaffId} onChange={e=>{setOld(e.target.value);setPreview(null);}}><option value="">Chọn người cần thay</option>{participants.map((p:Row)=><option key={p.staffId} value={p.staffId}>{p.staffName}</option>)}</select></label>

@@ -1,13 +1,41 @@
 const {test,expect}=require('@playwright/test');
 
+for(const scenario of ['unused','used','pending','paid','closed','staff'])test(`handling menu explains restrictions and sends no unexpected writes (${scenario})`,async({page},testInfo)=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto('/?detail=1&scenario='+scenario);
+ const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'});
+ await expect(dialog.getByText('Xử lý hóa đơn',{exact:true})).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true})).toBeHidden();
+ expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ await dialog.getByText('Xử lý hóa đơn',{exact:true}).click();
+ const edit=dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true}),date=dialog.getByRole('button',{name:'Sửa ngày hóa đơn',exact:true}),voidButton=dialog.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true});
+ if(scenario==='unused'){
+  await expect(edit).toBeEnabled();await expect(voidButton).toBeEnabled();await edit.click();await voidButton.click();
+ }else{
+  await expect(edit).toBeDisabled();
+  if(scenario==='used'){await expect(dialog.getByText(/Chưa có luồng sửa nội dung an toàn/).first()).toBeVisible();await expect(voidButton).toBeDisabled();}
+  if(scenario==='pending'){await expect(dialog.getByText(/Gói còn lịch hẹn/)).toBeVisible();await expect(voidButton).toBeDisabled();}
+  if(scenario==='paid'){await expect(dialog.getByText(/đã thanh toán, áp cọc/).first()).toBeVisible();await expect(voidButton).toBeEnabled();}
+  if(scenario==='closed'){await expect(date).toBeDisabled();await expect(dialog.getByText(/Ngày lập hóa đơn đã chốt sổ/).first()).toBeVisible();}
+  if(scenario==='staff')await expect(voidButton).toBeDisabled();
+ }
+ if(!['closed','staff'].includes(scenario)){await expect(date).toBeEnabled();await date.click();}
+ const calls=await page.evaluate(()=>window.__replacementCalls);
+ expect(calls.every(call=>call.opened)).toBe(true);
+ expect(calls.map(call=>call.opened)).toEqual(scenario==='unused'?['updateInvoice','deleteInvoice','correctInvoiceDate']:['closed','staff'].includes(scenario)?[]:['correctInvoiceDate']);
+ expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`outputs/invoice-handling-${scenario}-${testInfo.project.name}.png`,fullPage:true});
+});
+
 for(const initial of ['unreplaced','active'])test(`invoice detail has unique sibling keys and resets replacement state (${initial})`,async({page},testInfo)=>{
  const keyWarnings=[],pageErrors=[];
  page.on('console',message=>{if(/same key|unique.*key/i.test(message.text()))keyWarnings.push(message.text());});
  page.on('pageerror',error=>pageErrors.push(error.message));
  await page.goto('/?detail=1'+(initial==='unreplaced'?'&unreplaced=1':''));
  const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'});
+ await dialog.getByText('Xử lý hóa đơn',{exact:true}).click();
  await expect(dialog.getByRole('button',{name:'Tải PDF',exact:true})).toHaveCount(1);
- const toggle=dialog.getByRole('button',{name:'Thay thế chứng từ sửa tư vấn bán gói',exact:true});
+ const toggle=dialog.getByRole('button',{name:'Thay người tư vấn bán gói',exact:true});
  await expect(toggle).toHaveCount(1);await toggle.click();
  await dialog.getByLabel('Người tư vấn cũ').selectOption('b'.repeat(24));
  await dialog.getByLabel('Người tư vấn mới').selectOption('c'.repeat(24));
@@ -18,6 +46,7 @@ for(const initial of ['unreplaced','active'])test(`invoice detail has unique sib
  await expect(page.locator('#detail-done')).toHaveText('Đã thay thế thành công');
  await expect(dialog.locator('.invoice-code')).toHaveText('HD000002');
  await expect(dialog.getByRole('region',{name:'Xem trước thay thế'})).toHaveCount(0);
+ if(!await dialog.locator('.invoice-handling').evaluate(element=>element.open))await dialog.getByText('Xử lý hóa đơn',{exact:true}).click();
  await toggle.click();
  await expect(dialog.getByLabel('Người tư vấn cũ')).toHaveValue('');
  await expect(dialog.getByLabel('Người tư vấn mới')).toHaveValue('');

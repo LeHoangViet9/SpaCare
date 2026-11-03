@@ -224,6 +224,15 @@ form {
 .report-stat strong { display: block; font-size: clamp(22px, 2.3vw, 30px); overflow-wrap: anywhere; }
 .report-pagination { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 18px; }
 .invoice-replacement { margin: 16px 0; overflow-wrap: anywhere; }
+.invoice-handling { margin: 12px 0; border: 1px solid var(--border, #dce3dd); border-radius: 12px; background: #f8faf7; }
+.invoice-handling > summary { padding: 14px 16px; cursor: pointer; font-weight: 700; }
+.invoice-handling-body { padding: 0 16px 16px; display: grid; gap: 14px; overflow-wrap: anywhere; }
+.invoice-handling-body > p { margin: 0; }
+.invoice-handling-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 14px; border-top: 1px solid #dce3dd; }
+.invoice-handling-row button { white-space: normal; text-align: left; }
+.invoice-handling-row p { margin: 6px 0 0; color: #80513b; }
+.invoice-handling-row .invoice-replacement { margin: 0; }
+@media (min-width: 701px) { .invoice-handling-body { gap: 16px; } .invoice-handling-row > button { justify-self: start; } }
 .invoice-replacement form { display: grid; gap: 12px; margin-top: 12px; }
 .invoice-replacement label { display: grid; gap: 6px; }
 .invoice-replacement select, .invoice-replacement textarea { width: 100%; min-width: 0; }

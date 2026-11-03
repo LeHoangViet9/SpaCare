@@ -4,6 +4,7 @@ import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa, Appointment, Pa
 import { invoiceExport } from '../src/lib/export-read';
 import { readTreatmentSignature } from '../src/lib/treatment-signature';
 import { readInvoice } from '../src/lib/invoice-read';
+import { Allocation, CashCard, CashCardUse, Commission, Day, InvoiceLineCommission, SaleCommission, SharedSaleCommission } from '../src/lib/models';
 import type { Actor } from '../src/lib/auth';
 const id = 'a'.repeat(24), spaId = 'b'.repeat(24), packageId = 'c'.repeat(24), actorId = 'd'.repeat(24);
 const signature = { version: 1, strokes: [[[0, 0], [0.2, 0.2], [0.4, 0.3]]] };
@@ -23,6 +24,9 @@ mock.method(TreatmentUse, 'find', () => query([{ _id: 'use', treatmentId: packag
 mock.method(Audit, 'find', () => query([]));
 mock.method(Appointment, 'find', () => query([{ _id: 'appointment', staffId: actorId, status: 'COMPLETED', treatmentId: 'treatment' }]));
 const owner: Actor = { id: actorId, spaId, name: 'Owner', role: 'OWNER', cashier: true };
+for(const model of [Payment,CashCard,Commission,InvoiceLineCommission,SaleCommission,SharedSaleCommission])mock.method(model,'find',()=>query([]));
+for(const model of [TreatmentUse,Appointment,Allocation,CashCardUse])mock.method(model,'exists',async(filter:any)=>{assert.equal(filter.spaId,spaId);return null;});
+mock.method(Day,'findOne',()=>query(null));
 const result = await readInvoice(owner, id, 99);
 assert.equal(result.signaturePage, 2);
 assert.equal(offset, 5);

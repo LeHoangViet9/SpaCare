@@ -1,5 +1,16 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Điểm vào xử lý hóa đơn
+
+Chi tiết dùng mục mở rộng “Xử lý hóa đơn”; mỗi thao tác có mô tả, trạng thái và
+lý do chặn. Dùng lại form lý do/xác nhận và preview thay tư vấn hiện có. Sửa ngày
+được ghi rõ là sửa ngày, không chuyển âm thầm từ thao tác sửa nội dung bị chặn.
+Giao diện không mở request ghi khi chỉ mở menu. Giữ các liên kết ở danh sách.
+Để hỗ trợ điều chỉnh gói đã dùng về sau cần chính sách được chốt cho quyền lợi đã
+tiêu, công nợ/hoàn tiền và hoa hồng, rồi một action điều chỉnh có preview/version,
+transaction/idempotency/audit đồng bộ Treatment, TreatmentUse, chứng từ/ledger.
+Phần đó chưa được triển khai hoặc tự suy ra trong thay đổi giao diện này.
+
 ## Thay thế chứng từ sửa tư vấn bán gói — 02/11/2026
 
 CONFIRMED theo xác nhận chủ spa do người dùng cung cấp ngày 02/11/2026: một hóa đơn vận hành với lịch sử bản cũ và mã riêng cho chứng từ thay thế. Mọi phát sinh sau thay thế gắn với chứng từ hiện hành; bản cũ giữ để tra cứu, không cộng trùng doanh thu/hoa hồng. V1 chỉ thu đủ bằng một khoản trực tiếp, chưa hoàn/đảo; chặn cọc, thẻ, nhiều khoản thu và hóa đơn hỗn hợp. Chi tiết giao diện/lưu trữ và các hạn chế kỹ thuật khác bên dưới vẫn PROPOSED; không suy thêm quyền giao dịch từ xác nhận này.
