@@ -227,8 +227,10 @@ form {
 .invoice-handling { margin: 12px 0; border: 1px solid var(--border, #dce3dd); border-radius: 12px; background: #f8faf7; }
 .invoice-handling > summary { padding: 14px 16px; cursor: pointer; font-weight: 700; }
 .invoice-handling-body { padding: 0 16px 16px; display: grid; gap: 14px; overflow-wrap: anywhere; }
-.invoice-handling-body > p { margin: 0; }
+.invoice-handling-shared { padding: 10px 12px; border-radius: 8px; background: #f2ece5; }
+.invoice-handling-shared p { margin: 0 0 4px; color: #80513b; }
 .invoice-handling-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 14px; border-top: 1px solid #dce3dd; }
+.invoice-handling-row:first-child { padding-top: 0; border-top: 0; }
 .invoice-handling-row button { white-space: normal; text-align: left; }
 .invoice-handling-row p { margin: 6px 0 0; color: #80513b; }
 .invoice-handling-row .invoice-replacement { margin: 0; }
@@ -247,3 +249,16 @@ form {
   .reports-workspace .section-head input { max-width: none; }
   .report-pagination { gap: 10px; padding: 14px 8px; }
 }
+/* Invoice-only layout; customer profile and stored signatures stay unchanged. */
+.invoice-detail-summary { border:1px solid var(--line); border-radius:12px; padding:16px; }
+.invoice-detail-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; }
+.invoice-detail-heading time { font-size:13px; color:var(--muted); }
+.invoice-detail-summary h3 { overflow-wrap:anywhere; }
+.invoice-detail-summary .invoice-service-lines p:last-child { border-bottom:0; }
+.invoice-detail-summary .invoice-service-lines span { min-width:0; overflow-wrap:anywhere; }
+.invoice-detail-summary .invoice-detail-money { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding-top:16px; border-top:1px solid var(--line); }
+.invoice-detail-money > span { display:flex; flex-direction:column; gap:4px; font-size:13px; }
+.invoice-detail-money > span > strong { font-size:16px; overflow-wrap:anywhere; }
+.invoice-detail-signatures { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
+.invoice-detail-signatures .invoice-signature:last-child { margin-bottom:0; }
+@media (max-width:480px) { .invoice-detail-summary { padding:12px; } .invoice-detail-summary .invoice-detail-money { grid-template-columns:1fr; gap:8px; } .invoice-detail-money > span { flex-direction:row; justify-content:space-between; align-items:baseline; gap:12px; } }

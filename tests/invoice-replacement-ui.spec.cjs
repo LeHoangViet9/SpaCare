@@ -1,5 +1,32 @@
 const {test,expect}=require('@playwright/test');
 
+for(const display of ['signed','unsigned','empty','sessions'])test(`invoice keeps all service lines and shows only actual signatures (${display})`,async({page},testInfo)=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
+ await page.goto('/?detail=1&display='+display);
+ const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'}),summary=dialog.getByRole('region',{name:'Nội dung hóa đơn'}),signatures=dialog.getByRole('region',{name:'Chữ ký hóa đơn'});
+ await expect(summary).toContainText('HD000001');await expect(summary).toContainText('Khách fixture');await expect(summary).toContainText('0900000000');
+ const lines=summary.locator('.invoice-service-lines p');await expect(lines).toHaveCount(2);
+ await expect(lines.nth(0)).toContainText('Chăm sóc da');await expect(lines.nth(1)).toContainText('Gội đầu dưỡng sinh');
+ if(display!=='sessions'){
+  await expect(lines.nth(0).locator('strong')).toContainText('100.000');await expect(lines.nth(1).locator('strong')).toContainText('150.000');
+  const totals=summary.locator('.invoice-detail-money > span');await expect(totals.nth(0)).toContainText('250.000');await expect(totals.nth(1)).toContainText('150.000');await expect(totals.nth(2)).toContainText('100.000');
+ }else{await expect(lines.nth(0)).toContainText('Buổi 1');await expect(lines.nth(1)).toContainText('Buổi 1');}
+ await expect(dialog.getByText('Người thực hiện:',{exact:false})).toContainText('Kỹ thuật viên fixture');await expect(dialog.getByText('Người tạo:',{exact:false})).toContainText('Thu ngân fixture');
+ await expect(signatures).not.toContainText(/Buổi|Tên gói|Gói thứ hai|2026|Chăm sóc da|Gội đầu/);
+ if(display==='signed'){
+  await expect(signatures.getByRole('img',{name:'Chữ ký xác nhận của khách'})).toHaveCount(1);
+  expect(await signatures.locator('polyline').getAttribute('points')).toBe('60,66 180,154 480,44');
+  await expect(signatures.getByText('Không có chữ ký khách hàng.',{exact:true})).toHaveCount(0);
+ }else{
+  await expect(signatures.getByRole('img')).toHaveCount(0);await expect(signatures.getByText('Không có chữ ký khách hàng.',{exact:true})).toHaveCount(1);
+ }
+ expect(await signatures.evaluate(element=>element.parentElement.lastElementChild===element)).toBe(true);
+ expect(await summary.evaluate(element=>element.parentElement.children[1]===element)).toBe(true);
+ expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+ await page.screenshot({path:`outputs/invoice-layout-${display}-${testInfo.project.name}.png`,fullPage:true});
+});
+
 for(const scenario of ['unused','used','pending','paid','closed','staff'])test(`handling menu explains restrictions and sends no unexpected writes (${scenario})`,async({page},testInfo)=>{
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.goto('/?detail=1&scenario='+scenario);
@@ -13,12 +40,29 @@ for(const scenario of ['unused','used','pending','paid','closed','staff'])test(`
   await expect(edit).toBeEnabled();await expect(voidButton).toBeEnabled();await edit.click();await voidButton.click();
  }else{
   await expect(edit).toBeDisabled();
-  if(scenario==='used'){await expect(dialog.getByText(/Chưa có luồng sửa nội dung an toàn/).first()).toBeVisible();await expect(voidButton).toBeDisabled();}
-  if(scenario==='pending'){await expect(dialog.getByText(/Gói còn lịch hẹn/)).toBeVisible();await expect(voidButton).toBeDisabled();}
-  if(scenario==='paid'){await expect(dialog.getByText(/đã thanh toán, áp cọc/).first()).toBeVisible();await expect(voidButton).toBeEnabled();}
+  if(scenario==='used'){
+   await expect(dialog.getByText('Gói đã có buổi sử dụng; cần giữ nguyên lịch sử thực hiện.',{exact:true})).toHaveCount(1);
+   await expect(voidButton).toBeDisabled();
+   const shared=dialog.locator('.invoice-handling-shared').filter({hasText:'Gói đã có buổi sử dụng'});
+   await expect(shared).toContainText('Áp dụng: Sửa nội dung, Hủy, Vô hiệu hóa.');
+   const reasonId=await edit.getAttribute('aria-describedby');
+   expect(await voidButton.getAttribute('aria-describedby')).toBe(reasonId);
+   expect(await dialog.getByRole('button',{name:'Hủy hóa đơn chưa thanh toán',exact:true}).getAttribute('aria-describedby')).toBe(reasonId);
+  }
+  if(scenario==='pending'){
+   await expect(dialog.getByText('Liệu trình đã có lịch hẹn; cần xử lý liên kết trước.',{exact:true})).toHaveCount(1);
+   await expect(dialog.getByText('Gói còn lịch đang đặt hoặc hoãn; cần xử lý lịch trước khi vô hiệu hóa.',{exact:true})).toHaveCount(1);
+   await expect(voidButton).toBeDisabled();
+   expect(await voidButton.getAttribute('aria-describedby')).not.toBe(await edit.getAttribute('aria-describedby'));
+  }
+  if(scenario==='paid'){await expect(dialog.getByText(/Hóa đơn đã có thanh toán, cọc\/thẻ/)).toHaveCount(1);await expect(voidButton).toBeEnabled();}
   if(scenario==='closed'){await expect(date).toBeDisabled();await expect(dialog.getByText(/Ngày lập hóa đơn đã chốt sổ/).first()).toBeVisible();}
   if(scenario==='staff')await expect(voidButton).toBeDisabled();
  }
+ await expect(dialog.getByText(/Hệ thống kiểm tra lại hoa hồng/)).toHaveCount(0);
+ const descriptions=await dialog.locator('.invoice-handling-row > div > small').allTextContents();
+ expect(descriptions).toHaveLength(5);
+ expect(descriptions.every(text=>text.length<=90 && (text.match(/[.!?]/g)||[]).length<=1)).toBe(true);
  if(!['closed','staff'].includes(scenario)){await expect(date).toBeEnabled();await date.click();}
  const calls=await page.evaluate(()=>window.__replacementCalls);
  expect(calls.every(call=>call.opened)).toBe(true);

@@ -1,17 +1,22 @@
 'use client';
+import { useId } from 'react';
 import InvoiceReplacement from './invoice-replacement';
-import type { InvoiceHandling } from '@/lib/invoice-handling';
+import { groupInvoiceHandlingReasons, type InvoiceHandling } from '@/lib/invoice-handling';
 type Row=Record<string,any>;
+const actionNames: Record<keyof InvoiceHandling,string>={edit:'Sửa nội dung',date:'Sửa ngày',replace:'Thay tư vấn',cancel:'Hủy',void:'Vô hiệu hóa'};
 export default function InvoiceHandlingMenu({invoice,treatment,reasons,staff,onEdit,onDate,onCancel,onVoid,onReplaced}:{invoice:Row;treatment:Row|null;reasons?:InvoiceHandling;staff?:Row[];onEdit?:(invoice:Row,plan:Row|null)=>void;onDate?:(invoice:Row)=>void;onCancel?:(invoice:Row)=>void;onVoid?:(invoice:Row)=>void;onReplaced:()=>void}) {
-  const unavailable=(action:keyof InvoiceHandling,allowed:boolean)=>!allowed?'Chỉ chủ spa được thực hiện thao tác này.':!reasons?'Chưa tải được điều kiện xử lý. Đóng và mở lại chi tiết hóa đơn.':reasons[action];
-  const edit=unavailable('edit',!!onEdit),date=unavailable('date',!!onDate),replace=unavailable('replace',!!staff),cancel=unavailable('cancel',!!onCancel),voidReason=unavailable('void',!!onVoid);
+  const prefix=useId();
+  const unavailable=(action:keyof InvoiceHandling,allowed:boolean)=>!allowed?'Chỉ chủ spa được xử lý hóa đơn.':!reasons?'Chưa tải được điều kiện xử lý; hãy mở lại chi tiết hóa đơn.':reasons[action];
+  const blocked:InvoiceHandling={edit:unavailable('edit',!!onEdit),date:unavailable('date',!!onDate),replace:unavailable('replace',!!staff),cancel:unavailable('cancel',!!onCancel),void:unavailable('void',!!onVoid)};
+  const shared=groupInvoiceHandlingReasons(blocked);
+  const reasonId=(action:keyof InvoiceHandling)=>blocked[action] ? `${prefix}-${shared.find(group=>group.actions.includes(action))?.actions.join('-') || action}` : undefined;
+  const reason=(action:keyof InvoiceHandling)=>blocked[action] && !shared.some(group=>group.actions.includes(action)) ? <p id={reasonId(action)}>{blocked[action]}</p> : null;
   return <details className="invoice-handling"><summary>Xử lý hóa đơn</summary><div className="invoice-handling-body">
-    <p>Chọn đúng loại sai sót. Mỗi thao tác có bước nhập lý do và xác nhận riêng; hệ thống kiểm tra lại dữ liệu trước khi lưu.</p>
-    <div className="invoice-handling-row"><button type="button" disabled={!!edit} onClick={()=>onEdit?.(invoice,treatment)}>Sửa hóa đơn</button><div><small>Sửa nội dung, giá hoặc quyền lợi gói chưa phát sinh theo phạm vi đang hỗ trợ.</small>{edit && <p>{edit}</p>}</div></div>
-    <div className="invoice-handling-row"><button type="button" disabled={!!date} onClick={()=>onDate?.(invoice)}>Sửa ngày hóa đơn</button><div><small>Chỉ điều chỉnh ngày; giữ số tiền, buổi đã dùng và chữ ký. Ngày mới cũng phải chưa chốt sổ.</small>{date && <p>{date}</p>}</div></div>
-    <div className="invoice-handling-row"><div>{replace?<button type="button" disabled>Thay người tư vấn bán gói</button>:<InvoiceReplacement key={`replacement:${invoice.activeDocumentId || invoice._id}`} invoice={invoice} staff={staff!} onChanged={onReplaced} buttonLabel="Thay người tư vấn bán gói"/>}</div><div><small>Thay đúng người tư vấn bằng chứng từ thay thế. Không sửa giá, tên gói, số buổi hay lịch sử thực hiện. Cần xem trước và nhập lý do.</small>{replace && <p>{replace}</p>}</div></div>
-    <div className="invoice-handling-row"><button type="button" disabled={!!voidReason} onClick={()=>onVoid?.(invoice)}>Vô hiệu hóa hóa đơn nhập nhầm</button><div><small>Giữ chứng từ gốc; xử lý các phát sinh hợp lệ theo điều kiện hiện có. Không phải hoàn tiền thực tế.</small>{voidReason && <p>{voidReason}</p>}</div></div>
-    <div className="invoice-handling-row"><button type="button" disabled={!!cancel} onClick={()=>onCancel?.(invoice)}>Hủy hóa đơn chưa thanh toán</button><div><small>Giữ lịch sử hóa đơn, chỉ dùng khi chưa phát sinh giao dịch và đủ điều kiện.</small>{cancel && <p>{cancel}</p>}</div></div>
-    <small>Hệ thống kiểm tra lại hoa hồng, kỳ lương và sổ ngày trước khi lưu. Nếu dữ liệu thay đổi, thao tác có thể bị từ chối kèm lý do.</small>
+    {shared.map(group=><div className="invoice-handling-shared" id={`${prefix}-${group.actions.join('-')}`} key={group.reason}><p>{group.reason}</p><small>Áp dụng: {group.actions.map(action=>actionNames[action]).join(', ')}.</small></div>)}
+    <div className="invoice-handling-row"><button type="button" disabled={!!blocked.edit} aria-describedby={reasonId('edit')} onClick={()=>onEdit?.(invoice,treatment)}>Sửa hóa đơn</button><div><small>Sửa nội dung, giá hoặc quyền lợi chưa phát sinh.</small>{reason('edit')}</div></div>
+    <div className="invoice-handling-row"><button type="button" disabled={!!blocked.date} aria-describedby={reasonId('date')} onClick={()=>onDate?.(invoice)}>Sửa ngày hóa đơn</button><div><small>Đổi ngày hóa đơn, giữ số tiền và lịch sử.</small>{reason('date')}</div></div>
+    <div className="invoice-handling-row"><div>{blocked.replace?<button type="button" disabled aria-describedby={reasonId('replace')}>Thay người tư vấn bán gói</button>:<InvoiceReplacement key={`replacement:${invoice.activeDocumentId || invoice._id}`} invoice={invoice} staff={staff!} onChanged={onReplaced} buttonLabel="Thay người tư vấn bán gói"/>}</div><div><small>Đổi tư vấn bằng chứng từ thay thế, không đổi giá hoặc số buổi.</small>{reason('replace')}</div></div>
+    <div className="invoice-handling-row"><button type="button" disabled={!!blocked.void} aria-describedby={reasonId('void')} onClick={()=>onVoid?.(invoice)}>Vô hiệu hóa hóa đơn nhập nhầm</button><div><small>Giữ chứng từ gốc và xử lý phát sinh hợp lệ, không phải hoàn tiền.</small>{reason('void')}</div></div>
+    <div className="invoice-handling-row"><button type="button" disabled={!!blocked.cancel} aria-describedby={reasonId('cancel')} onClick={()=>onCancel?.(invoice)}>Hủy hóa đơn chưa thanh toán</button><div><small>Hủy hóa đơn chưa phát sinh giao dịch và giữ lịch sử.</small>{reason('cancel')}</div></div>
   </div></details>;
 }

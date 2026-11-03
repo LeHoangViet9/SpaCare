@@ -11,13 +11,17 @@ const detail=new URLSearchParams(location.search).has('detail');
 let currentInvoice:Record<string,any>={...invoice,description:'Gói minh họa',createdAt:'2026-11-02T01:00:00.000Z',activeDocumentId:a,effectiveCode:'HD000001'};
 currentInvoice.sellerId=b;currentInvoice.saleCommissionVersion=1;
 const scenario=new URLSearchParams(location.search).get('scenario');
+const display=new URLSearchParams(location.search).get('display');
+const signature={version:1,strokes:[[[0.1,0.3],[0.3,0.7],[0.8,0.2]]]};
+if(display)Object.assign(currentInvoice,{kind:'SESSION',description:'Dịch vụ đã thực hiện',total:250000,paid:150000,status:'PARTIAL',creatorName:'Thu ngân fixture',performerName:'Kỹ thuật viên fixture',performedAt:'2026-11-02T01:00:00.000Z',serviceItems:[{lineId:'line-a',serviceId:b,name:'Chăm sóc da',total:100000},{lineId:'line-b',serviceId:b,name:'Gội đầu dưỡng sinh',total:150000}]});
+if(display==='sessions')Object.assign(currentInvoice,{serviceItems:[{lineId:'line-a',serviceId:b,name:'Chăm sóc da · Buổi 1',total:0}],treatmentSessions:[{lineId:'line-a',treatmentUseId:b,name:'Chăm sóc da · Buổi 1',total:0},{lineId:'line-b',treatmentUseId:c,name:'Gội đầu dưỡng sinh · Buổi 1',total:0}],total:0,paid:0});
 if(scenario){delete currentInvoice.activeDocumentId;if(['unused','pending','used'].includes(scenario)){currentInvoice.paid=0;currentInvoice.status='OPEN';}}
 const context:HandlingContext={used:scenario==='used',appointments:scenario==='pending',pendingAppointments:scenario==='pending',changedPlan:false,history:false,giftCards:false,usedGiftCard:false,settled:false,lineCommission:false,packageCommission:false,oldDayClosed:scenario==='closed',todayClosed:false,receiptDayOpen:true,directPayment:true,hasActivePayment:false};
 if(new URLSearchParams(location.search).has('unreplaced'))delete currentInvoice.activeDocumentId;
 const calls:any[]=[];
 (window as any).__replacementCalls=calls;
 window.fetch=(async(input:any,options:any)=>{
- if(detail && String(input).startsWith('/api/invoices/'+a+'?'))return Response.json({invoice:currentInvoice,treatment:null,handling:invoiceHandlingReasons(currentInvoice,context,scenario!=='staff'),customer:{name:'Khách fixture'},events:[],signatures:[],signatureTotal:0});
+ if(detail && String(input).startsWith('/api/invoices/'+a+'?'))return Response.json({invoice:currentInvoice,treatment:null,handling:invoiceHandlingReasons(currentInvoice,context,scenario!=='staff'),customer:{name:'Khách fixture',phone:'0900000000'},events:[],signatures:display?[{id:b,packageName:'Tên gói không thuộc mục chữ ký · Buổi 1',sessionNumber:1,performedAt:'2026-11-02T01:00:00.000Z',signature:display==='signed'?signature:null},{id:c,packageName:'Gói thứ hai · Buổi 1',sessionNumber:1,performedAt:'2026-11-02T01:00:00.000Z',signature:display==='empty'?{version:1,strokes:[]}:null}]:[],signatureTotal:display?2:0});
  if(String(input)!=='/api/operations')throw Error('External request blocked');
  const body=JSON.parse(options.body);calls.push({...body,key:options.headers['Idempotency-Key']});
  if(body.action==='previewPackageAdvisorReplacement')return Response.json({before:detail?currentInvoice.saleParticipants:invoice.saleParticipants,after:[{staffId:body.data.newStaffId,staffName:'Tư vấn mới'}],pool:87500,formula:'floor((paid - refunded) / 20)',payment:{id:a,receiptId:c,amount:1750000,method:'CASH'},treatmentIds:[b],beforeShares:[{staffId:b,total:87500}],afterShares:[{staffId:c,total:87500}]});

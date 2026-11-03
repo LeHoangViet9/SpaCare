@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tsImport } from 'tsx/esm/api';
-const { invoiceHandlingReasons } = await tsImport('../src/lib/invoice-handling.ts',import.meta.url);
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+const { invoiceHandlingReasons, groupInvoiceHandlingReasons } = await tsImport('../src/lib/invoice-handling.ts',import.meta.url);
+const { default: InvoiceHandlingMenu } = await tsImport('../src/components/invoice-handling-menu.tsx',import.meta.url);
 const { readInvoiceHandling } = await tsImport('../src/lib/invoice-handling-read.ts',import.meta.url);
 const models = await tsImport('../src/lib/models.ts',import.meta.url);
 const invoice={_id:'a'.repeat(24),kind:'PACKAGE',status:'OPEN',total:350000,paid:0,createdAt:new Date(),sellerId:'b'.repeat(24),saleCommissionVersion:1};
@@ -12,9 +15,30 @@ test('unused, used and booked packages have separate content, date and void expl
   const used=invoiceHandlingReasons(invoice,{...context,used:true},true);
   assert.match(used.edit,/buổi sử dụng/);assert.match(used.void,/buổi sử dụng/);assert.equal(used.date,'');
   const booked=invoiceHandlingReasons(invoice,{...context,appointments:true,pendingAppointments:true},true);
-  assert.match(booked.edit,/lịch hẹn/);assert.match(booked.void,/lịch hẹn/);assert.equal(booked.date,'');
+  assert.match(booked.edit,/lịch hẹn/);assert.match(booked.void,/lịch đang đặt hoặc hoãn/);assert.equal(booked.date,'');
+  assert.equal(booked.edit,booked.cancel);assert.notEqual(booked.edit,booked.void);
+  assert.ok(!booked.void.includes('sửa nội dung'));
   const pastVisit=invoiceHandlingReasons(invoice,{...context,appointments:true},true);
   assert.ok(pastVisit.edit);assert.equal(pastVisit.void,'','void backend only blocks pending appointments');
+});
+
+test('shared reasons appear once, identify affected actions and preserve per-action explanations',()=>{
+  for(const scenario of [context,{...context,used:true},{...context,appointments:true,pendingAppointments:true}]){
+    const reasons=invoiceHandlingReasons(invoice,scenario,true);
+    const shared=groupInvoiceHandlingReasons(reasons);
+    if(scenario.used)assert.deepEqual(shared.find(group=>group.reason===reasons.edit)?.actions,['edit','cancel','void']);
+    if(scenario.appointments)assert.deepEqual(shared.find(group=>group.reason===reasons.edit)?.actions,['edit','cancel']);
+    const markup=renderToStaticMarkup(React.createElement(InvoiceHandlingMenu,{invoice,treatment:null,reasons,staff:[],onEdit(){},onDate(){},onCancel(){},onVoid(){},onReplaced(){}}));
+    for(const reason of new Set(Object.values(reasons).filter(Boolean))){
+      assert.ok(reason.length<=140,'blocking explanations should stay short');
+      assert.equal(markup.split(reason).length-1,1,'render each blocking cause only once');
+    }
+    assert.ok(!markup.includes('Hệ thống kiểm tra lại hoa hồng'));
+    assert.ok(!markup.includes('Chọn đúng loại sai sót'));
+    const ids=[...markup.matchAll(/\sid="([^"]+)"/g)].map(match=>match[1]);
+    assert.equal(new Set(ids).size,ids.length);
+    for(const match of markup.matchAll(/aria-describedby="([^"]+)"/g))assert.ok(ids.includes(match[1]));
+  }
 });
 test('paid used package may replace advisor but cannot reprice or void; date remains distinct',()=>{
   const paid={...invoice,status:'PAID',paid:invoice.total};

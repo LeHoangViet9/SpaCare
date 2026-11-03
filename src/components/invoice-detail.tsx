@@ -23,14 +23,15 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
     fetch(url, { signal: controller.signal, cache: 'no-store' }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error); return body; }).then(setData).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [record.id, record.kind, page, historyKind, revision]);
+  const serviceLines: Row[] = data?.invoice ? [
+    ...(data.invoice.serviceItems || []),
+    ...(data.invoice.treatmentSessions || []).filter((session: Row) => !data.invoice.serviceItems?.some((item: Row) => item.lineId && item.lineId === session.lineId && item.total === 0 && session.total === 0)),
+  ] : [];
+  const signedRecords: Row[] = (data?.signatures || []).filter((record: Row) => record.signature?.strokes?.some((stroke: number[][]) => stroke.length > 1));
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
-    {record.kind === 'invoice' && data && !error && <InvoiceHandlingMenu invoice={data.invoice} treatment={data.treatment} reasons={data.handling} staff={replacementStaff} onEdit={onEdit} onDate={onCorrectDate} onCancel={onCancel} onVoid={onDelete} onReplaced={()=>{setRevision(v=>v+1);onReplacement?.();}}/>}
-    {record.kind === 'invoice' && data && !error && <PdfExport key={`pdf:${record.id}`} endpoint={`/api/invoices/${record.id}/export`} />}
-
-    {record.kind === 'invoice' && data && !error && <InvoiceDocumentHistory invoice={data.invoice}/>}
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
-      <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>
+      {record.kind === 'customer' && <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>}
       {record.kind === 'customer' && <>
         <div className="profile-summary"><div><small>Lịch hẹn</small><strong>{data.summary.appointments}</strong></div><div><small>Gói đang dùng</small><strong>{data.summary.activePackages}</strong></div><div><small>Công nợ được xem</small><strong>{money(data.summary.debt)}</strong></div><div><small>Cọc được xem</small><strong>{data.summary.credit === null ? '—' : money(data.summary.credit)}</strong></div></div>
         {data.summary.lastVisit && <p>Lần đến gần nhất: {new Date(data.summary.lastVisit).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
@@ -44,8 +45,15 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
       {record.kind === 'customer' && historyKind === 'cards' && canManageCards && <CashCards customerId={record.id} onChanged={()=>setRevision(v=>v+1)} />}
       {record.kind === 'customer' ? historyKind === 'cards' ? null : <><div className="invoice-history">{data.rows.map((i: Row) => data.kind === 'invoices' ? <button key={i._id} onClick={() => onInvoice(i._id)}><strong className="invoice-code">{invoiceCode(i)}</strong><strong>{i.description}</strong><span>{new Date(i.createdAt).toLocaleString('vi-VN')} · {money(i.total)}</span></button> : <article key={i._id}><strong>{data.kind === 'treatments' ? i.name : new Date(i.startAt).toLocaleString('vi-VN')}</strong>{i.serviceName && <p>{i.serviceName}{i.staffName ? ' · ' + i.staffName : ''}</p>}<p>{({ ACTIVE: 'Đang dùng', PAUSED: 'Bảo lưu', COMPLETED: 'Hoàn thành', CONFIRMED: 'Đã đặt', POSTPONED: 'Đã hoãn', CANCELLED: 'Đã hủy' } as Record<string, string>)[i.status] || i.status}{data.kind === 'treatments' ? ` · ${packageLabel(i)}${i.giftOfInvoiceId ? ' · Quà tặng' : ''}` : i.notes ? ' · ' + i.notes : ''}</p></article>)}{!data.total && <p>{historyKind === 'appointments' ? 'Khách chưa có lịch hẹn trong phạm vi được xem.' : historyKind === 'treatments' ? 'Khách chưa có liệu trình trong phạm vi được xem.' : 'Khách chưa có hóa đơn trong phạm vi được xem.'}</p>}</div>
         {data.total > 10 && <div className="customer-picker-pages"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</> : <>
-        <p><strong className="invoice-code">{invoiceCode(data.invoice)}</strong> · {new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</p>
-        <h3>{data.invoice.description}</h3><p className="invoice-detail-money"><strong>Tổng: {money(data.invoice.total)}</strong> · <strong>Đã trả: {money(data.invoice.paid)}</strong> · <strong>Còn nợ: {money(data.invoice.total - data.invoice.paid)}</strong></p>
+        <section className="invoice-detail-summary" aria-label="Nội dung hóa đơn">
+          <div className="invoice-detail-heading"><strong className="invoice-code">{invoiceCode(data.invoice)}</strong><time>{new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</time></div>
+          <p><strong>{data.customer?.name}</strong>{data.customer?.phone ? ` · ${data.customer.phone}` : ''}</p>
+          <h3>{data.invoice.description}</h3>
+          {data.invoice.packageItems?.length>0 && <section className="invoice-service-lines"><h3>Gói liệu trình trong hóa đơn</h3>{data.invoice.packageItems.map((item:Row)=><p key={item.lineId || item.treatmentId}><span>{item.name}{item.promotion ? ' · '+item.promotion : ''}</span><strong>{money(item.total)}</strong></p>)}</section>}
+          {serviceLines.length > 0 && <section className="invoice-service-lines"><h3>Dịch vụ trong hóa đơn</h3>{serviceLines.map((item: Row, index: number) => <p key={item.lineId || `${item.serviceId || item.treatmentUseId}:${index}`}><span>{index + 1}. {item.name}</span><strong>{money(item.total)}</strong></p>)}</section>}
+          {data.invoice.productItems?.length>0 && <section className="invoice-service-lines"><h3>Sản phẩm mua thêm</h3>{data.invoice.productItems.map((item:Row)=><p key={item.lineId || item.productId}><span>{item.name} · {item.quantity} {item.unit} × {money(item.unitPrice)}</span><strong>{money(item.total)}</strong></p>)}</section>}
+          <div className="invoice-detail-money"><span>Tổng tiền<strong>{money(data.invoice.total)}</strong></span><span>Đã thanh toán<strong>{money(data.invoice.paid)}</strong></span><span>Còn nợ<strong>{money(data.invoice.total - data.invoice.paid)}</strong></span></div>
+        </section>
         {data.invoice.openingBalance && <p className="invoice-import-note"><span className="invoice-import-badge">Nhập ban đầu</span>{' '}Chuyển từ sổ cũ · Ngày nguồn {data.invoice.openingDate}. {data.invoice.kind==='PACKAGE'?'Đã thanh toán đủ trước chuyển đổi; chưa có giá mua gốc. Số 0 là không thu thêm, không phải gói tặng. Buổi mới được đánh số từ lúc chuyển đổi.':'Công nợ cũ; chưa ghi nhận bán hàng hoặc xuất kho mới.'}</p>}
         {!!data.invoice.cardPaid && <p>Trong số đã trả: dùng thẻ tiền {money(data.invoice.cardPaid)} (không phải khoản thu mới).</p>}
         {data.giftCards?.map((card:Row)=><p key={card._id}>Thẻ tiền tặng: {money(card.amount)} · Còn {money(card.balance)}</p>)}
@@ -54,11 +62,8 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
         {(onEdit || onCancel) && data.invoice.paid > 0 && <p>Hóa đơn đã thanh toán: hệ thống sẽ kiểm tra và chặn sửa/hủy trực tiếp để giữ đúng lịch sử thu tiền.</p>}
         {data.invoice.kind === 'PACKAGE' && <p>Người tư vấn bán gói: {data.invoice.saleParticipants?.length ? data.invoice.saleParticipants.map((p:Row)=>p.staffName).join(', ') : data.invoice.sellerName || 'Chưa ghi ở giao dịch cũ'}{data.invoice.saleParticipants?.length > 1 && ` · Chia đều quỹ 5% cho ${data.invoice.saleParticipants.length} người`} · Đã hoàn: {money(data.invoice.refunded || 0)}</p>}{onRefund && data.invoice.kind === 'PACKAGE' && data.invoice.paid > (data.invoice.refunded || 0) && <button onClick={()=>onRefund(data.invoice)}>Ghi nhận hoàn tiền gói</button>}
         {data.invoice.kind === 'PRODUCT' && !data.invoice.openingBalance && <p>Sản phẩm: {data.invoice.productSku} · {data.invoice.quantity} {data.invoice.productUnit} × {money(data.invoice.unitPrice)} · Đã xuất kho</p>}
-        {data.invoice.packageItems?.length>0 && <section className="invoice-service-lines"><h3>Gói liệu trình trong hóa đơn</h3>{data.invoice.packageItems.map((item:Row)=><p key={item.treatmentId}><span>{item.name}{item.promotion ? ' · '+item.promotion : ''}</span><strong>{money(item.total)}</strong></p>)}</section>}
         {data.treatments?.length>1 && <section><h3>Quyền lợi từng liệu trình</h3>{data.treatments.map((plan:Row)=><p key={plan._id}>{plan.name} · {packageLabel(plan)}</p>)}</section>}
-        {data.invoice.serviceItems?.length > 0 && <section className="invoice-service-lines"><h3>Dịch vụ trong hóa đơn</h3>{data.invoice.serviceItems.map((item: Row, index: number) => <p key={item.serviceId}><span>{index + 1}. {item.name}</span><strong>{money(item.total)}</strong></p>)}</section>}
-        {data.invoice.productItems?.length>0 && <section><h3>Sản phẩm mua thêm</h3>{data.invoice.productItems.map((item:Row)=><p key={item.productId}>{item.name} · {item.quantity} {item.unit} × {money(item.unitPrice)} = <strong>{money(item.total)}</strong></p>)}</section>}
-        {data.invoice.performedAt && <p>Đã thực hiện: <strong>{data.invoice.performerName || 'Nhân viên đã ghi nhận'}</strong> · {new Date(data.invoice.performedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
+        {data.invoice.performedAt && <p>Người thực hiện: <strong>{data.invoice.performerName || 'Nhân viên đã ghi nhận'}</strong> · {new Date(data.invoice.performedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
         {onCompleteService && data.invoice.status !== 'CANCELLED' && data.canCompleteService && <button onClick={() => onCompleteService(data.invoice)}>Hoàn thành dịch vụ / ghi hoa hồng</button>}
         {onPayment && data.invoice.total > data.invoice.paid && <div className="actions"><button onClick={() => onPayment(data.invoice, 'CASH')}>Thu tiền mặt</button><button onClick={() => onPayment(data.invoice, 'BANK_TRANSFER')}>Chuyển khoản / QR</button></div>}
         {data.invoice.kind === 'SESSION' && <p>Buổi thuộc liệu trình: 0đ{data.invoice.total>0 ? ' · Có dịch vụ lẻ thu thêm trong hóa đơn' : ' · Không thu thêm tiền'}</p>}
@@ -66,11 +71,14 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
         {data.invoice.promotion && <p>Khuyến mãi: {data.invoice.promotion}</p>}
         {data.gifts?.length > 0 && <section><h3>Quà tặng kèm</h3>{data.gifts.map((gift: Row) => <p key={gift._id}>{gift.description} · <strong>0đ</strong></p>)}</section>}
         <p>Người tạo: <strong>{data.invoice.creatorName || 'Chưa ghi nhận ở hóa đơn cũ'}</strong></p>
-        <section><h3>{data.invoice.kind==='SESSION' ? 'Chữ ký hóa đơn (không bắt buộc)' : 'Chữ ký khách hàng'}</h3>
-          {data.signatures?.length ? data.signatures.map((s: Row) => <article key={s.id} className="invoice-signature"><p><strong>{s.packageName || data.invoice.description}{s.sessionNumber ? ` · Buổi ${s.sessionNumber}` : ''}</strong><br />{new Date(s.performedAt).toLocaleString('vi-VN')}</p>{s.signature ? <SignatureImage signature={s.signature} /> : <p>Không có chữ ký khách hàng.</p>}</article>) : <p>Chưa có chữ ký đã lưu trong phạm vi bạn được phép xem.</p>}
+        <InvoiceHandlingMenu invoice={data.invoice} treatment={data.treatment} reasons={data.handling} staff={replacementStaff} onEdit={onEdit} onDate={onCorrectDate} onCancel={onCancel} onVoid={onDelete} onReplaced={()=>{setRevision(v=>v+1);onReplacement?.();}}/>
+        <PdfExport key={`pdf:${record.id}`} endpoint={`/api/invoices/${record.id}/export`} />
+        <InvoiceDocumentHistory invoice={data.invoice}/>
+        <h3>Lịch sử hóa đơn</h3>{data.events.map((event: Row) => <p key={event._id}>{new Date(event.createdAt).toLocaleString('vi-VN')} · {auditActions[event.action] || event.action}{event.details?.amount ? ' · ' + money(event.details.amount) : ''}{event.details?.reason ? ' · ' + event.details.reason : ''}</p>)}
+        <section className="invoice-detail-signatures" aria-label="Chữ ký hóa đơn"><h3>Chữ ký hóa đơn</h3>
+          {signedRecords.length ? signedRecords.map((record: Row) => <article key={record.id} className="invoice-signature"><SignatureImage signature={record.signature} /></article>) : <p>Không có chữ ký khách hàng.</p>}
           {data.signatureTotal > 5 && <div className="customer-picker-pages"><button disabled={data.signaturePage <= 1} onClick={() => setPage(data.signaturePage - 1)}>Trước</button><span>Trang {data.signaturePage}/{Math.ceil(data.signatureTotal / 5)}</span><button disabled={data.signaturePage * 5 >= data.signatureTotal} onClick={() => setPage(data.signaturePage + 1)}>Sau</button></div>}
         </section>
-        <h3>Lịch sử hóa đơn</h3>{data.events.map((event: Row) => <p key={event._id}>{new Date(event.createdAt).toLocaleString('vi-VN')} · {auditActions[event.action] || event.action}{event.details?.amount ? ' · ' + money(event.details.amount) : ''}{event.details?.reason ? ' · ' + event.details.reason : ''}</p>)}
       </>}
     </>}
   </section></div>;
