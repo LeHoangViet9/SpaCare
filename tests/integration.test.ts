@@ -2345,6 +2345,38 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.deepEqual(await InvoiceLineCommission.find({spaId:scope.spaId,invoiceId:bill!._id}).lean(),lineCommissionsBefore,'per-line commission ledger is unchanged');
       assert.equal(await Audit.countDocuments({spaId:scope.spaId,action:'updateInvoice',targetId:bill!._id}),updateAuditCount,'rejected edit writes no audit');
     });
+    await t.test('new invoice prices: zero, actual totals, fixed service commission and stock',async()=>{
+      const customer=await call('customer',{name:'Price fixture '+randomUUID(),phone:'099'+String(Date.now()).slice(-7)});
+      const svc=await call('service',{name:'Price fixture '+randomUUID(),price:300000,commission:15000});
+      const template=await call('packageTemplate',{serviceId:svc.id,name:'Price fixture '+randomUUID(),price:900000,totalSessions:10});
+      const product=await call('product',{name:'Price fixture '+randomUUID(),sizeMl:100,price:80000});
+      await call('stockMovement',{productId:product.id,direction:'IN',quantity:10});
+      const paymentsBefore=await Payment.countDocuments({spaId}),cashBefore=await CashEntry.countDocuments({spaId});
+      for(const total of [0,123000]){
+        const result=await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:svc.id,total,performerId:actor.id}]});
+        const bill=await Invoice.findOne({spaId,_id:result.id});assert.equal(bill!.total,total);assert.equal(bill!.paid,0);
+        const ledger=await InvoiceLineCommission.findOne({spaId,invoiceId:bill!._id});assert.equal(ledger!.amount,15000);
+        if(!total)assert.equal(bill!.status,'PAID');
+      }
+      const free=await call('sellPackage',{customerId:customer.id,templateId:template.id,total:0});
+      const purchase=await Invoice.findOne({spaId,_id:free.invoiceId});assert.equal(purchase!.total,0);assert.equal(purchase!.paid,0);
+      const plan=await Treatment.findOne({spaId,invoiceId:purchase!._id});assert.equal(plan!.remaining,10);
+      assert.equal(await SaleCommission.countDocuments({spaId,invoiceId:purchase!._id}),0);
+      const used=await call('invoice',{customerId:customer.id,serviceId:svc.id,treatments:[{treatmentId:String(plan!._id),remainingBefore:10}],additionalServices:[{serviceId:svc.id,total:0,performerId:actor.id}],additionalProducts:[{productId:product.id,unitPrice:0,quantity:1}]});
+      assert.equal((await Invoice.findOne({spaId,_id:used.id}))!.total,0);
+      assert.equal((await Treatment.findOne({spaId,_id:plan!._id}))!.remaining,9);
+      assert.equal(await TreatmentUse.countDocuments({spaId,treatmentId:plan!._id}),1);
+      for(const action of ['productInvoice','sellProduct']){
+        const result=await call(action,action==='productInvoice'?{customerId:customer.id,items:[{productId:product.id,quantity:2,unitPrice:0}]}:{customerId:customer.id,productId:product.id,quantity:2,unitPrice:0});
+        assert.equal((await Invoice.findOne({spaId,_id:result.id}))!.total,0);
+      }
+      assert.equal((await Product.findOne({spaId,_id:product.id}))!.stock,5);
+      assert.equal(await Payment.countDocuments({spaId}),paymentsBefore);assert.equal(await CashEntry.countDocuments({spaId}),cashBefore);
+      for(const action of ['serviceInvoice','sellPackage','productInvoice']){
+        const data=action==='serviceInvoice'?{customerId:customer.id,items:[{serviceId:svc.id,total:-1}]}:action==='sellPackage'?{customerId:customer.id,templateId:template.id,total:-1}:{customerId:customer.id,items:[{productId:product.id,unitPrice:-1,quantity:1}]};
+        await assert.rejects(call(action,data));
+      }
+    });
     await t.test('package advisor replacement: preservation, rounding, chain, payroll, race and rollback',()=>invoiceReplacementIntegration(extraSpaIds));
     await t.test('P2 replacement: real transfer, distinct ledger timestamps, payroll periods and scoped legacy migration',()=>invoiceReplacementP2Integration(extraSpaIds));
   } finally {

@@ -20,7 +20,13 @@ test('standalone invoice permits price override; covered session is always zero'
   assert.equal(invoiceCharge(350000, undefined, false), 350000);
   assert.equal(invoiceCharge(350000, 250000, false), 250000);
   assert.equal(invoiceCharge(350000, 999999, true), 0);
-  for (const value of [0, -1, 1.5, NaN, Infinity, 1000000000001]) assert.throws(() => invoiceCharge(350000, value, false));
+  assert.equal(invoiceCharge(350000, 0, false), 0);
+  for (const value of [-1, 1.5, NaN, Infinity, 1000000000001]) assert.throws(() => invoiceCharge(350000, value, false));
+});
+
+test('new package sale accepts zero actual price without changing positive catalog prices',()=>{
+  for(const total of [0,1,250000])assert.equal(packageSaleInput.parse({customerId:id,templateId:id,total}).total,total);
+  for(const total of [-1,0.5,1_000_000_000_001])assert.equal(packageSaleInput.safeParse({customerId:id,templateId:id,total}).success,false);
 });
 
 test('gifts cannot grant an entire package template',()=>assert.equal(packageSaleInput.safeParse({customerId:id,templateId:id,dueDate:'2026-10-26',promotion:'Gift',gifts:[{templateId:id}]}).success,false));

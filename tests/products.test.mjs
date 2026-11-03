@@ -8,6 +8,9 @@ test('product stock preserves integer units and rejects overselling, negatives a
   assert.equal(stockBalance(5, 'IN', 2), 7);
   for (const args of [[5, 'OUT', 6], [0, 'IN', -1], [5, 'OUT', 0.5], [1e9, 'IN', 1]]) assert.throws(() => stockBalance(...args));
   assert.equal(productTotal(150000, 3), 450000);
+  assert.equal(productTotal(0,3),0);
+  assert.equal(productInputs.sellProduct.parse({customerId:id,productId:id,quantity:3,unitPrice:0}).unitPrice,0);
+  for(const unitPrice of [-1,0.5])assert.equal(productInputs.sellProduct.safeParse({customerId:id,productId:id,quantity:3,unitPrice}).success,false);
   assert.throws(() => productTotal(1e12, 2));
 });
 test('product input strips forged stock and tenant; normalizes SKU and duplicate group keys', () => {

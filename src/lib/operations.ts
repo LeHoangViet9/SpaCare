@@ -82,7 +82,7 @@ const schemas = {
   replacePackageAdvisor: z.object({id:objectId,expectedUpdatedAt:date,expectedDocumentId:objectId,oldStaffId:objectId,newStaffId:objectId,reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
-  productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).min(1).max(30)}),
+  productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).min(1).max(30)}),
   serviceGroup: z.object({name:z.string().transform(serviceGroupName).pipe(z.string().min(1,'Nhập tên nhóm dịch vụ.').max(100))}),
   ...cashCardInputs,
   ...productInputs,
@@ -123,22 +123,22 @@ const schemas = {
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore:remainingBefore.optional(),recipientCustomerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional() }),
-  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: moneySchema.optional(), consultantId: objectId.optional() }),
+  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: zeroMoney.optional(), consultantId: objectId.optional() }),
   deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, issuedOn:dateOnly.optional(), description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
     packageName:text.optional(), packageType:z.enum(['SESSIONS','TIME']).optional(), totalSessions:z.number().int().min(1).max(10000).optional(), durationMonths:z.number().int().min(1).max(120).optional(), startsOn:dateOnly.optional()}),
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
-    additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).max(30).optional(),
+    additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).max(30).optional(),
     customerId: objectId, staffId: objectId.optional(), dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
-    items: z.array(z.object({ serviceId: objectId, total: moneySchema.optional(), performerId: objectId.optional() })).min(1).max(30)
+    items: z.array(z.object({ serviceId: objectId, total: zeroMoney.optional(), performerId: objectId.optional() })).min(1).max(30)
       .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
   }),
   invoice: z.object({
     treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore,performerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional(),
-    additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:moneySchema})).max(30).optional(),
-    additionalServices:z.array(z.object({serviceId:objectId,total:moneySchema,performerId:objectId.optional()})).max(30).optional(),
+    additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).max(30).optional(),
+    additionalServices:z.array(z.object({serviceId:objectId,total:zeroMoney,performerId:objectId.optional()})).max(30).optional(),
     cashCard: invoiceCardInput.optional(),
     staffId: objectId.optional(),
     treatmentId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(),
@@ -276,7 +276,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const counter = await Control.findOneAndUpdate(scope, { $inc: { invoiceSequence: 1 } }, { session, returnDocument: 'after' });
           ensure(counter, 'Spa chưa sẵn sàng cấp mã hóa đơn.', 503);
           if(data.issuedOn) {dayBounds(data.issuedOn);ensure(data.issuedOn <= spaDay(),'Không nhập hóa đơn ngày tương lai.');}
-          values = { ...values, code: sequenceInvoiceCode(counter.invoiceSequence), recordedAt:new Date(), ...(data.issuedOn ? {createdAt:new Date(data.issuedOn+'T12:00:00+07:00')} : {}) };
+          values = { ...(values.total === 0 && values.paid === 0 ? {status:'PAID'} : {}), ...values, code: sequenceInvoiceCode(counter.invoiceSequence), recordedAt:new Date(), ...(data.issuedOn ? {createdAt:new Date(data.issuedOn+'T12:00:00+07:00')} : {}) };
         }
         const record = (await model.create([{ ...scope, ...(model === Invoice ? { createdBy: actor.id, creatorName: user.name } : {}), ...values }], { session }))[0];
         if (model === Invoice) createdInvoiceIds.push(String(record._id));
@@ -590,7 +590,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         }
         if(!items.length)return;
         invoice.serviceItems=[...(invoice.serviceItems || []),...items];
-        invoice.total=money(invoice.total+items.reduce((sum,item)=>sum+item.total,0));
+        invoice.total=money(invoice.total+items.reduce((sum,item)=>sum+item.total,0),true);
         invoice.status=invoiceState(invoice.total,invoice.paid);
         invoice.description+=' + '+items.map(item=>item.name).join(' + ');
         for (const item of items) if (item.performerId && item.commission) await accrueCommission(invoice, String(item.performerId), 'INVOICE', String(item.lineId), new Date(), item.commission, item);
@@ -609,7 +609,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           await create(StockMovement,{checkoutInvoiceId:invoice._id,productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:user.name,direction:'OUT',kind:'SALE',quantity:item.quantity,before,after:product.stock,reason:'Bán hàng tại thu ngân'});
         }
         if(!lines.length)return;
-        invoice.productItems=lines;invoice.total=money(invoice.total+lines.reduce((sum,line)=>sum+line.total,0));
+        invoice.productItems=lines;invoice.total=money(invoice.total+lines.reduce((sum,line)=>sum+line.total,0),true);
         invoice.status=invoiceState(invoice.total,invoice.paid);
         invoice.description=[invoice.description,...lines.map(line=>line.name)].filter(Boolean).join(' + ');
         await invoice.save({session});
@@ -1241,23 +1241,24 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             participants.push({staffId:person._id,staffName:person.name});
           }
           const seller = participants[0];
-          const invoice = groupedPackageSale && packageInvoice ? packageInvoice : await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price), paid: 0, ...(d.dueDate ? { dueDate: d.dueDate } : {}), kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
+          const invoice = groupedPackageSale && packageInvoice ? packageInvoice : await create(Invoice, { customerId: d.customerId, serviceId: service._id, description: template.name + ' · ' + service.name, total: money(d.total ?? template.price, true), paid: 0, ...(d.dueDate ? { dueDate: d.dueDate } : {}), kind: 'PACKAGE', ...(d.giftCashCardAmount ? {giftCashCardAmount:d.giftCashCardAmount}:{}), sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, promotion: d.promotion, commission: service.commission || 0, ...advisor });
           target = await create(Treatment, { customerId: d.customerId, serviceId: service._id, templateId: template._id, invoiceId: invoice._id, name: template.name, ...packageSnapshot(template, startsOn) });
           if(groupedPackageSale) {
             if(packageInvoice) {
               if (!invoice.saleParticipants?.length) {
                 Object.assign(invoice, { sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, ...(advisor.consultantId ? advisor : {}) });
               } else ensure(JSON.stringify(invoice.saleParticipants.map((p:any)=>String(p.staffId)))===JSON.stringify(participants.map(p=>String(p.staffId))) && (!invoice.dueDate || !d.dueDate || String(invoice.dueDate)===String(d.dueDate)) && String(invoice.consultantId || '')===String(advisor.consultantId || ''),'Các gói trong cùng hóa đơn phải có cùng người tư vấn và hạn thanh toán.');
-              invoice.total=money(invoice.total+money(d.total ?? template.price));
+              invoice.total=money(invoice.total+money(d.total ?? template.price,true),true);
               invoice.giftCashCardAmount=money((invoice.giftCashCardAmount || 0)+(d.giftCashCardAmount || 0),true);
               // A mixed checkout is one financial document; retain its service
               // lines while marking the document package-eligible for the
               // existing 5% consultant commission rules.
               invoice.kind='PACKAGE';
             }
-            invoice.packageItems=[...(invoice.packageItems || []),{lineId:newLineId(),templateId:template._id,treatmentId:target._id,serviceId:service._id,name:template.name+' · '+service.name,total:money(d.total ?? template.price),paid:0,promotion:d.promotion,giftCashCardAmount:d.giftCashCardAmount || 0,packageType:template.packageType || 'SESSIONS',totalSessions:template.packageType === 'TIME' ? undefined : template.totalSessions,durationMonths:template.packageType === 'TIME' ? template.durationMonths : undefined,startsOn,sellerId:seller.staffId,sellerName:seller.staffName}];
+            invoice.packageItems=[...(invoice.packageItems || []),{lineId:newLineId(),templateId:template._id,treatmentId:target._id,serviceId:service._id,name:template.name+' · '+service.name,total:money(d.total ?? template.price, true),paid:0,promotion:d.promotion,giftCashCardAmount:d.giftCashCardAmount || 0,packageType:template.packageType || 'SESSIONS',totalSessions:template.packageType === 'TIME' ? undefined : template.totalSessions,durationMonths:template.packageType === 'TIME' ? template.durationMonths : undefined,startsOn,sellerId:seller.staffId,sellerName:seller.staffName}];
             invoice.description=invoice.packageItems.map((item:any)=>item.name).join(' + ');
             invoice.promotion=[...new Set(invoice.packageItems.map((item:any)=>item.promotion).filter(Boolean))].join('; ');
+            invoice.status=invoiceState(invoice.total,invoice.paid);
             await invoice.save({session});packageInvoice=invoice;
           }
           for (const gift of d.gifts) {
@@ -1497,11 +1498,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             const service = await get(Service, item.serviceId);
             ensure(service.active, 'Dịch vụ đã ngừng hoạt động.');
             const total = invoiceCharge(service.price, item.total, false);
-            ensure(total > 0, 'Giá dịch vụ lẻ phải lớn hơn 0.');
             const performer = item.performerId ? await performerFor(item.performerId, undefined) : undefined;
             serviceItems.push({ lineId: newLineId(), serviceId: service._id, name: service.name, total, commission: performer ? service.commission || 0 : 0, ...(performer ? {performerId:performer._id} : {}) });
           }
-          const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0));
+          const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0),true);
           const commission = money(serviceItems.reduce((sum, item) => sum + item.commission, 0), true);
           target = await create(Invoice, { customerId: d.customerId, kind: 'SERVICE', serviceItems,
             ...(serviceItems.length === 1 ? { serviceId: serviceItems[0].serviceId } : {}),
@@ -1552,7 +1552,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             ensure(performer.active && ['OWNER', 'STAFF'].includes(performer.role), 'Người thực hiện phải là chủ spa hoặc nhân viên đang hoạt động.');
           }
           if (d.dueDate) dayBounds(d.dueDate);
-          ensure((d.total ?? service.price) > 0, 'Dịch vụ mua lẻ phải có giá lớn hơn 0.');
           const { cashCard, staffId, ...invoiceData } = d;
           const performer = staffId ? await performerFor(staffId, undefined) : undefined;
           const line = { lineId: newLineId(), serviceId: service._id, name: service.name, total: invoiceCharge(service.price, d.total, false), commission: service.commission || 0, ...(performer ? { performerId: performer._id } : {}) };

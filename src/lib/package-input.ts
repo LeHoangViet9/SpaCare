@@ -10,7 +10,7 @@ export const packageTemplateInput = z.object({ name: z.string().trim().min(1).ma
 export const packageSaleInput = z.object({
   giftCashCardAmount: z.number().int().min(0).max(1_000_000_000_000).default(0),
   participantIds: z.array(id.transform(value => value.toLowerCase())).min(1).max(20).refine(ids => new Set(ids).size === ids.length, 'Không chọn trùng người tư vấn.').optional(),
-  sellerId: z.string().regex(/^[a-f\d]{24}$/i).optional(), customerId: id, templateId: id, total: positiveMoney.optional(),
+  sellerId: z.string().regex(/^[a-f\d]{24}$/i).optional(), customerId: id, templateId: id, total: z.number().int().min(0).max(1_000_000_000_000).optional(),
   startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dueDate: z.preprocess(value => value === '' ? undefined : value, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()), consultantId: id.optional(),
   promotion: z.string().trim().max(2000).default(''),
@@ -20,6 +20,6 @@ export const packageSaleInput = z.object({
 export function invoiceCharge(price: number, requested: number | undefined, covered: boolean) {
   if (covered) return 0;
   const total = requested ?? price;
-  if (!Number.isSafeInteger(total) || total <= 0 || total > 1_000_000_000_000) throw new Error('Giá dịch vụ mua lẻ không hợp lệ.');
+  if (!Number.isSafeInteger(total) || total < 0 || total > 1_000_000_000_000) throw new Error('Giá dịch vụ mua lẻ không hợp lệ.');
   return total;
 }
