@@ -1,5 +1,26 @@
 const {test,expect}=require('@playwright/test');
 
+for(const scenario of ['unpaid','paid','cancelled','busy','staff'])test(`list actions stay compact and preserve availability (${scenario})`,async({page},testInfo)=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto('/?list=1&scenario='+scenario);
+ const toggle=page.locator('.row-action-menu > summary'),buttons=page.locator('.row-action-options button');
+ if(scenario==='staff'){await expect(toggle).toHaveCount(0);await expect(page.getByText('Đã thu đủ',{exact:true})).toBeVisible();return;}
+ await expect(toggle).toContainText('Thao tác');await expect(buttons.first()).toBeHidden();
+ await toggle.click();expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ await expect(page.locator('.row-action-options small, .row-action-options p, .row-action-options details')).toHaveCount(0);
+ const cancel=page.getByRole('button',{name:'Hủy hóa đơn — giữ lịch sử',exact:true}),voidButton=page.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true});
+ if(scenario==='unpaid'){
+  await expect(cancel).toBeEnabled();await expect(page.getByRole('button',{name:'Tiền mặt',exact:true})).toBeVisible();
+  const actions=[['Sửa hóa đơn','updateInvoice'],['Hủy hóa đơn — giữ lịch sử','cancelInvoice'],['Vô hiệu hóa hóa đơn nhập nhầm','deleteInvoice'],['Tiền mặt','payment'],['Chuyển khoản / QR','payment']];
+  for(const [label,action] of actions){if(!await toggle.evaluate(element=>element.parentElement.open))await toggle.click();await page.getByRole('button',{name:label,exact:true}).click();expect(await toggle.evaluate(element=>element.parentElement.open)).toBe(false);expect((await page.evaluate(()=>window.__replacementCalls)).at(-1).opened).toBe(action);}
+  expect((await page.evaluate(()=>window.__replacementCalls)).slice(-2).map(call=>call.method)).toEqual(['CASH','BANK_TRANSFER']);await toggle.click();
+ }else if(scenario==='busy'){for(const button of await buttons.all())await expect(button).toBeDisabled();}
+ else{await expect(cancel).toBeDisabled();await expect(voidButton).toBeEnabled();if(scenario==='cancelled')await expect(page.getByRole('button',{name:'Sửa hóa đơn',exact:true})).toHaveCount(0);}
+ if(scenario!=='unpaid')expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`outputs/invoice-list-actions-${scenario}-${testInfo.project.name}.png`,fullPage:true});
+});
+
 for(const display of ['signed','unsigned','empty','sessions'])test(`invoice keeps all service lines and shows only actual signatures (${display})`,async({page},testInfo)=>{
  const errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
  await page.goto('/?detail=1&display='+display);
@@ -35,6 +56,9 @@ for(const scenario of ['unused','used','pending','paid','closed','staff'])test(`
  await expect(dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true})).toBeHidden();
  expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
  await dialog.getByText('Xử lý hóa đơn',{exact:true}).click();
+ const editing=dialog.getByRole('region',{name:'Chỉnh sửa',exact:true}),correction=dialog.getByRole('region',{name:'Xử lý hóa đơn sai',exact:true});
+ await expect(editing.getByRole('button',{name:'Sửa ngày hóa đơn',exact:true})).toBeVisible();await expect(editing.getByRole('button',{name:'Thay người tư vấn bán gói',exact:true})).toBeVisible();
+ await expect(correction.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true})).toBeVisible();await expect(correction.getByRole('button',{name:'Hủy hóa đơn chưa thanh toán',exact:true})).toBeVisible();
  const edit=dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true}),date=dialog.getByRole('button',{name:'Sửa ngày hóa đơn',exact:true}),voidButton=dialog.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true});
  if(scenario==='unused'){
   await expect(edit).toBeEnabled();await expect(voidButton).toBeEnabled();await edit.click();await voidButton.click();

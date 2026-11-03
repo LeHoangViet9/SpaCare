@@ -2,6 +2,7 @@ import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import InvoiceReplacement,{InvoiceDocumentHistory} from '../src/components/invoice-replacement';
 import InvoiceDetail from '../src/components/invoice-detail';
+import InvoiceListActions from '../src/components/invoice-list-actions';
 import CashEntryNote from '../src/components/cash-entry-note';
 import { invoiceHandlingReasons, type HandlingContext } from '../src/lib/invoice-handling';
 const a='a'.repeat(24),b='b'.repeat(24),c='c'.repeat(24);
@@ -36,4 +37,5 @@ function LedgerApp(){return <main style={{padding:16}}><h1>Sổ thu chi · fixtu
  {_id:b,kind:'REVERSAL',originalId:a,note:'Đảo khoản thu gói',reversalInvoiceCode:'HD000067'},
  {_id:c,kind:'REVERSAL',originalId:'d'.repeat(24),note:'Đảo thu khác'},
 ].map(entry=><tr key={entry._id}><td><CashEntryNote entry={entry} fallback={entry.kind}/></td></tr>)}</tbody></table></main>;}
-createRoot(document.getElementById('root')!).render(new URLSearchParams(location.search).has('ledger')?<LedgerApp/>:detail?<DetailApp/>:<App/>);
+function ListApp(){const owner=scenario!=='staff';const row:Record<string,any>={...currentInvoice,...(scenario==='cancelled'?{status:'CANCELLED',paid:0}:{}),...(scenario==='unpaid'?{status:'OPEN',paid:0}:{})};const open=(action:string,method?:string)=>{calls.push({opened:action,id:row._id,...(method?{method}:{})});};return <main style={{padding:16,maxWidth:380}}><h1>Hóa đơn · fixture giả</h1><div style={{maxWidth:220}}><InvoiceListActions invoice={row} owner={owner} busy={scenario==='busy'} onEdit={()=>open('updateInvoice')} onCancel={()=>open('cancelInvoice')} onDelete={()=>open('deleteInvoice')} onPayment={(_,method)=>open('payment',method)}/></div></main>;}
+createRoot(document.getElementById('root')!).render(new URLSearchParams(location.search).has('list')?<ListApp/>:new URLSearchParams(location.search).has('ledger')?<LedgerApp/>:detail?<DetailApp/>:<App/>);
