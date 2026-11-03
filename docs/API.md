@@ -22,6 +22,12 @@ API dùng cookie session cùng origin. Phải đăng nhập, không chấp nhậ
 | GET /api/workspace | Dữ liệu theo spa/quyền; danh sách phân trang, số tổng quan aggregate toàn bộ |
 | POST /api/operations | `{action,data}` + header `Idempotency-Key` |
 
+Chi tiết hóa đơn bổ sung `handling` cho OWNER: các khóa `edit`, `date`, `replace`,
+`cancel`, `void` chứa lý do chưa khả dụng (chuỗi rỗng khi chưa thấy chặn ở bước đọc).
+Projection chỉ đọc các liên kết cùng spa, không phải quyền ghi hay cam kết action
+sẽ thành công. POST vẫn kiểm toàn bộ guard trong transaction. Không trả thông tin
+ledger/lương thô qua projection; STAFF không được nạp projection OWNER.
+
 Tra cứu dòng đảo trong sổ thu chi (03/11/2026): `pages.cash.rows` và `cash` bổ sung
 `reversalInvoiceCode` khi dòng REVERSAL có `originalId` trỏ đến CashEntry PAYMENT,
 Payment có `receiptId` tương ứng và Invoice có mã gốc hợp lệ. Mỗi truy vấn tham

@@ -54,6 +54,11 @@ Cập nhật: 20/10/2026. Mô tả code `src/lib/models.ts` và `src/lib/operati
 
 ## Quan hệ và snapshot
 
+`readInvoice.handling` là projection chỉ đọc cho giao diện xử lý sai sót, không
+thêm field lưu trữ/index. Đọc Payment/Allocation/CashCardUse, gói/quà/lượt dùng,
+lịch hẹn, ledger/payroll và sổ ngày trong cùng spa để giải thích các chặn đã biết.
+Các snapshot và lịch sử gốc không bị thay đổi khi mở menu.
+
 - Customer có nhiều Appointment, Invoice, Deposit, Treatment.
 - Appointment tham chiếu Service và User (staff); giữ endAt tính khi đặt, sửa duration không tự đổi lịch cũ.
 - Invoice giữ description/total từ Service lúc tạo; sửa danh mục không đổi snapshot hóa đơn.
