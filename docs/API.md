@@ -32,6 +32,13 @@ lệ thì không trả trường này. Đây là projection chỉ đọc; giữ 
 mã giao dịch, phạm vi dòng được xem, phân trang và tổng thu/chi. UI hiển thị
 “Hóa đơn: HD…” riêng với mã giao dịch gốc, không mở rộng quyền xem chi tiết hóa đơn.
 
+Bổ sung 03/11/2026: dòng `PAYMENT` của trang sổ thu chi có `paymentInvoiceCode`
+khi `CashEntry._id` → `Payment.receiptId` → `Payment.invoiceId` → `Invoice.code`
+liên kết hợp lệ cùng spa. Dùng chung lookup theo lô với REVERSAL, không lọc bỏ
+khoản thu đã đảo khi tra cứu lịch sử. Thiếu liên kết hoặc mã gốc hợp lệ thì không
+trả trường này; không dựng mã từ ObjectId. Projection không đổi dữ liệu, bộ lọc
+loại cặp đảo hay công thức tổng tiền.
+
 Ví dụ tạo lịch, thời gian phải có UTC offset:
 
 ```json

@@ -87,7 +87,25 @@ test('reversal follows only same-spa PAYMENT history, including reversed payment
   }
 });
 
-test('pages without reversals do not query invoice references', async t => {
+test('PAYMENT rows show only their issued same-spa invoice code and keep receipt identity', async t => {
+  mockReferences(t);
+  const before = structuredClone(originals);
+  const enriched = await cashReversalReferences(spaId, originals);
+  assert.equal(enriched[0].paymentInvoiceCode, 'HD000067');
+  assert.ok(enriched.slice(1).every(row => row.paymentInvoiceCode === undefined));
+  assert.ok(enriched.every(row => row.reversalInvoiceCode === undefined));
+  assert.deepEqual(enriched.map(({ paymentInvoiceCode, ...row }) => row), before);
+  assert.deepEqual(originals, before);
+  for (const [index, entry] of enriched.entries()) {
+    const markup = renderToStaticMarkup(React.createElement(CashEntryNote, { entry, fallback: 'Thu hóa đơn' }));
+    assert.equal(markup.includes('Hóa đơn: HD000067'), index === 0);
+    assert.ok(markup.includes('#' + String(entry._id).slice(-6)));
+    assert.ok(!markup.includes('Giao dịch gốc:'));
+    assert.ok(!markup.includes('HD000099'));
+  }
+});
+
+test('pages without payments or reversals do not query invoice references', async t => {
   for (const model of [CashEntry, Payment, Invoice]) t.mock.method(model, 'find', () => assert.fail('Unexpected reference read'));
   const entries = [{ _id: id(1), kind: 'INCOME' }];
   assert.equal(await cashReversalReferences(spaId, entries), entries);
@@ -141,6 +159,8 @@ test('workspace enriches its cash page without changing summary aggregation, amo
   assert.deepEqual(result.pages.cash.summary, { incoming: 50, outgoing: 0 });
   assert.equal(result.pages.cash.total, ledger.length);
   assert.equal(result.pages.cash.rows[1].reversalInvoiceCode, 'HD000067');
-  assert.deepEqual(result.cash.map(({ reversalInvoiceCode, ...row }) => row), ledger);
-  assert.deepEqual(cashFlowEntries(result.cash), cashFlowEntries(ledger), 'production exclusion of reversal pairs remains identical');
+  assert.equal(result.pages.cash.rows[0].paymentInvoiceCode, 'HD000067');
+  const stripReference = ({ reversalInvoiceCode, paymentInvoiceCode, ...row }) => row;
+  assert.deepEqual(result.cash.map(stripReference), ledger);
+  assert.deepEqual(cashFlowEntries(result.cash).map(stripReference), cashFlowEntries(ledger), 'production exclusion of reversal pairs remains identical');
 });

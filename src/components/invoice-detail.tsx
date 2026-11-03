@@ -27,10 +27,10 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
     {record.kind === 'invoice' && data && !error && (onEdit || onCancel) && <div className="actions"><button disabled={!onEdit || data.invoice.status === 'CANCELLED'} onClick={()=>onEdit?.(data.invoice,data.treatment)}>Sửa hóa đơn</button></div>}
     {record.kind === 'invoice' && data && !error && <InvoiceCorrectionMenu invoice={data.invoice} onCancel={onCancel} onDelete={onDelete}/>}
-    {record.kind === 'invoice' && data && !error && <PdfExport key={record.id} endpoint={`/api/invoices/${record.id}/export`} />}
+    {record.kind === 'invoice' && data && !error && <PdfExport key={`pdf:${record.id}`} endpoint={`/api/invoices/${record.id}/export`} />}
 
     {record.kind === 'invoice' && data && !error && <InvoiceDocumentHistory invoice={data.invoice}/>}
-    {record.kind === 'invoice' && data && !error && replacementStaff && <InvoiceReplacement key={String(data.invoice.activeDocumentId || data.invoice._id)} invoice={data.invoice} staff={replacementStaff} onChanged={()=>{setRevision(v=>v+1);onReplacement?.();}}/>}
+    {record.kind === 'invoice' && data && !error && replacementStaff && <InvoiceReplacement key={`replacement:${data.invoice.activeDocumentId || data.invoice._id}`} invoice={data.invoice} staff={replacementStaff} onChanged={()=>{setRevision(v=>v+1);onReplacement?.();}}/>}
     {error ? <p role="alert">{error}</p> : !data ? <p role="status">Đang tải…</p> : <>
       <p><strong>{data.customer?.name}</strong> · {data.customer?.phone}</p>
       {record.kind === 'customer' && <>
