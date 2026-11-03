@@ -373,4 +373,53 @@ const bytes16 = urlBase64ToUint8Array(key16);
 assert.equal(bytes16.length, 12);
 assert.deepEqual(Buffer.from(bytes16), Buffer.from(key16, 'base64url'));
 
-console.log('All multi-use, invoice due date, multi-package and push notification tests PASSED!');
+console.log('--- FLEXIBLE NEW-INVOICE LINE PRICES (model doubles; no database) ---');
+const priceBaseline=clone(state.Invoice);
+const pricePayments=state.Payment.length, priceCash=state.CashEntry.length;
+for(const total of [undefined, 0, 123000]) {
+  const before=state.InvoiceLineCommission.length;
+  const created=await call('serviceInvoice',{customerId:customerA,items:[{serviceId,performerId:staff1,...(total===undefined?{}:{total})}]});
+  const saved=state.Invoice.find(row=>String(row._id)===created.id)!;
+  assert.equal(saved.total,total ?? 300000);assert.equal(saved.paid,0);
+  assert.equal(saved.serviceItems[0].total,total ?? 300000);
+  assert.equal(state.InvoiceLineCommission.length,before+1);
+  assert.equal(state.InvoiceLineCommission.at(-1)!.amount,15000,'fixed catalog commission is independent of actual price');
+  if(total===0)assert.equal(saved.status,'PAID');
+}
+const legacyFree=await call('invoice',{customerId:customerA,serviceId,total:0,staffId:staff1});
+assert.equal(state.Invoice.find(row=>String(row._id)===legacyFree.id)!.total,0);
+for(const total of [0,123000,undefined]) {
+  const sale=await call('sellPackage',{customerId:customerA,templateId,...(total===undefined?{}:{total})});
+  const saved=state.Invoice.find(row=>String(row._id)===sale.invoiceId)!;
+  assert.equal(saved.total,total ?? 2500000);assert.equal(saved.saleCommissionAccrued,0);
+  assert.equal(state.Treatment.find(row=>String(row.invoiceId)===String(saved._id))!.remaining,10);
+}
+const freeProductId='7'.repeat(24);
+state.Product.push({_id:freeProductId,spaId,name:'Synthetic product',sku:'PRICE-TEST',unit:'chai',price:80000,stock:20,active:true});
+for(const action of ['productInvoice','sellProduct']) {
+  const created=await call(action,action==='productInvoice'?{customerId:customerA,items:[{productId:freeProductId,quantity:2,unitPrice:0}]}:{customerId:customerA,productId:freeProductId,quantity:2,unitPrice:0});
+  const saved=state.Invoice.find(row=>String(row._id)===created.id)!;
+  assert.equal(saved.total,0);assert.equal(saved.paid,0);assert.equal(saved.status,'PAID');
+}
+assert.equal(state.Product.find(row=>row._id===freeProductId)!.stock,16,'free products still consume stock');
+const grouped=await call('checkout',{customerId:customerA,actions:[
+  {action:'serviceInvoice',data:{items:[{serviceId,total:0,performerId:staff1}],additionalProducts:[{productId:freeProductId,quantity:1,unitPrice:0}]}},
+  {action:'sellPackage',data:{cartId:'free-package',templateId,total:0}},
+  {action:'sellPackage',data:{cartId:'paid-package',templateId,total:200000}},
+]});
+assert.equal(grouped.total,200000);assert.equal(grouped.invoiceIds.length,1);
+const mixed=state.Invoice.find(row=>String(row._id)===grouped.invoiceId)!;
+assert.equal(mixed.status,'OPEN');assert.deepEqual(mixed.packageItems.map((line:any)=>line.total),[0,200000]);
+assert.equal(mixed.serviceItems[0].total,0);assert.equal(mixed.productItems[0].total,0);
+for(const invalid of [-1,0.5,1_000_000_000_001]) {
+  for(const [action,data] of [
+    ['serviceInvoice',{customerId:customerA,items:[{serviceId,total:invalid}]}],
+    ['invoice',{customerId:customerA,serviceId,total:invalid}],
+    ['sellPackage',{customerId:customerA,templateId,total:invalid}],
+    ['productInvoice',{customerId:customerA,items:[{productId:freeProductId,quantity:1,unitPrice:invalid}]}],
+    ['sellProduct',{customerId:customerA,productId:freeProductId,quantity:1,unitPrice:invalid}],
+  ] as const) {const before=clone(state);await assert.rejects(call(action,data));assert.deepEqual(state,before,'invalid prices must roll back');}
+}
+assert.equal(state.Payment.length,pricePayments);assert.equal(state.CashEntry.length,priceCash,'zero-priced sales never create customer receipts');
+for(const old of priceBaseline)assert.deepEqual(state.Invoice.find(row=>String(row._id)===String(old._id)),old,'existing invoices are unchanged');
+console.log('All multi-use, invoice due date, multi-package, flexible line prices and push notification tests PASSED!');

@@ -390,3 +390,7 @@ CONFIRMED theo yêu cầu mới nhất: khi tạo lịch nội bộ, thông báo
 CONFIRMED theo yêu cầu mới nhất, thay thế mọi mô tả cho phép xóa cứng hóa đơn: `InvoiceLineCommission` phải được snapshot riêng và gắn đúng một payroll khi duyệt trong cùng transaction. Hóa đơn có bất kỳ hoa hồng nào đã thuộc payroll duyệt/đã chi không được sửa, hủy hoặc vô hiệu hóa trực tiếp khi chưa có quy trình adjustment được phê duyệt.
 
 Action `deleteInvoice` được giữ tên để tương thích client nhưng chuyển thành vô hiệu hóa: đảo các phát sinh được hỗ trợ theo quy trình hiện hành, giữ nguyên bản ghi hóa đơn/mã chứng từ, đặt trạng thái CANCELLED và lưu audit trước/sau. Không dùng `Invoice.deleteOne`. Với hóa đơn nhiều dòng/người thực hiện, sửa giá giữ `lineId`, `performerId` và mức hoa hồng snapshot; thay đổi tập dịch vụ bị chặn vì chưa có chính sách adjustment line commission. Không backfill hay sửa dữ liệu Production tự động.
+
+
+## Flexible invoice line pricing — 03/11/2026
+CONFIRMED by the latest user request: newly sold standalone services, packages and products may use an actual integer VND price of zero or more, defaulting to catalog prices. Existing purchased-package uses remain covered at zero. Service performer commission stays at the configured catalog amount, independent of actual price. Customer charges, debt and revenue use actual amounts; zero does not create a receipt. Existing package commissions, inventory and historical invoices are preserved.
