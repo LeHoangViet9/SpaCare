@@ -7,14 +7,18 @@ const record = { _id:'test', staffName:'Nhân viên mẫu', month:'2026-10', bas
 const render = (owner:boolean, status:string) => renderToStaticMarkup(<SalaryTable rows={[{...record,status}]} owner={owner} onEdit={()=>{}} onApprove={()=>{}} onPay={()=>{}} />);
 const draft=render(true,'DRAFT');
 assert.match(draft,/4\.350\.000/); assert.match(draft,/300\.000/); assert.match(draft,/100\.000/);
-assert.match(draft,/600\.000/); assert.match(draft,/50\.000/); assert.match(draft,/Thưởng \(gồm hoa hồng\)/); assert.match(draft,/Đã gồm trong thưởng/);
+assert.match(draft,/200\.000/); assert.match(draft,/50\.000/); assert.match(draft,/Thưởng \/ phụ cấp thêm/); assert.match(draft,/Tổng hoa hồng/); assert.match(draft,/400\.000/); assert.match(draft,/Không gồm hoa hồng/); assert.doesNotMatch(draft,/Đã gồm trong thưởng|Công đã ghi|Công đã tính lương/);
 assert.match(draft,/Bảng lương nhân viên theo tháng/);
 assert.doesNotMatch(draft,/Xoay ngang điện thoại|Đơn vị: đồng|Lương tính \+ thưởng|Hoa hồng chưa chốt đến hết tháng/);
 assert.match(draft,/Duyệt lương/); assert.doesNotMatch(draft,/Ghi nhận chi<\/button>/);
 const approved=render(true,'APPROVED'); assert.match(approved,/Ghi nhận chi/); assert.doesNotMatch(approved,/Cập nhật nháp|Duyệt lương/);
 assert.doesNotMatch(render(true,'PAID'),/Cập nhật nháp|Duyệt lương|Ghi nhận chi<\/button>/); assert.doesNotMatch(render(false,'DRAFT'),/Cập nhật nháp|Duyệt lương|Ghi nhận chi<\/button>/);
-assert.match(draft,/Lương cơ bản/); assert.match(draft,/Ngày công \/ nghỉ/); assert.match(draft,/>Tạm ứng</); assert.match(draft,/>Phạt \/ khấu trừ</);
+assert.match(draft,/Lương cơ bản/); assert.match(draft,/Ngày nghỉ/); assert.match(draft,/>Tạm ứng</); assert.match(draft,/>Phạt \/ khấu trừ</);
 const uncreated=renderToStaticMarkup(<SalaryTable rows={[{...record,status:'NOT_CREATED',total:null}]} owner={true} onEdit={()=>{}} onApprove={()=>{}} onPay={()=>{}} />);
-assert.match(uncreated,/600\.000/); assert.match(uncreated,/Tạm tính, chưa chốt/); assert.match(uncreated,/Tính lương tháng/); assert.doesNotMatch(uncreated,/Duyệt lương|Ghi nhận chi<\/button>/);
+assert.match(uncreated,/200\.000/); assert.match(uncreated,/Tạm tính, chưa chốt/); assert.match(uncreated,/Tính lương tháng/); assert.doesNotMatch(uncreated,/Duyệt lương|Ghi nhận chi<\/button>/);
 if (process.argv.includes('--preview')) console.log(JSON.stringify('<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+['ui.css','globals.css','public.css'].map(file=>readFileSync('src/app/'+file,'utf8')).join('\n')+'</style><body><main style="padding:24px;max-width:1440px;margin:auto"><section class="panel panel-padded"><h2>Bảng lương tháng 10/2026</h2>'+renderToStaticMarkup(<SalaryTable rows={['DRAFT','APPROVED','PAID'].map((status,index)=>({...record,_id:String(index),staffName:['Nguyễn Thị Hương','Trần Thị Mai','Phạm Ngọc Anh'][index],status}))} owner={true} onEdit={()=>{}} onApprove={()=>{}} onPay={()=>{}} />)+'</section></main></body></html>'));
 else console.log('Monthly salary table: components, totals and authorized state actions verified');
+
+const stale=renderToStaticMarkup(<SalaryTable rows={[{...record,status:'DRAFT',needsRecalculation:true,commissionTotal:400000,latestServiceCommission:215000,latestSaleCommission:87500,latestCommissionTotal:302500}]} owner={true} onEdit={()=>{}} onApprove={()=>{}} onPay={()=>{}} onAttendance={()=>{}} />);
+assert.match(stale,/Số nháp đang cũ/); assert.match(stale,/Mới nhất/); assert.match(stale,/302\.500/);
+assert.match(stale,/<button[^>]*disabled=""[^>]*>Duyệt lương/); assert.match(stale,/Nghỉ phép/);

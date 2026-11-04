@@ -46,3 +46,10 @@ export function attendanceSalary(base:number, policy: z.infer<typeof salaryPolic
  const earnedBase = Math.round(base * payable / policy.standardDays);
  return {earnedBase, leaveDeduction:base-earnedBase};
 }
+
+// Monthly salaries no longer depend on daily attendance. Keep attendanceSalary for
+// historical consumers; its workday-based formula is not an unpaid-leave policy.
+export function monthlyLeaveSalary(base: number) {
+ return {earnedBase:base, leaveDeduction:0};
+}
+export const unpaidLeaveWarning = 'Có nghỉ không hưởng lương. Chưa xác nhận công thức giảm lương chỉ theo ngày nghỉ; giữ nguyên lương cơ bản. Chủ spa kiểm tra và nhập khấu trừ có lý do khi chốt kỳ.';

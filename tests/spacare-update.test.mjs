@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {formatCurrency,parseMoney} from '../src/lib/currency.ts';
 import {packageCommissionDelta} from '../src/lib/sale-commission.ts';
-import {leaveInputs,summarizeLeave,leavesOverlap,attendanceSalary} from '../src/lib/leave-rules.ts';
+import {leaveInputs,summarizeLeave,leavesOverlap,attendanceSalary,monthlyLeaveSalary,unpaidLeaveWarning} from '../src/lib/leave-rules.ts';
 test('Vietnam money groups thousands while persisted values remain integer VND',()=>{
  for(const [raw,num] of [['1.000',1000],['10.000',10000],['1.000.000',1000000],['2.500.000',2500000],['1000',1000]]) {
   assert.equal(parseMoney(raw),num); assert.equal(formatCurrency(num),num.toLocaleString('vi-VN')+' đ');
@@ -34,10 +34,16 @@ test('approved leave ranges and half days are clipped per month and distinct fro
  assert.equal(leavesOverlap(rows[0],{day:'2026-10-01',type:'WORK',period:'FULL'}),true);
  for(const day of ['2026-02-30','2026-13-01'])assert.equal(leaveInputs.recordStaffLeave.safeParse({staffId:'a'.repeat(24),startDay:day,endDay:day,type:'PERMITTED'}).success,false);
 });
-test('daily salary requires confirmed attendance, paid permission is capped and unpaid absences reduce base once',()=>{
+test('historical daily formula requires confirmed attendance, paid permission is capped and unpaid absences reduce base once',()=>{
  const policy={standardDays:26,paidLeaveDays:1,mode:'DAILY'},leave={permitted:2,unpermitted:1,paid:2,unpaid:1};
  assert.throws(()=>attendanceSalary(5200000,policy,null,leave),/ngày công/);
  assert.deepEqual(attendanceSalary(5200000,policy,23,leave),{earnedBase:4800000,leaveDeduction:400000});
  assert.deepEqual(attendanceSalary(5200000,{...policy,mode:'NONE'},null,leave),{earnedBase:5200000,leaveDeduction:0});
  assert.deepEqual(attendanceSalary(5200000,undefined,null,leave),{earnedBase:5200000,leaveDeduction:0});
+});
+
+test('monthly salary never infers missing attendance or a new unpaid leave formula',()=>{
+ assert.deepEqual(monthlyLeaveSalary(5200000),{earnedBase:5200000,leaveDeduction:0});
+ assert.match(unpaidLeaveWarning,/Chưa xác nhận công thức/);
+ assert.match(unpaidLeaveWarning,/khấu trừ có lý do/);
 });

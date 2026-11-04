@@ -153,3 +153,25 @@ Phạm vi mới: thay tham chiếu phiếu cho mọi buổi mới bằng nét k�
 Các file triển khai:src/components/workspace.tsx,src/components/signature-pad.tsx,src/lib/signature.ts,src/lib/models.ts,src/lib/operations.ts,src/app/api/operations/route.ts,src/app/api/treatment-uses/[id]/route.ts,src/app/globals.css. Tests:tests/signature.test.mjs,tests/integration.test.ts,tests/workbook-http.ts. Tài liệu:BRD,BUSINESS_RULES,DATA_MODEL,API,DESIGN,VALIDATION.
 
 Không backfill chữ ký/hạn dùng và không cần index mới; khởi động lại app để nạp schema. BR-OPEN-002 đã chốt phần bảo lưu, nhưng hạn gốc/mốc tính còn mở; không tự khóa theo expiresOn. BR-OPEN-003 ngoại tuyến vàBR-OPEN-008đổi gói/giá trị buổi còn lại cùng các OPEN tài chính/lương/hoa hồng khác giữ nguyên. Không tự đổi trạng thái Deferred của ca Excel cũ bao gồm cả dừng/đổi gói thànhPass chỉ vì đã có bảo lưu.
+
+
+## Lương nháp và nghỉ phép — 04/11/2026
+- Nhánh triển khai: fix/payroll-commission-and-leave. Ban đầu chỉ có next-env.d.ts thay đổi do Next dev; giữ lại các import .next/dev/types. Không commit/push/deploy/merge, không migration hoặc ghi dữ liệu vận hành.
+- npm test: 232/232 đạt (gồm quy tắc tổng bốn ledger, nháp cũ/mới, snapshot đã khóa, render bảng lương/nghỉ và tương thích công thức công lịch sử).
+- npm run typecheck: đạt khi chạy tuần tự sau build; lần chạy song song với build ban đầu bị thiếu file .next/types do build tái tạo chúng, đã chạy lại thành công.
+- npm run build: đạt. Cảnh báo middleware convention deprecated là cảnh báo sẵn có, không thuộc phạm vi sửa.
+- git diff --check: đạt.
+- MongoDB kiểm thử 127.0.0.1:27018 không nhận kết nối TCP. Không chạy integration hoặc dùng database khác để thay thế. Đã bổ sung/cập nhật integration cho đồng bộ bốn ledger không cộng trùng, nghỉ có lương/không lương, nghỉ chờ duyệt, không cần Workday và snapshot APPROVED/PAID bất biến; chưa xác minh các ca này trên database.
+- OPEN: công thức giảm chỉ theo nghỉ không lương chưa xác nhận. Giữ lương cơ bản và cảnh báo chủ spa nhập khấu trừ có lý do; không coi công thức DAILY dựa công thực tế cũ là chính sách mới.
+
+
+## Sửa lỗi tạo Payroll do pendingLeaves — 04/11/2026
+- Nguyên nhân: savePayroll spread kết quả attendanceFor có field tạm pendingLeaves vào payload create; Payroll giữ strict:'throw' nên HTTP 500. Sửa bằng cách chỉ lấy rõ bốn field snapshot salaryPolicy/leaveStats/workdays/attendanceDigest để lưu cho cả create/update. Không đổi schema, công thức lương hoặc guard duyệt nghỉ.
+- Regression integration mới: nhân viên chưa có Payroll/công/nghỉ và có policy DAILY tạo DRAFT thành công, retry idempotency không trùng; kiểm raw Mongo document chỉ có field schema, không pendingLeaves, validate thành công. Cập nhật khi có nghỉ PENDING vẫn không lưu field tạm; duyệt lương bị chặn, duyệt nghỉ/cập nhật nháp rồi duyệt lương được; nghỉ hưởng lương không giảm base, không cần Workday.
+- Đã chạy regression trước sửa: thất bại đúng StrictModeError pendingLeaves. Sau sửa chạy toàn bộ integration: 55/55 đạt, không skipped; mọi ca từng thất bại về payroll/commission/leave, legacy và thay tư vấn đều đạt.
+- Rà log cũ: ca leave-only có lỗi fixture lineId ngoài schema ở ledger không phải InvoiceLineCommission (khác các ca lỗi pendingLeaves). Đã sửa helper test chỉ tạo lineId cho InvoiceLineCommission để kiểm được đầy đủ bốn ledger; không nới schema/giảm assert.
+- Runner scripts/run-cash-flow-integration.mjs dùng mongod local mới, cổng 27018 kiểm trống trước chạy, dbpath mới, chỉ spacare_test/rs0. Preflight xác minh đúng host/port/database/primary và schema trước mọi fixture ghi dữ liệu. Không đọc .env.local hoặc dùng production/demo; runner dừng mongod sau test.
+- npm test: 232/232 đạt. npm run typecheck: đạt. npm run build: đạt trên bản sao source không .env, giữ next-env.d.ts gốc. git diff --check: đạt.
+- Browser Chromium thật: 12/12 kịch bản local đạt tại 127.0.0.1:3226 với MongoDB test mới cùng target đã preflight. Tạo nháp mới trả 200; cập nhật hai lần từ 125.000đ thành 215.000đ dịch vụ + 87.500đ bán gói = 302.500đ không cộng trùng; nháp lệch bị chặn; APPROVED/PAID giữ snapshot sau phát sinh; nghỉ hưởng lương không giảm base; nghỉ không lương khấu trừ tay có lý do; PENDING chặn duyệt; không ghi công; lịch sử Payroll/Workday synthetic không đổi. Không pageerror trong lượt cuối. App/mongod test đã dừng.
+- Bằng chứng: outputs/payroll-pending-leaves-fix-20261104/{integration-before-fix.log,integration-after-fix.log,unit.log,typecheck.log,build.log,ui-runner.log,final-ui-results.json,workspace-proof.json,REPORT.md}. Các kết quả review thất bại trước đây vẫn giữ trong thư mục review cũ, không ghi đè lịch sử.
+- Không commit/push/deploy/merge, migration/backfill hay ghi dữ liệu thật. Quy tắc giảm chỉ theo nghỉ không lương vẫn OPEN như trước, không thêm công thức mới.

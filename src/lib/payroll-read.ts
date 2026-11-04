@@ -48,17 +48,17 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   const total = q.view === 'salary' ? selectedPeople.length : (await Commission.aggregate([...combinedFilter,{$count:'total'}]))[0]?.total || 0;
   const page = Math.min(q.page, Math.max(1, Math.ceil(total / 10)));
   const pagePeople = selectedPeople.slice((page-1)*10,page*10);
-  const rows = q.view === 'salary' ? await Payroll.find({...payrollFilter,staffId:{$in:pagePeople.map(p=>p._id)}}).select('-commissionIds -invoiceLineCommissionIds -saleCommissionIds -sharedSaleCommissionIds').lean()
+  const rows = q.view === 'salary' ? await Payroll.find({...payrollFilter,staffId:{$in:pagePeople.map(p=>p._id)}}).lean()
     : await Commission.aggregate([...combinedFilter,{$sort:{earnedAt:-1,_id:-1}},{$skip:(page-1)*10},{$limit:10}]);
   let displayRows = q.view === 'commission' ? await commissionCustomers(user.spaId, rows) : rows;
   const summary = await Commission.aggregate([...combinedFilter,{$group:{_id:'$category',amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const legacySettledLineIds = [...await legacySettledInvoiceLineIds({ ...scope, spaId: user.spaId })].map(id => new mongoose.Types.ObjectId(id));
-  const unsettled = await Commission.aggregate([...combined(payrollCommissionPeriod({...scope,payrollId:{$exists:false}},q.month),legacySettledLineIds),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
+  const unsettled = await Commission.aggregate([...combined(payrollCommissionPeriod({...scope,$or:[{payrollId:{$exists:false}},{payrollId:null}]},q.month),legacySettledLineIds),{$group:{_id:null,amount:{$sum:'$amount'},count:{$sum:1}}}]);
   const salarySummary = q.view === 'salary' ? await Payroll.aggregate([
     { $match: (Payroll.find(payrollFilter) as any).cast(Payroll) },
     { $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: '$total' } } },
   ]) : [];
-  const payrolls = q.view === 'commission' ? await Payroll.find({ ...scope, _id: { $in: rows.map(r => r.payrollId).filter(Boolean) } }).select('month status').lean() : [];
+  const payrolls = q.view === 'commission' ? await Payroll.find({ ...scope, $or:[{_id:{$in:rows.map(r=>r.payrollId).filter(Boolean)}},{month:q.month}] }).select('staffId month status commissionIds invoiceLineCommissionIds saleCommissionIds sharedSaleCommissionIds').lean() : [];
   const services = user.role === 'OWNER' && q.view === 'commission' ? await Service.find({ spaId: user.spaId }).select('name commission active').sort({ name: 1, _id: 1 }).lean() : [];
   const last = end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'});
   const leaveFilter = {...scope,$or:[{startDay:{$lt:last},endDay:{$gte:q.month+'-01'}},{startDay:{$exists:false},day:{$gte:q.month+'-01',$lt:last}}]};
@@ -72,10 +72,16 @@ export async function readPayroll(user: Actor, q: ReturnType<typeof payrollQuery
   const workdays = q.view === 'salary' ? await Workday.find(workFilter).sort({day:-1,_id:-1}).skip((workPage-1)*10).limit(10).lean() : [];
   const leaveSummary = people.filter(p=>!q.employee || String(p._id)===q.employee).map(p=>({staffId:p._id,...summarizeLeave(allLeaves.filter(r=>String(r.staffId)===String(p._id)),q.month)}));
   if(q.view === 'salary') {
-    const pending = await Commission.aggregate([...combined(payrollCommissionPeriod({...scope,staffId:{$in:pagePeople.map(p=>p._id)},payrollId:{$exists:false}},q.month),legacySettledLineIds),{$group:{_id:{staffId:'$staffId',category:'$category'},amount:{$sum:'$amount'}}}]);
+    const pending = await Commission.aggregate([...combined(payrollCommissionPeriod({...scope,staffId:{$in:pagePeople.map(p=>p._id)},$or:[{payrollId:{$exists:false}},{payrollId:null},{payrollId:{$in:rows.filter(r=>r.status==='DRAFT').map(r=>r._id)}}]},q.month),legacySettledLineIds),{$group:{_id:{staffId:'$staffId',category:'$category'},amount:{$sum:'$amount'},ids:{$push:'$_id'}}}]);
     displayRows=salaryOverviewRows(pagePeople,rows,pending,workSummary,leaveSummary,q.month);
   }
   return { workdays,workSummary,workTotal,workPage, leaves, leaveSummary, leaveTotal, leavePage, salarySummary, services, people: people.map(p => ({ _id: p._id, name: p.name, active: p.active, role: p.role, baseSalary: p.baseSalary ?? null, salaryPolicy:p.salaryPolicy })),
-    rows: displayRows.map(r => ({ ...r, ...(q.view === 'commission' ? { payrollMonth: payrolls.find(p => String(p._id) === String(r.payrollId))?.month, payrollStatus: payrolls.find(p => String(p._id) === String(r.payrollId))?.status } : {}) })),
+    rows: displayRows.map(r => {
+      const settled=payrolls.find(p=>String(p._id)===String(r.payrollId));
+      const inDraft=payrolls.some(p=>p.status==='DRAFT' && String(p.staffId)===String(r.staffId) &&
+        ['commissionIds','invoiceLineCommissionIds','saleCommissionIds','sharedSaleCommissionIds'].some(k=>(p as any)[k]?.some((id:unknown)=>String(id)===String(r._id))));
+      const {commissionIds,invoiceLineCommissionIds,saleCommissionIds,sharedSaleCommissionIds,...visible}=r;
+      return {...visible,...(q.view==='commission' ? {inDraft,payrollMonth:settled?.month,payrollStatus:settled?.status} : {})};
+    }),
     page, total, summary: { commission:summary.reduce((n,r)=>n+r.amount,0), serviceCommission:summary.find(r=>r._id==='SERVICE')?.amount || 0, saleCommission:summary.find(r=>r._id==='PACKAGE_SALE')?.amount || 0, sessions:summary.find(r=>r._id==='SERVICE')?.count || 0, unsettled: unsettled[0]?.amount || 0, unsettledCount: unsettled[0]?.count || 0 } };
 }
