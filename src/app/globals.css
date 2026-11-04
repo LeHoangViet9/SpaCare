@@ -1821,7 +1821,7 @@ label textarea { margin-top: 8px; }
  .salary-table .actions button { min-height:42px; }
 }
 
-/* Attendance remains a real shared table at every viewport width. */
+/* Shared payroll tables; leave management uses cards on mobile. */
 .payroll-grid-scroll { max-width:100%; width:100%; min-width:0; overflow-x:auto; margin-block:18px; border:1px solid var(--line); border-radius:10px; overscroll-behavior-x:contain; }
 .payroll-grid { width:100%; min-width:780px; border-collapse:collapse; }
 .payroll-grid caption { text-align:left; font-weight:700; padding:14px; background:#f3f6ef; }
@@ -2145,3 +2145,57 @@ label textarea { margin-top: 8px; }
 .cashier-receipt > .section-head { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
 .cashier-receipt > .section-head h3 { flex: 1; min-width: 0; }
 .cashier-receipt > .section-head .cashier-clear-cart { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; font-size: 26px; line-height: 1; }
+
+
+/* Leave dialog: keep desktop tables, use a vertical mobile workspace. */
+.leave-mobile { display: none; }
+@media (max-width: 700px) {
+  .attendance-dialog-backdrop { padding: 0; align-items: stretch; z-index: 120; }
+  .attendance-dialog { display: flex; flex-direction: column; width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; overflow: hidden; }
+  .attendance-dialog > .section-head { position: relative; flex: 0 0 auto; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px; gap: 12px; margin: 0; align-items: center; }
+  .attendance-dialog > .section-head h2 { min-width: 0; font-size: 19px; overflow-wrap: anywhere; }
+  .attendance-dialog-separator { display: none; }
+  .attendance-dialog-context { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; font-weight: 400; }
+  .attendance-dialog > .section-head > button { flex: 0 0 auto; min-width: 64px; min-height: 48px; }
+  .attendance-dialog-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .attendance-dialog-body > p { padding: 16px; overflow-wrap: anywhere; }
+  .leave-management { min-width: 0; padding: 20px 16px; border: 0; border-radius: 0; box-shadow: none; }
+  .leave-management .leave-desktop { display: none; }
+  .leave-management .leave-mobile { display: block; }
+  .leave-management > .leave-management-heading { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 0; border: 0; margin: 0 0 16px; }
+  .leave-management-heading h3 { margin: 0; font-size: 16px; }
+  .leave-management .leave-create-button { width: 100%; min-height: 48px; background: var(--green); color: #fff; border-color: var(--green); }
+  .leave-management > .leave-note { margin: 0 0 24px; padding: 12px; font-size: 13px; line-height: 1.6; }
+  .leave-month-summary { margin-bottom: 28px; }
+  .leave-block-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .leave-block-heading h4 { margin: 0; font-size: 16px; }
+  .leave-block-heading small { color: var(--muted); font-size: 13px; }
+  .leave-person-summary + .leave-person-summary { margin-top: 16px; }
+  .leave-person-summary > strong { display: block; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .leave-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+  .leave-metrics > div { padding: 12px; background: #f3f6ef; border: 1px solid var(--line); border-radius: 10px; }
+  .leave-metrics dt { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .leave-metrics dd { margin: 4px 0 0; font-size: 23px; font-weight: 700; }
+  .leave-cards { display: grid; gap: 16px; list-style: none; padding: 0; margin: 0; }
+  .leave-cards > li { min-width: 0; }
+  .leave-card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+  .leave-card-person { display: block; margin-bottom: 10px; }
+  .leave-card-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+  .leave-card-heading h5 { flex: 1 1 150px; margin: 0; font-size: 16px; line-height: 1.6; }
+  .leave-card-heading time { white-space: nowrap; }
+  .leave-status { display: inline-block; padding: 4px 8px; border-radius: 6px; background: #f0f3ef; font-size: 12px; line-height: 1.6; }
+  .leave-status.pending { background: #fff2d8; color: #77520b; }
+  .leave-status.approved { background: #e6f3eb; color: #205b3e; }
+  .leave-status.rejected { background: #fbe9e7; color: #873c31; }
+  .leave-card-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; margin: 0; }
+  .leave-card-facts dt, .leave-card-reason > span:first-child { font-size: 12px; color: var(--muted); }
+  .leave-card-facts dd { margin: 4px 0 0; font-size: 14px; line-height: 1.5; }
+  .leave-card-reason { display: grid; gap: 4px; margin: 16px 0 0; font-size: 14px; line-height: 1.6; }
+  .leave-card-reason > span:last-child { white-space: pre-wrap; }
+  .leave-card .leave-actions:empty { display: none; }
+  .leave-card .leave-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .leave-card .leave-actions button { flex: 1 1 64px; min-width: 0; min-height: 46px; padding: 10px 8px; }
+  .leave-empty { margin: 0; padding: 20px 12px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); text-align: center; line-height: 1.6; }
+  .leave-management .leave-pagination { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
+  .leave-pagination button { min-height: 46px; }
+}
