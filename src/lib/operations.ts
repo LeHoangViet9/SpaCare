@@ -11,7 +11,7 @@ import { serviceGroupName, serviceGroupKey } from './service-groups';
 import { CashCard, CashCardUse } from './models';
 import { invoiceCardInput, cashCardInputs, cardPayment, ensureCardService } from './cash-card-rules';
 import { nextSessionNumber, timedPackage, treatmentAvailable, useToken, packageSnapshot, packageStartOnPurchase } from './treatment-rules';
-import { leavesOverlap, summarizeLeave, attendanceSalary, dayUnits, leaveDays } from './leave-rules';
+import { leavesOverlap, summarizeLeave, monthlyLeaveSalary } from './leave-rules';
 import { packageCommissionDelta, sharedCommissionDeltas } from './sale-commission';
 import { applyInvoiceLinePayment, resolveInvoiceLineAllocations } from './invoice-line-payments';
 import { isValidSignature, type Signature } from './signature';
@@ -20,7 +20,7 @@ import { staffPhone } from './login-identity';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package-input';
-import { payrollCommissionPeriod, payrollInputs, monthBounds, salaryTotal } from './payroll-rules';
+import { payrollCommissionPeriod, payrollInputs, monthBounds, commissionTotals } from './payroll-rules';
 import { productInputs, productNameKey, stockBalance, productTotal } from './product-rules';
 import type { Actor } from './auth';
 import { cashFlowMatch, cashFlowNet } from './cash-flow';
@@ -48,7 +48,7 @@ import {
   InvoiceLineCommission,
   Payroll,
   StaffLeave,
-  Workday, SaleCommission, SharedSaleCommission,
+  SaleCommission, SharedSaleCommission,
   Product, ProductGroup, StockMovement,
 } from './models';
 import {
@@ -445,7 +445,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const pendingCommissions = async (staffId: string, month: string, ownerPayrollId?: unknown) => {
         const ownership = ownerPayrollId
           ? {$or:[{payrollId:{$exists:false}},{payrollId:null},{payrollId:ownerPayrollId}]}
-          : {payrollId:{$exists:false}};
+          : {$or:[{payrollId:{$exists:false}},{payrollId:null}]};
         const filter = {...payrollCommissionPeriod({...scope,staffId,...ownership},month)};
         const service = await Commission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         const lineCandidates = await InvoiceLineCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
@@ -456,8 +456,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           { ...scope, staffId }, lineCandidates.map(c => c._id), session,
         );
         const line = lineCandidates.filter(c=>!legacySettled.has(String(c._id)));
-        const sale = await SaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
-        const shared = await SharedSaleCommission.find(filter).sort({earnedAt:1,_id:1}).session(session);
+        const sale = await SaleCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
+        const shared = await SharedSaleCommission.find({...filter,cancelledAt:{$exists:false}}).sort({earnedAt:1,_id:1}).session(session);
         return [
           ...service.map(c=>({...c.toObject(),ledgerType:'commission'})),
           ...line.map(c=>({...c.toObject(),ledgerType:'invoiceLineCommission'})),
@@ -474,28 +474,23 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         ensure(staff.active && ['OWNER', 'STAFF'].includes(staff.role), 'Nhân viên thực hiện không hoạt động.');
         return staff;
       };
-      const attendanceFor = async (staffId:string,month:string,confirmed:boolean) => {
+      const attendanceFor = async (staffId:string,month:string) => {
         const staff = await User.findOne({...scope,_id:staffId}).select('+salaryPolicy').session(session);
         const leaves = await StaffLeave.find({...scope,staffId,$or:[{startDay:{$lt:monthBounds(month).end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})},endDay:{$gte:month+'-01'}},{startDay:{$exists:false},day:{$gte:month+'-01',$lt:monthBounds(month).end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})}}]}).sort({_id:1}).session(session);
-        const work = await Workday.find({...scope,staffId,day:{$gte:month+'-01',$lt:monthBounds(month).end.toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'})}}).sort({day:1}).session(session);
         const leaveStats = summarizeLeave(leaves.map(r=>r.toObject()),month);
-        const workdays = work.reduce((n,r)=>n+dayUnits(r.period),0);
-        return {salaryPolicy:staff?.salaryPolicy, leaveStats, workdays:confirmed ? workdays : null,
-          attendanceDigest:sha(JSON.stringify({policy:staff?.salaryPolicy,leaves:leaves.map(r=>r.toObject()),work:work.map(r=>r.toObject())}))};
+        return {salaryPolicy:staff?.salaryPolicy, leaveStats, workdays:null,
+          attendanceDigest:sha(JSON.stringify({version:'LEAVE_ONLY_V1',policy:staff?.salaryPolicy,leaves:leaves.map(r=>r.toObject())})),
+          pendingLeaves:leaves.some(r=>r.status === 'PENDING')};
       };
       const fillPayroll = (payroll: any, commissions: any[]) => {
         payroll.commissionCount = commissions.length;
         payroll.carryoverCount = commissions.filter(c => c.earnedAt < monthBounds(payroll.month).start).length;
-        const serviceLedgers = commissions.filter(c=>c.ledgerType === 'commission' || c.ledgerType === 'invoiceLineCommission');
-        const saleLedgers = commissions.filter(c=>c.ledgerType === 'saleCommission' || c.ledgerType === 'sharedSaleCommission');
-        payroll.serviceCommissionTotal = serviceLedgers.reduce((n,c)=>n+c.amount,0);
-        payroll.saleCommissionTotal = saleLedgers.reduce((n,c)=>n+c.amount,0);
-        payroll.commissionTotal = payroll.serviceCommissionTotal + payroll.saleCommissionTotal;
+        Object.assign(payroll,commissionTotals(commissions));
         payroll.commissionIds = commissions.filter(c=>c.ledgerType === 'commission').map(c=>c._id);
         payroll.invoiceLineCommissionIds = commissions.filter(c=>c.ledgerType === 'invoiceLineCommission').map(c=>c._id);
         payroll.saleCommissionIds = commissions.filter(c=>c.ledgerType === 'saleCommission').map(c=>c._id);
         payroll.sharedSaleCommissionIds = commissions.filter(c=>c.ledgerType === 'sharedSaleCommission').map(c=>c._id);
-        let base; try { base = attendanceSalary(payroll.baseSalary,payroll.salaryPolicy,payroll.workdays,payroll.leaveStats || {permitted:0,unpermitted:0,paid:0,unpaid:0}); } catch(e) { ensure(false,(e as Error).message); }
+        const base = monthlyLeaveSalary(payroll.baseSalary);
         Object.assign(payroll,base);
         payroll.total = money(payroll.earnedBase + payroll.commissionTotal + payroll.bonus - payroll.deductions - (payroll.advance || 0), true);
       };
@@ -766,14 +761,8 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           target.salaryPolicy = policy; await target.save({session}); break;
         }
         case 'recordWorkday': {
-          const d = schemas.recordWorkday.parse(data); ensure(d.day <= today,'Không ghi ngày công thực tế trong tương lai.'); const staff = await get(User,d.staffId);
-          ensure(staff.role === 'STAFF','Lương và chấm công chỉ áp dụng cho nhân viên, không áp dụng cho chủ spa.',403);
-          const leaves = await StaffLeave.find({...scope,staffId:d.staffId,status:{$ne:'REJECTED'}}).session(session);
-          ensure(!leaves.some(r => leavesOverlap(r.toObject(),{day:d.day,period:d.period,type:'WORK'})),'Ngày công trùng thời gian nghỉ đã ghi nhận.',409);
-          target = await Workday.findOne({...scope,staffId:d.staffId,day:d.day}).session(session);
-          appointmentBefore = target?.toObject() || {status:null};
-          if (!target) target = new Workday({...scope,staffId:d.staffId,day:d.day});
-          Object.assign(target,{...d,actorId:actor.id}); await target.save({session}); break;
+          ensure(false,'SpaCare chỉ ghi nhận nghỉ phép; luồng ghi ngày công đã ngừng.',409);
+          break;
         }
         case 'recordStaffLeave': {
           const d = schemas.recordStaffLeave.parse(data);
@@ -787,8 +776,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const candidate = {...d,day:startDay,startDay,endDay,status:target?.status || 'PENDING'};
           const others = await StaffLeave.find({...scope,staffId:d.staffId,...(target ? {_id:{$ne:target._id}} : {})}).session(session);
           ensure(!others.some(r => leavesOverlap(r.toObject(),candidate)),'Khoảng nghỉ trùng bản ghi khác.',409);
-          const work = await Workday.find({...scope,staffId:d.staffId,day:{$gte:startDay,$lte:endDay}}).session(session);
-          ensure(!work.some(r => leavesOverlap(candidate,{day:r.day,period:r.period,type:'WORK'})),'Khoảng nghỉ trùng ngày công.',409);
           appointmentBefore = target?.toObject() || {status:null};
           if (!target) target = new StaffLeave({...scope,staffId:d.staffId});
           Object.assign(target,{day:startDay,startDay,endDay,period:d.period,type:d.type,note:d.note,paid:d.paid,staffName:staff.name,actorId:actor.id,status:candidate.status});
@@ -836,8 +823,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(baseSalary !== undefined, 'Cần cài lương cơ bản hoặc nhập lương tháng trước.');
           const commissions = await pendingCommissions(d.staffId, d.month, existing?._id);
           const { id, ...input } = d;
-          const attendance = await attendanceFor(d.staffId,d.month,d.attendanceConfirmed);
-          const values: any = { ...input, ...attendance, baseSalary, staffName: staff.name, needsRecalculation:false };
+          // Persist only the declared snapshot fields; approval-only checks such as
+          // pendingLeaves must never enter either the create or update payload.
+          const { salaryPolicy, leaveStats, workdays, attendanceDigest } = await attendanceFor(d.staffId,d.month);
+          const values: any = { ...input, salaryPolicy, leaveStats, workdays, attendanceDigest, baseSalary, staffName: staff.name, needsRecalculation:false };
           fillPayroll(values, commissions);
           if (existing) { Object.assign(existing, values); await existing.save({ session }); target = existing; }
           else target = await create(Payroll, values);
@@ -852,11 +841,14 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           if (target.status !== 'DRAFT') { ensure(target.total === d.expectedTotal, 'Số tiền bảng lương đã thay đổi.', 409); break; }
           const commissions = await pendingCommissions(String(target.staffId), target.month, target._id);
           const ids = commissions.map(c => String(c._id)).sort().join(',');
-          const attendance = await attendanceFor(String(target.staffId),target.month,target.attendanceConfirmed);
-          ensure(target.attendanceDigest ? attendance.attendanceDigest === target.attendanceDigest : !attendance.salaryPolicy,'Ngày nghỉ, công hoặc chính sách đã đổi. Cập nhật nháp trước khi duyệt.',409);
+          const attendance = await attendanceFor(String(target.staffId),target.month);
+          ensure(attendance.attendanceDigest === target.attendanceDigest,'Ngày nghỉ hoặc chính sách đã đổi, hoặc nháp dùng cách tính công cũ. Cập nhật nháp trước khi duyệt.',409);
+          ensure(!attendance.pendingLeaves,'Còn ngày nghỉ chờ duyệt trong kỳ. Duyệt hoặc từ chối nghỉ rồi cập nhật nháp trước khi duyệt lương.',409);
           // Legacy drafts stored line IDs in commissionIds. Comparing the complete set first
           // keeps those drafts approvable; fillPayroll below then separates each ledger.
           ensure(ids === [...target.commissionIds,...(target.invoiceLineCommissionIds || []),...(target.saleCommissionIds || []),...(target.sharedSaleCommissionIds || [])].map((id: any) => String(id)).sort().join(','), 'Hoa hồng đã thay đổi. Cập nhật bản nháp trước khi duyệt.', 409);
+          const latest=commissionTotals(commissions);
+          ensure(latest.serviceCommissionTotal === (target.serviceCommissionTotal ?? target.commissionTotal) && latest.saleCommissionTotal === (target.saleCommissionTotal || 0),'Số hoa hồng dịch vụ/bán gói đã đổi. Cập nhật nháp cuối kỳ trước khi duyệt.',409);
           fillPayroll(target, commissions);
           ensure(target.total === d.expectedTotal, 'Số tiền đã thay đổi. Kiểm tra lại bảng lương.', 409);
           const attachPayroll = async (model: mongoose.Model<any>, commissionIds: any[]) => {

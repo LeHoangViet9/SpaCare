@@ -12,3 +12,18 @@ test('live attendance and new commissions never overwrite an approved salary sna
  assert.equal(row.total,5300000);assert.equal(row.workdays,22);assert.equal(row.commissionTotal,300000);assert.equal(row.leaveStats.permitted,0);
  assert.equal(row.currentWorkdays,24);assert.equal(row.currentLeaveStats.permitted,2);assert.equal(saved.currentWorkdays,undefined);
 });
+
+test('draft displays latest service and package amounts and detects equal-total ledger replacement',()=>{
+ const people=[{_id:'a',name:'Staff'}];
+ const saved={staffId:'a',status:'DRAFT',commissionIds:['old'],serviceCommissionTotal:125000,saleCommissionTotal:0,commissionTotal:125000,total:5125000};
+ const pending=[{_id:{staffId:'a',category:'SERVICE'},amount:215000,ids:['service']},{_id:{staffId:'a',category:'PACKAGE_SALE'},amount:87500,ids:['sale']}];
+ const [row]=salaryOverviewRows(people,[saved],pending,[],[],'2026-11');
+ assert.equal(row.needsRecalculation,true);assert.equal(row.latestCommissionTotal,302500);assert.equal(row.commissionTotal,125000);assert.equal(saved.needsRecalculation,undefined);
+ const refreshed={...saved,commissionIds:['service'],saleCommissionIds:['sale'],serviceCommissionTotal:215000,saleCommissionTotal:87500,commissionTotal:302500};
+ assert.equal(salaryOverviewRows(people,[refreshed],pending,[],[],'2026-11')[0].needsRecalculation,false);
+ assert.equal(salaryOverviewRows(people,[{...refreshed,commissionIds:['replacement']}],pending,[],[],'2026-11')[0].needsRecalculation,true);
+ for(const status of ['APPROVED','PAID']) {
+  const [locked]=salaryOverviewRows(people,[{...saved,status}],pending,[],[],'2026-11');
+  assert.equal(locked.commissionTotal,125000);assert.equal(locked.total,5125000);assert.equal(locked.needsRecalculation,false);
+ }
+});

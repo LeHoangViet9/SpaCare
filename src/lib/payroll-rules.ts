@@ -27,3 +27,13 @@ export function salaryTotal(base: number, commission: number, bonus: number, ded
   for (const value of [base, commission, bonus, deductions]) money.parse(value);
   return money.parse(base + commission + bonus - deductions);
 }
+
+export function commissionTotals(rows: {amount:number; category?:string; ledgerType?:string}[]) {
+  let serviceCommissionTotal=0, saleCommissionTotal=0;
+  for(const row of rows) {
+    const sale=row.category === 'PACKAGE_SALE' || (!row.category && ['saleCommission','sharedSaleCommission'].includes(row.ledgerType || ''));
+    if(sale) saleCommissionTotal+=row.amount;
+    else serviceCommissionTotal+=row.amount;
+  }
+  return {serviceCommissionTotal,saleCommissionTotal,commissionTotal:serviceCommissionTotal+saleCommissionTotal};
+}

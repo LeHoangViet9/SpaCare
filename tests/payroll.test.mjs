@@ -1,7 +1,7 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { tsImport } from 'tsx/esm/api';
-const { monthBounds, payrollCommissionPeriod, salaryTotal, payrollInputs } = await tsImport('../src/lib/payroll-rules.ts', import.meta.url);
+const { monthBounds, payrollCommissionPeriod, salaryTotal, commissionTotals, payrollInputs } = await tsImport('../src/lib/payroll-rules.ts', import.meta.url);
 const { payrollStaffScope, payrollQuery } = await tsImport('../src/lib/payroll-read.ts', import.meta.url);
 const id = 'a'.repeat(24), other = 'b'.repeat(24), spaId = 'c'.repeat(24);
 test('service commission is a fixed integer amount per service, without client tenant or employee scope', () => {
@@ -113,3 +113,11 @@ test('payroll approval needs expected amount and payout requires actual-payment 
   assert.deepEqual(line.$unionWith.pipeline[0].$match._id,{$nin:[legacy]});
   for(const stage of pipeline.filter(stage=>stage.$unionWith && stage!==line)) assert.equal(stage.$unionWith.pipeline[0].$match._id,undefined);
  });
+
+test('service, package and shared ledgers replace totals once, including legacy package categories and negative adjustments',()=>{
+ const rows=[{ledgerType:'commission',amount:100000},{ledgerType:'invoiceLineCommission',category:'SERVICE',amount:115000},
+ {ledgerType:'saleCommission',category:'PACKAGE_SALE',amount:50000},{ledgerType:'sharedSaleCommission',category:'PACKAGE_SALE',amount:37500}];
+ assert.deepEqual(commissionTotals(rows),{serviceCommissionTotal:215000,saleCommissionTotal:87500,commissionTotal:302500});
+ assert.deepEqual(commissionTotals([{ledgerType:'commission',category:'PACKAGE_SALE',amount:10000},{ledgerType:'sharedSaleCommission',amount:-2500}]),{serviceCommissionTotal:0,saleCommissionTotal:7500,commissionTotal:7500});
+ assert.equal(commissionTotals(rows).commissionTotal,302500);
+});
