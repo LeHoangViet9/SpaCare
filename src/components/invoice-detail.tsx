@@ -27,7 +27,7 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
     ...(data.invoice.serviceItems || []),
     ...(data.invoice.treatmentSessions || []).filter((session: Row) => !data.invoice.serviceItems?.some((item: Row) => item.lineId && item.lineId === session.lineId && item.total === 0 && session.total === 0)),
   ] : [];
-  if (!serviceLines.length && data?.invoice.serviceId && (!data.invoice.kind || ['SERVICE', 'SESSION'].includes(data.invoice.kind)))
+  if (!serviceLines.length && data?.invoice?.serviceId && (!data.invoice.kind || ['SERVICE', 'SESSION'].includes(data.invoice.kind)))
     serviceLines.push({ name: data.invoice.description, total: data.invoice.total, performerName: data.invoice.performerName });
   const signedRecords: Row[] = (data?.signatures || []).filter((record: Row) => record.signature?.strokes?.some((stroke: number[][]) => stroke.length > 1));
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
