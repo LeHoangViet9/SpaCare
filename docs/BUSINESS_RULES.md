@@ -843,3 +843,13 @@ Chỉ nghỉ đã duyệt (hoặc legacy đã ghi thiếu status) được thố
 
 ### Sửa payload tạo/cập nhật Payroll — 04/11/2026
 PROPOSED kỹ thuật: savePayroll chỉ lấy rõ salaryPolicy, leaveStats, workdays và attendanceDigest từ kết quả tải nghỉ để lưu snapshot. pendingLeaves là dữ liệu tạm chỉ dùng cho kiểm tra approvePayroll, không thuộc payload tạo/cập nhật và không thêm vào schema. Giữ strict:'throw', kiểm nghỉ PENDING/fingerprint trước duyệt, transaction/idempotency/audit và các quy tắc lương hiện hành. Không migration/backfill hay thay đổi bảng đã duyệt/đã chi.
+
+## Hiển thị chi tiết hóa đơn — 05/11/2026
+
+CONFIRMED theo yêu cầu người dùng: kỹ thuật viên hiển thị ngay dưới từng dịch vụ theo phân công đã lưu, thiếu thì ghi “Kỹ thuật viên: Chưa có”; không lấy nhân viên chung để điền dòng thiếu phân công. Các khoản thu trực tiếp hiển thị riêng phương thức và số tiền theo giao dịch thực tế, kể cả nhiều khoản cùng phương thức. Bỏ cảnh báo sửa/hủy hóa đơn đã trả và dòng người thực hiện chung kèm thời gian; giữ Người tạo, tổng tiền, đã trả, còn nợ. Chỉ thay cách đọc/hiển thị, không đổi quyền hay điều kiện sửa/hủy, thu tiền, lịch sử hoặc dữ liệu hóa đơn.
+
+## Thanh toán gộp nhiều phương thức — 05/11/2026
+
+CONFIRMED theo yêu cầu người dùng: một lần Thanh toán nhập tiền mặt/chuyển khoản, bỏ qua khoản 0 ở giao diện, tổng dương không vượt công nợ mới nhất ở backend. Lưu riêng từng khoản dương theo phương thức; lỗi một khoản hủy toàn bộ lần xác nhận, retry cùng nội dung/khóa không ghi trùng. Từng phương thức phải xác nhận đã thực nhận; giữ phiên active, spa, OWNER/thu ngân hoặc STAFF trong phạm vi lịch/gói được giao, ngày thu OPEN và phân bổ theo dòng hiện hành. Nhiều dòng: tổng phân bổ của từng nguồn bằng số tiền nguồn; dòng đã được nguồn trước thanh toán không được nguồn sau phân bổ vượt dư. Khi một nguồn trả một phần cho nhiều dòng nợ vẫn phải nhập phân bổ rõ ràng, kể cả tổng hai nguồn tất toán hóa đơn.
+
+PROPOSED kỹ thuật: action splitPayment bao 1–2 khoản dương không trùng phương thức, gọi tuần tự logic payment trong transaction Control hiện có, một fingerprint/idempotency ngoài cùng. Mỗi khoản giữ Payment/CashEntry/audit payment/hoa hồng nguồn riêng; audit splitPayment liên kết lần thao tác. Chưa có migration/backfill. Luồng payment đơn cũ vẫn tương thích; quy tắc thay thế chứng từ nhiều khoản thu vẫn bị chặn như trước.

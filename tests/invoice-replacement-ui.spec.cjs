@@ -10,10 +10,10 @@ for(const scenario of ['unpaid','paid','cancelled','busy','staff'])test(`list ac
  await expect(page.locator('.row-action-options small, .row-action-options p, .row-action-options details')).toHaveCount(0);
  const cancel=page.getByRole('button',{name:'Hủy hóa đơn — giữ lịch sử',exact:true}),voidButton=page.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true});
  if(scenario==='unpaid'){
-  await expect(cancel).toBeEnabled();await expect(page.getByRole('button',{name:'Tiền mặt',exact:true})).toBeVisible();
-  const actions=[['Sửa hóa đơn','updateInvoice'],['Hủy hóa đơn — giữ lịch sử','cancelInvoice'],['Vô hiệu hóa hóa đơn nhập nhầm','deleteInvoice'],['Tiền mặt','payment'],['Chuyển khoản / QR','payment']];
+  await expect(cancel).toBeEnabled();await expect(page.getByRole('button',{name:'Thanh toán',exact:true})).toBeVisible();
+  const actions=[['Sửa hóa đơn','updateInvoice'],['Hủy hóa đơn — giữ lịch sử','cancelInvoice'],['Vô hiệu hóa hóa đơn nhập nhầm','deleteInvoice'],['Thanh toán','payment']];
   for(const [label,action] of actions){if(!await toggle.evaluate(element=>element.parentElement.open))await toggle.click();await page.getByRole('button',{name:label,exact:true}).click();expect(await toggle.evaluate(element=>element.parentElement.open)).toBe(false);expect((await page.evaluate(()=>window.__replacementCalls)).at(-1).opened).toBe(action);}
-  expect((await page.evaluate(()=>window.__replacementCalls)).slice(-2).map(call=>call.method)).toEqual(['CASH','BANK_TRANSFER']);await toggle.click();
+  expect((await page.evaluate(()=>window.__replacementCalls)).filter(call=>call.opened==='payment')).toEqual([{opened:'payment',id:'aaaaaaaaaaaaaaaaaaaaaaaa'}]);await toggle.click();
  }else if(scenario==='busy'){for(const button of await buttons.all())await expect(button).toBeDisabled();}
  else{await expect(cancel).toBeDisabled();await expect(voidButton).toBeEnabled();if(scenario==='cancelled')await expect(page.getByRole('button',{name:'Sửa hóa đơn',exact:true})).toHaveCount(0);}
  if(scenario!=='unpaid')expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
@@ -32,7 +32,10 @@ for(const display of ['signed','unsigned','empty','sessions'])test(`invoice keep
   await expect(lines.nth(0).locator('strong')).toContainText('100.000');await expect(lines.nth(1).locator('strong')).toContainText('150.000');
   const totals=summary.locator('.invoice-detail-money > span');await expect(totals.nth(0)).toContainText('250.000');await expect(totals.nth(1)).toContainText('150.000');await expect(totals.nth(2)).toContainText('100.000');
  }else{await expect(lines.nth(0)).toContainText('Buổi 1');await expect(lines.nth(1)).toContainText('Buổi 1');}
- await expect(dialog.getByText('Người thực hiện:',{exact:false})).toContainText('Kỹ thuật viên fixture');await expect(dialog.getByText('Người tạo:',{exact:false})).toContainText('Thu ngân fixture');
+ await expect(dialog.getByText('Người thực hiện:',{exact:false})).toHaveCount(0);
+ await expect(lines.nth(0).locator('small')).toHaveText('Kỹ thuật viên: Thư fixture');
+ await expect(lines.nth(1).locator('small')).toHaveText('Kỹ thuật viên: Quỳnh fixture');
+ await expect(dialog.getByText('Người tạo:',{exact:false})).toContainText('Thu ngân fixture');
  await expect(signatures).not.toContainText(/Buổi|Tên gói|Gói thứ hai|2026|Chăm sóc da|Gội đầu/);
  if(display==='signed'){
   await expect(signatures.getByRole('img',{name:'Chữ ký xác nhận của khách'})).toHaveCount(1);

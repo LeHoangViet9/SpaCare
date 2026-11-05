@@ -632,3 +632,11 @@ Không đổi schema/index. Workday giữ nguyên, chỉ đọc lịch sử; kh�
 
 ### Sửa payload tạo/cập nhật Payroll — 04/11/2026
 PROPOSED kỹ thuật: savePayroll chỉ lấy rõ salaryPolicy, leaveStats, workdays và attendanceDigest từ kết quả tải nghỉ để lưu snapshot. pendingLeaves là dữ liệu tạm chỉ dùng cho kiểm tra approvePayroll, không thuộc payload tạo/cập nhật và không thêm vào schema. Giữ strict:'throw', kiểm nghỉ PENDING/fingerprint trước duyệt, transaction/idempotency/audit và các quy tắc lương hiện hành. Không migration/backfill hay thay đổi bảng đã duyệt/đã chi.
+
+## Dữ liệu đọc chi tiết hóa đơn — 05/11/2026
+
+PROPOSED kỹ thuật: không đổi schema/index, không migration/backfill. GET chi tiết bổ sung serviceItems[].performerName từ User cùng spa theo performerId của đúng dòng (null khi thiếu); legacy một dịch vụ không có serviceItems vẫn dùng performedBy đã lưu. Payment lưu amount/receiptId; phương thức lấy CashEntry.method cùng spa, kind PAYMENT, direction IN và chưa đảo. payments[] là projection chỉ đọc, không cộng/chia lại Invoice.paid hoặc tự suy phương thức từ tổng tiền. Không có phiếu liên kết hợp lệ thì method=null, giao diện báo cần đối chiếu giao dịch gốc. Cọc/thẻ không biến thành khoản thu trực tiếp; cardPaid tiếp tục có chú thích riêng hiện tại.
+
+## Thanh toán nhiều phương thức — 05/11/2026
+
+PROPOSED kỹ thuật: không thêm schema/index. Mỗi khoản dương của splitPayment tạo Payment {invoiceId,amount,receiptId,lineAllocations?} và CashEntry {method:CASH|BANK_TRANSFER,kind:PAYMENT,direction:IN,amount,day,actorId} riêng. Tất cả tham chiếu cùng spa/hóa đơn; cập nhật Invoice.paid/status và paid từng dòng tuần tự. Audit payment giữ từng nguồn, Audit splitPayment giữ invoiceId/amount/paymentIds; một Idempotency lưu kết quả gồm invoiceId/paymentIds cho cả lần xác nhận. Không tự gộp hay thay đổi Payment/CashEntry cũ, không phân phối lại paid cũ và không migration dữ liệu vận hành.

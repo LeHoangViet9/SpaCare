@@ -749,3 +749,13 @@ Chỉ nghỉ đã duyệt (hoặc legacy đã ghi thiếu status) được thố
 
 ### Sửa payload tạo/cập nhật Payroll — 04/11/2026
 PROPOSED kỹ thuật: savePayroll chỉ lấy rõ salaryPolicy, leaveStats, workdays và attendanceDigest từ kết quả tải nghỉ để lưu snapshot. pendingLeaves là dữ liệu tạm chỉ dùng cho kiểm tra approvePayroll, không thuộc payload tạo/cập nhật và không thêm vào schema. Giữ strict:'throw', kiểm nghỉ PENDING/fingerprint trước duyệt, transaction/idempotency/audit và các quy tắc lương hiện hành. Không migration/backfill hay thay đổi bảng đã duyệt/đã chi.
+
+## GET chi tiết hóa đơn: kỹ thuật viên và khoản thu — 05/11/2026
+
+PROPOSED kỹ thuật: GET /api/invoices/:id giữ invoiceScope và quyền chữ ký hiện có; bổ sung invoice.serviceItems[].performerName (string|null, tra User cùng spa theo performerId từng dòng) và payments:[{_id,amount,method}] từ Payment chưa đảo của đúng hóa đơn/cùng spa, thứ tự createdAt/_id tăng dần. Mỗi Payment là một dòng, không gộp theo phương thức. method là CASH/BANK_TRANSFER từ CashEntry liên kết cùng spa, kind PAYMENT/direction IN/chưa đảo, hoặc null khi thiếu liên kết hợp lệ; UI báo thiếu phương thức và cần đối chiếu, không đoán. Không trả actor/phiếu thu của hóa đơn khác; không đổi API ghi, schema, quyền, lịch sử, tổng tiền/paid hay công nợ. Không có khoản thu trực tiếp thì hiển thị đúng trạng thái đó; không suy cọc/thẻ thành tiền mặt/chuyển khoản.
+
+## POST operations: splitPayment — 05/11/2026
+
+PROPOSED kỹ thuật: action splitPayment, data strict {invoiceId,payments:[{method,amount,receivedConfirmation:true,note?,transferReference?,lineAllocations?}]}. payments có 1–2 khoản dương nguyên VNĐ, phương thức CASH/BANK_TRANSFER không trùng, tổng trong giới hạn tiền và không vượt công nợ. Giao diện bỏ các phương thức có số tiền 0; gửi mảng trống, khoản 0/âm/lẻ, thiếu xác nhận hoặc trùng phương thức bị từ chối. Response {id:invoiceId,invoiceId,paymentIds,message}. Từng phần dùng lại payment hiện có, ghi tuần tự trong một transaction snapshot/majority, cùng Control guard và một Idempotency-Key/fingerprint. Retry cùng khóa/nội dung trả kết quả cũ; đổi payload/actor cùng khóa 409; gửi cạnh tranh khác khóa vẫn kiểm nợ mới nhất.
+
+Quyền/tham chiếu active/cùng spa, OWNER/cashier hoặc STAFF được phân công, invoice chưa CANCELLED/chưa thay thế, sổ ngày thu OPEN, xác nhận thực nhận và hoa hồng nguồn giữ nguyên. lineAllocations thuộc từng phần tử: tổng bằng amount khoản đó; các nguồn được áp dụng tuần tự nên không thể thanh toán trùng dư một dòng. Một nguồn thu một phần trên nhiều dòng còn nợ cần phân bổ tường minh, dù tổng cả lần bằng công nợ. Bất kỳ lỗi phiếu thu/Payment/phân bổ/hoa hồng/audit/idempotency rollback toàn bộ. payment đơn cũ giữ payload và semantics. Không sửa lịch sử hay schema/index.

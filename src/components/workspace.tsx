@@ -3,6 +3,7 @@ import { AppointmentSelection, TreatmentConfirmations } from './treatment-select
 import MobileNavigationLayer from './mobile-navigation-layer';
 import InvoiceListActions from './invoice-list-actions';
 import CashEntryNote from './cash-entry-note';
+import InvoicePayment from './invoice-payment';
 import { invoiceCode } from '@/lib/invoice-code';
 import { invoiceEditorAction, invoiceDueDateVisible } from '@/lib/invoice-editing';
 import { appointmentServiceIds, appointmentServiceName } from '@/lib/appointment-services';
@@ -320,9 +321,9 @@ export default function Workspace() {
         description: [snapshot.customerName, snapshot.name, 'Buổi ' + (snapshot.sessionNumber || r.sessionNumber || '—'), snapshot.staffName, time(result.performedAt)].filter(Boolean).join(' · ') });
     } catch (error) { if (revision === viewRevision.current) setError((error as Error).message); }
   };
-  const openPayment = (r: Row, method: string) => {
+  const openPayment = (r: Row) => {
     setError(''); setNotice('');
-    setModal({ title: method === 'CASH' ? 'Nhận tiền mặt' : 'Chuyển khoản ngân hàng', action: 'payment', defaults: { invoiceId: r._id, amount: r.total - r.paid, method, note: 'SPACARE ' + invoiceCode(r) }, description: invoiceCode(r) + ' · Còn phải trả ' + vnd(r.total - r.paid) + '. Chỉ xác nhận sau khi thực nhận tiền. Có thể thu một phần.', fields: [amountField, { key: 'receivedConfirmation', label: method === 'CASH' ? 'Đã đếm và thực nhận số tiền mặt nhập bên trên' : 'Đã kiểm tra tài khoản và thực nhận số tiền nhập bên trên', type: 'checkbox' }, noteField], ...(method === 'BANK_TRANSFER' ? { transfer: { ...data.paymentInfo, reference: 'SPACARE ' + invoiceCode(r) } } : {}) });
+    setModal({ title: 'Thanh toán', action: 'splitPayment', defaults: { invoice: r }, fields: [] });
   };
   const consultantField: Field = { key: 'consultantId', label: 'Nhân viên tư vấn', optional: true, options: choices('staff', r => r.name), hint: 'Để trống khi bán: dùng người tư vấn mặc định của khách.' };
   const customerButton = <button className="primary" onClick={() => open('Thêm khách hàng', 'customer', [{ key: 'name', label: 'Họ và tên' }, { key: 'phone', label: 'Số điện thoại', type: 'tel' }, { key: 'notes', label: 'Ghi chú', optional: true }])}>＋ Thêm khách hàng</button>;
@@ -570,7 +571,7 @@ export default function Workspace() {
       ))}
     </nav></MobileNavigationLayer>
     {selectedStaff && <StaffDetail key={selectedStaff} id={selectedStaff} onClose={() => setSelectedStaff(null)} onSchedule={id => router.push('/workspace/appointments?employee=' + id)} />}
-    {detail && <InvoiceDetail replacementStaff={owner ? data.staff : undefined} onReplacement={()=>{void load();}} onDelete={owner ? deleteInvoice : undefined} onCancel={owner ? cancelInvoice : undefined} canManageCards={finance} key={detail.kind + detail.id} record={detail} onClose={() => setDetail(null)} onEdit={owner ? editInvoice : undefined} onCorrectDate={owner ? correctInvoiceDate : undefined} onInvoice={id => setDetail({ kind: 'invoice', id })} onPayment={(invoice, method) => { setDetail(null); openPayment(invoice, method); }} onRefund={owner ? invoice => { setDetail(null); open('Ghi nhận hoàn tiền gói', 'refundPackage', [amountField, methodField, reasonField, {key:'exceptionApproved',label:'Chủ spa đã duyệt ngoại lệ hoàn tiền, không phải tự hoàn khi dừng gói',type:'checkbox'}, {key:'receivedConfirmation',label:'Đã thực trả tiền cho khách',type:'checkbox'}, {key:'transferReference',label:'Tham chiếu chuyển khoản',optional:true}], {invoiceId:invoice._id,method:'CASH'}, 'Chỉ ghi sau khi chủ spa quyết định và đã thực hoàn tiền. Điều chỉnh hoa hồng tương ứng; không tự khôi phục buổi, xóa nợ hoặc sửa bảng lương đã duyệt.'); } : undefined} onCompleteService={finance ? invoice => { setDetail(null); open('Hoàn thành dịch vụ lẻ', 'completeInvoiceService', [{ key: 'staffId', label: 'Nhân viên trực tiếp thực hiện', options: choices('staff', r => r.name) }], { id: invoice._id }, 'Xác nhận dịch vụ đã thực hiện xong. Hoa hồng cố định được ghi cho nhân viên bạn chọn, không phụ thuộc hóa đơn đã trả tiền.'); } : undefined} onBook={bookCustomer} onSell={finance ? id => router.push('/workspace/cashier?customer=' + id) : undefined} />}
+    {detail && <InvoiceDetail replacementStaff={owner ? data.staff : undefined} onReplacement={()=>{void load();}} onDelete={owner ? deleteInvoice : undefined} onCancel={owner ? cancelInvoice : undefined} canManageCards={finance} key={detail.kind + detail.id} record={detail} onClose={() => setDetail(null)} onEdit={owner ? editInvoice : undefined} onCorrectDate={owner ? correctInvoiceDate : undefined} onInvoice={id => setDetail({ kind: 'invoice', id })} onPayment={invoice => { setDetail(null); openPayment(invoice); }} onRefund={owner ? invoice => { setDetail(null); open('Ghi nhận hoàn tiền gói', 'refundPackage', [amountField, methodField, reasonField, {key:'exceptionApproved',label:'Chủ spa đã duyệt ngoại lệ hoàn tiền, không phải tự hoàn khi dừng gói',type:'checkbox'}, {key:'receivedConfirmation',label:'Đã thực trả tiền cho khách',type:'checkbox'}, {key:'transferReference',label:'Tham chiếu chuyển khoản',optional:true}], {invoiceId:invoice._id,method:'CASH'}, 'Chỉ ghi sau khi chủ spa quyết định và đã thực hoàn tiền. Điều chỉnh hoa hồng tương ứng; không tự khôi phục buổi, xóa nợ hoặc sửa bảng lương đã duyệt.'); } : undefined} onCompleteService={finance ? invoice => { setDetail(null); open('Hoàn thành dịch vụ lẻ', 'completeInvoiceService', [{ key: 'staffId', label: 'Nhân viên trực tiếp thực hiện', options: choices('staff', r => r.name) }], { id: invoice._id }, 'Xác nhận dịch vụ đã thực hiện xong. Hoa hồng cố định được ghi cho nhân viên bạn chọn, không phụ thuộc hóa đơn đã trả tiền.'); } : undefined} onBook={bookCustomer} onSell={finance ? id => router.push('/workspace/cashier?customer=' + id) : undefined} />}
     {modal && <FormModal catalogs={data} fieldErrors={fieldErrors} spec={modal} busy={busy} error={error} onClose={() => { if (!busy) { setModal(null); setError(''); } }} onSubmit={values => run(modal.action, values)} />}
   </div>;
 }
@@ -698,6 +699,7 @@ export function FormModal({ spec, busy, error, fieldErrors={}, onClose, onSubmit
     if(['invoice','sellPackage','sellProduct','serviceInvoice'].includes(spec.action) && fd.get('issuedOn')) values.issuedOn=fd.get('issuedOn');
     onSubmit(values); } catch(e) {setLocalError((e as Error).message);}
   }
+  if (spec.action === 'splitPayment') return <InvoicePayment invoice={spec.defaults!.invoice} paymentInfo={catalogs.paymentInfo} busy={busy} error={error} onClose={onClose} onSubmit={onSubmit}/>;
   return <div className="modal-backdrop"><div ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onKeyDown={e => {
     if (e.key === 'Escape') onClose();
     if (e.key === 'Tab') {

@@ -1,6 +1,6 @@
 import { readTreatmentSignature } from './treatment-signature';
 import { readInvoiceHandling } from './invoice-handling-read';
-import { Payment } from './models';
+import { CashEntry, Payment } from './models';
 import { CashCard } from './models';
 import { Appointment, Audit, Customer, Invoice, Treatment, TreatmentUse, User } from './models';
 import { ensure, spaDay } from './rules';
@@ -36,6 +36,19 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const canSeeSignature = !!use && (user.role === 'OWNER' || String(use.actorId) === user.id || String(use.staffId) === user.id);
   const packages = await Treatment.find({ ...scope, customerId: invoice.customerId, invoiceId: { $in: [invoice._id, ...gifts.map(g => g._id)] } }).select('openingBalance openingRemaining name invoiceId packageType totalSessions remaining durationMonths startsOn expiresOn usedSessions status').lean();
   const performer = invoice.performedBy ? await User.findOne({ ...scope, _id: invoice.performedBy }).select('name').lean() : null;
+  // Resolve only explicit line assignments; invoice-level staff is not a fallback.
+  const performerIds = [...new Set([...(invoice.serviceItems || []), ...(invoice.treatmentSessions || [])].map((item: { performerId?: unknown }) => item.performerId).filter(Boolean))];
+  const linePerformers = performerIds.length ? await User.find({ ...scope, _id: { $in: performerIds } }).select('name').lean() : [];
+  const withPerformerNames = (items: Record<string, any>[] | undefined) => items?.map(item => ({ ...item,
+    performerName: linePerformers.find(person => String(person._id) === String(item.performerId))?.name || null,
+  }));
+  const serviceItems = withPerformerNames(invoice.serviceItems);
+  const treatmentSessions = withPerformerNames(invoice.treatmentSessions);
+  const recordedPayments = await Payment.find({ ...scope, invoiceId: invoice._id, reversed: false }).select('amount receiptId createdAt').sort({ createdAt: 1, _id: 1 }).lean();
+  const receipts = recordedPayments.length ? await CashEntry.find({ ...scope, _id: { $in: recordedPayments.map(payment => payment.receiptId) }, kind: 'PAYMENT', direction: 'IN', reversed: false }).select('method').lean() : [];
+  const payments = recordedPayments.map(payment => ({ _id: payment._id, amount: payment.amount,
+    method: receipts.find(receipt => String(receipt._id) === String(payment.receiptId))?.method || null,
+  }));
   const signatureFilter = { ...scope, $and: [
     { $or: [
       {checkoutInvoiceId:invoice._id},
@@ -51,7 +64,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const signatures = await TreatmentUse.find(signatureFilter).select('+signature').sort({ performedAt: -1, _id: -1 }).skip((signaturePage - 1) * 5).limit(5).lean();
   const events = await Audit.find({ ...scope, $or: [{ targetId: invoice._id }, { 'details.invoiceId': id }, ...(use ? [{ targetId: use._id }, { 'details.treatmentUseId': String(use._id) }] : [])] }).sort({ createdAt: -1 }).select('action actorId createdAt details.amount details.reason details.note').lean();
   const handling = user.role === 'OWNER' ? await readInvoiceHandling(user.spaId,invoice,gifts,packages) : undefined;
-  return { handling, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
+  return { handling, payments, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, serviceItems, treatmentSessions, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
     canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
     signatures: await Promise.all(signatures.map(async s => ({ id: s._id, signature: await readTreatmentSignature(user,s), sessionNumber: s.sessionNumber,
       packageName: invoice.treatmentSessions?.find((item: {treatmentUseId:unknown;name?:string})=>String(item.treatmentUseId)===String(s._id))?.name || packages.find(p => String(p._id) === String(s.treatmentId))?.name,

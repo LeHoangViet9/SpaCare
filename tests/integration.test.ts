@@ -50,6 +50,69 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const employee: Actor = { ...actor, id: String(staff._id), role: 'STAFF', cashier: false };
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
+    await t.test('split payment: separate receipts, debt, allocation, retry and second-write rollback', async () => {
+      const isolated = await Spa.create({ name: 'Split payment integration' }); extraSpaIds.push(isolated._id);
+      const scope = { spaId: isolated._id };
+      const person = await User.create({ ...scope, name: 'Owner split', email: randomUUID() + '@example.test', passwordHash: hashPassword(randomUUID()), role: 'OWNER', active: true });
+      await Control.create(scope);
+      const who: Actor = { id: String(person._id), spaId: String(isolated._id), name: person.name, role: 'OWNER', cashier: false };
+      const perform = (action: string, data: unknown, key = randomUUID()) => operate(who, action, data, key);
+      await perform('openDay', { day: spaDay(), opening: 0 });
+      const customer = await Customer.create({ ...scope, name: 'Split customer', phone: '0900000001' });
+      const service = await Service.create({ ...scope, name: 'Split service', price: 1000000, duration: 60 });
+      const bill = () => Invoice.create({ ...scope, customerId: customer._id, kind: 'SERVICE', total: 1500000, paid: 0 });
+      const part = (method: string, amount: number, lineAllocations?: {lineId: string; amount: number}[]) => ({method, amount, receivedConfirmation: true, ...(lineAllocations ? {lineAllocations} : {})});
+      const collect = (invoice: any, payments: unknown[], key = randomUUID()) => perform('splitPayment', {invoiceId: String(invoice._id), payments}, key);
+      const payments = [part('BANK_TRANSFER', 500000), part('CASH', 1000000)];
+      const mixed = await bill(), key = randomUUID();
+      const result = await collect(mixed, payments, key);
+      assert.deepEqual(await collect(mixed, payments, key), result);
+      const paid = await Invoice.findById(mixed._id);
+      assert.equal(paid!.paid, 1500000); assert.equal(paid!.total - paid!.paid, 0);
+      const records = await Payment.find({...scope, invoiceId: mixed._id});
+      assert.equal(records.length, 2);
+      const receipts = await CashEntry.find({...scope, _id: {$in: records.map(row => row.receiptId)}});
+      assert.deepEqual(receipts.map(row => [row.method, row.amount]).sort(), [['BANK_TRANSFER',500000],['CASH',1000000]]);
+      assert.equal(await Audit.countDocuments({...scope, action: 'payment', 'details.invoiceId': String(mixed._id)}), 2);
+      for (const method of ['CASH', 'BANK_TRANSFER']) {
+        const single = await bill(); await collect(single, [part(method, 1500000)]);
+        assert.equal(await Payment.countDocuments({...scope, invoiceId: single._id}), 1);
+      }
+      const partial = await bill(); await collect(partial, [part('CASH', 300000)]);
+      assert.equal((await Invoice.findById(partial._id))!.paid, 300000);
+      for (const invalid of [[], [part('CASH',0),part('BANK_TRANSFER',0)], payments]) await assert.rejects(collect(partial,invalid));
+      await collect(partial, [part('CASH',1000000),part('BANK_TRANSFER',200000)]);
+      assert.equal((await Invoice.findById(partial._id))!.paid, 1500000);
+      const snapshot = async () => ({
+        invoices: await Invoice.find(scope).sort({_id:1}).lean(), payments: await Payment.find(scope).sort({_id:1}).lean(),
+        cash: await CashEntry.find(scope).sort({_id:1}).lean(), audit: await Audit.find(scope).sort({_id:1}).lean(),
+        keys: await Idempotency.find(scope).sort({_id:1}).lean(), days: await Day.find(scope).lean(),
+      });
+      for (const model of [Payment, CashEntry]) {
+        const rollback = await bill(), failedKey = randomUUID(), before = await snapshot();
+        const create = model.create.bind(model); let count = 0;
+        const injected = t.mock.method(model, 'create', (async (...args: any[]) => {
+          if (++count === 2) throw new Error('SPLIT_SECOND_WRITE_FAILURE');
+          return (create as any)(...args);
+        }) as any);
+        try { await assert.rejects(collect(rollback, payments, failedKey), /SPLIT_SECOND_WRITE_FAILURE/); }
+        finally { injected.mock.restore(); }
+        assert.deepEqual(await snapshot(), before);
+        await collect(rollback, payments, failedKey);
+        assert.equal((await Invoice.findById(rollback._id))!.paid,1500000);
+      }
+      const lineA = String(new mongoose.Types.ObjectId()), lineB = String(new mongoose.Types.ObjectId());
+      const createLines = () => Invoice.create({...scope,customerId:customer._id,kind:'SERVICE',total:1500000,paid:0,serviceItems:[
+        {lineId:lineA,serviceId:service._id,name:'Massage',total:1000000,paid:0,commission:0},
+        {lineId:lineB,serviceId:service._id,name:'Gội đầu',total:500000,paid:0,commission:0},
+      ]});
+      const lines = await createLines();
+      await collect(lines,[part('BANK_TRANSFER',500000,[{lineId:lineB,amount:500000}]),part('CASH',1000000,[{lineId:lineA,amount:1000000}])]);
+      assert.deepEqual((await Invoice.findById(lines._id))!.serviceItems.map((row:any)=>row.paid),[1000000,500000]);
+      const badLines = await createLines(), before = await snapshot();
+      await assert.rejects(collect(badLines,[part('CASH',400000,[{lineId:lineB,amount:400000}]),part('BANK_TRANSFER',200000,[{lineId:lineB,amount:200000}])]));
+      assert.deepEqual(await snapshot(),before);
+    });
     await t.test('STAFF security: old debt collection, day permissions and assigned customer/package/use reads', async () => {
       const spa = await Spa.create({ name: 'STAFF security ' + randomUUID() }); extraSpaIds.push(spa._id);
       const scope = { spaId: spa._id };

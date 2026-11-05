@@ -16,6 +16,12 @@ const REQUIRED_ENV = {
   SPACARE_INTEGRATION_ISOLATED: 'local-rs0',
 } as const;
 
+// Shared by the local runner and guard tests; never load a database URI from an env file.
+export const INTEGRATION_ENV = {
+  ...REQUIRED_ENV,
+  MONGODB_URI: `mongodb://${EXPECTED.host}:${EXPECTED.port}/${EXPECTED.database}?replicaSet=${EXPECTED.replicaSet}&directConnection=true`,
+} as const;
+
 export class IntegrationSafetyError extends Error {
   constructor(public readonly code: string, message: string) {
     super(message);

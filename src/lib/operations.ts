@@ -75,6 +75,7 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const signature = z.custom<Signature>(isValidSignature, 'Khách cần ký trực tiếp để xác nhận buổi.');
 const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
+const paymentInput = z.object({ invoiceId: objectId, amount: moneySchema, method, note, transferReference: z.string().trim().max(500).optional(), receivedConfirmation: z.literal(true, 'Cần xác nhận đã thực nhận tiền.'), lineAllocations: z.array(z.object({lineId:objectId,amount:moneySchema})).min(1).optional() });
 
 const schemas = {
   correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,adjustPaymentDates:z.boolean().default(false),reason:text}).strict(),
@@ -158,7 +159,8 @@ const schemas = {
     reason: text,
   }),
   reverseAllocation: z.object({ id: objectId, reason: text }),
-  payment: z.object({ invoiceId: objectId, amount: moneySchema, method, note, transferReference: z.string().trim().max(500).optional(), receivedConfirmation: z.literal(true, 'Cần xác nhận đã thực nhận tiền.'), lineAllocations: z.array(z.object({lineId:objectId,amount:moneySchema})).min(1).optional() }),
+  payment: paymentInput,
+  splitPayment: z.object({invoiceId:objectId,payments:z.array(paymentInput.omit({invoiceId:true}).strict()).min(1).max(2)}).strict().refine(data=>new Set(data.payments.map(payment=>payment.method)).size===data.payments.length,'Không lặp phương thức trong cùng lần thanh toán.'),
   cash: z.object({ direction: z.enum(['IN', 'OUT']), amount: moneySchema, method, note: text }),
   reverseCash: z.object({ id: objectId, reason: text }),
   treatment: z.object({
@@ -286,7 +288,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const doc = await model.findOne({ ...scope, _id: id }).session(session);
         ensure(doc, 'Không tìm thấy dữ liệu trong spa này.', 404);
         if(model === Invoice) ensure(doc.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể phát sinh thao tác mới.',409);
-        if(model === Invoice && doc.activeDocumentId && ['payment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
+        if(model === Invoice && doc.activeDocumentId && ['payment','splitPayment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
           ensure(false,'Chứng từ đã thay thế: phiên bản này chưa hỗ trợ thay đổi tài chính hoặc nội dung tiếp theo.',409);
         return doc;
       };
@@ -639,9 +641,25 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         appointment.staffId=invoice.performedBy;appointment.status='COMPLETED';await appointment.save({session});
         await create(Audit,{actorId:actor.id,action:'linkAppointmentInvoice',targetId:appointment._id,details:{before,after:appointment.toObject(),invoiceId:invoice._id,reason}});
       };
-      const execute = async (op:Operation,data:any) => {
+      const execute = async (op:Operation,data:any): Promise<any> => {
       target=undefined;appointmentBefore=undefined;linkedInvoiceId=undefined;treatmentUseId=undefined;replacementAppointmentId=undefined;financialBefore=undefined;
       switch (op) {
+        case 'splitPayment': {
+          const d = schemas.splitPayment.parse(data);
+          const invoice = await get(Invoice, d.invoiceId);
+          const amount = money(d.payments.reduce((sum, payment) => sum + payment.amount, 0));
+          ensure(amount <= invoice.total - invoice.paid, 'Số thu vượt công nợ hóa đơn.');
+          const paymentIds: string[] = [];
+          // Reuse all receipt, assignment, day, allocation and commission guards.
+          // Child audits and both receipts commit with the single outer idempotency key.
+          for (const payment of d.payments) {
+            const result = await execute('payment', { ...payment, invoiceId: d.invoiceId });
+            paymentIds.push(result.id);
+          }
+          await create(Audit, { actorId: actor.id, action: 'splitPayment', targetId: invoice._id,
+            details: { invoiceId: d.invoiceId, amount, paymentIds } });
+          return { id: d.invoiceId, invoiceId: d.invoiceId, paymentIds, message: 'Đã ghi nhận thanh toán.' };
+        }
         case 'previewPackageAdvisorReplacement':
         case 'replacePackageAdvisor':
           return replacePackageAdvisor(actor, data, session, op==='replacePackageAdvisor');

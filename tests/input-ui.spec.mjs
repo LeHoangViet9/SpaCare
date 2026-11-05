@@ -1,4 +1,92 @@
 import {test,expect} from '@playwright/test';
+
+test('invoice list opens one payment form for both methods', async ({page}) => {
+ await page.goto('/workspace/invoices');
+ await page.locator('.invoice-list-actions summary').click();
+ await page.getByRole('button',{name:'Thanh toán',exact:true}).click();
+ await expect(page.getByRole('dialog')).toBeVisible();
+ await expect(page.getByRole('textbox',{name:'Tiền mặt',exact:true})).toBeVisible();
+ await expect(page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true})).toBeVisible();
+});
+
+test('split payment validates totals, confirms each method and preserves partial debt', async ({page},testInfo) => {
+ await page.goto('/split-payment?paid=300000');
+ const dialog = page.getByRole('dialog');
+ await expect(dialog.locator('.payment-summary')).toContainText('Còn phải thanh toán1.200.000 đ');
+ const submit=dialog.getByRole('button',{name:'Xác nhận đã nhận tiền'});
+ await expect(submit).toBeDisabled();
+ await dialog.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('1000000');
+ await dialog.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('500000');
+ await expect(dialog.getByRole('alert')).toHaveText('Tổng thu vượt số còn phải thanh toán.');
+ await expect(submit).toBeDisabled();
+ await dialog.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('200000');
+ await expect(dialog.locator('.payment-collection-total')).toHaveText('Tổng thu lần này: 1.200.000 đ');
+ await dialog.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await expect(submit).toBeDisabled();
+ await dialog.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await submit.click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments.map(row=>[row.method,row.amount,row.receivedConfirmation])).toEqual([['CASH',1000000,true],['BANK_TRANSFER',200000,true]]);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ const bounds = await dialog.boundingBox();
+ expect(bounds.x).toBeGreaterThanOrEqual(0);
+ expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize().width);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await dialog.locator('.payment-collection-total').scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('split-payment.png')});
+});
+
+test('split payment supports one method and blank unused amount', async ({page}) => {
+ await page.goto('/split-payment');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('1500000');
+ await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments).toHaveLength(1); expect(saved.payments[0].method).toBe('BANK_TRANSFER');
+ expect(saved.payments[0].amount).toBe(1500000);
+});
+
+test('split payment submits independent allocations and resets confirmation after amount changes', async ({page}) => {
+ await page.goto('/split-payment?lines=1');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('1000000');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('500000');
+ await page.locator('input[name="CASHAllocations:'+'1'.repeat(24)+'"]').fill('1000000');
+ await page.locator('input[name="BANK_TRANSFERAllocations:'+'2'.repeat(24)+'"]').fill('500000');
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('999999');
+ await expect(page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'})).not.toBeChecked();
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('1000000');
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments.map(row=>row.lineAllocations)).toEqual([[{lineId:'1'.repeat(24),amount:1000000}],[{lineId:'2'.repeat(24),amount:500000}]]);
+});
+
+test('invoice detail keeps per-service staff, separate receipts and totals on desktop and mobile', async ({page}, testInfo) => {
+ const errors = [];
+ page.on('pageerror', error => errors.push(error.message));
+ await page.goto('/invoice-detail');
+ const dialog = page.getByRole('dialog', {name:'Chi tiết hóa đơn'});
+ const services = dialog.locator('.invoice-service-lines p');
+ await expect(services).toHaveCount(3);
+ await expect(services.nth(0)).toContainText('Massage CVG');
+ await expect(services.nth(0)).toContainText('Kỹ thuật viên: Thư');
+ await expect(services.nth(1)).toContainText('Kỹ thuật viên: Quỳnh');
+ await expect(services.nth(2)).toContainText('Kỹ thuật viên: Chưa có');
+ const payments = dialog.getByRole('region', {name:'Phương thức thanh toán'}).getByRole('listitem');
+ await expect(payments).toHaveText(['Chuyển khoản:500.000 đ', 'Tiền mặt:600.000 đ', 'Tiền mặt:400.000 đ']);
+ await expect(dialog.locator('.invoice-detail-money > span')).toHaveText(['Tổng tiền1.500.000 đ', 'Đã thanh toán1.500.000 đ', 'Còn nợ0 đ']);
+ await expect(dialog.getByText('Người tạo:', {exact:false})).toContainText('Chủ spa kiểm thử');
+ await expect(dialog.getByText(/hệ thống sẽ kiểm tra và chặn|Nhân viên đã ghi nhận|Đã thực hiện:/)).toHaveCount(0);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('invoice-detail.png'),fullPage:true});
+ await dialog.getByRole('region', {name:'Phương thức thanh toán'}).scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('invoice-payments.png'),fullPage:true});
+ expect(errors).toEqual([]);
+});
 test('packages search keeps its DOM node, focus and middle caret across delayed fetch and URL sync',async({page})=>{
  await page.goto('/workspace/packages');const input=page.getByRole('textbox',{name:'Tìm kiếm',exact:true});await expect(input).toBeVisible();
  await input.focus();await input.pressSequentially('Nguyễn Ánh 0900',{delay:45});await page.waitForTimeout(800);

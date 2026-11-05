@@ -175,3 +175,28 @@ Không backfill chữ ký/hạn dùng và không cần index mới; khởi độ
 - Browser Chromium thật: 12/12 kịch bản local đạt tại 127.0.0.1:3226 với MongoDB test mới cùng target đã preflight. Tạo nháp mới trả 200; cập nhật hai lần từ 125.000đ thành 215.000đ dịch vụ + 87.500đ bán gói = 302.500đ không cộng trùng; nháp lệch bị chặn; APPROVED/PAID giữ snapshot sau phát sinh; nghỉ hưởng lương không giảm base; nghỉ không lương khấu trừ tay có lý do; PENDING chặn duyệt; không ghi công; lịch sử Payroll/Workday synthetic không đổi. Không pageerror trong lượt cuối. App/mongod test đã dừng.
 - Bằng chứng: outputs/payroll-pending-leaves-fix-20261104/{integration-before-fix.log,integration-after-fix.log,unit.log,typecheck.log,build.log,ui-runner.log,final-ui-results.json,workspace-proof.json,REPORT.md}. Các kết quả review thất bại trước đây vẫn giữ trong thư mục review cũ, không ghi đè lịch sử.
 - Không commit/push/deploy/merge, migration/backfill hay ghi dữ liệu thật. Quy tắc giảm chỉ theo nghỉ không lương vẫn OPEN như trước, không thêm công thức mới.
+
+## Chi tiết hóa đơn — 05/11/2026
+
+- `npm test`: đạt 212/212, gồm kiểm tra dữ liệu đọc theo từng dòng dịch vụ, từng Payment, giới hạn cùng spa và method=null khi thiếu phiếu liên kết.
+- `npm run typecheck`: đạt sau khi loại thư mục artifacts `outputs` khỏi phạm vi TypeScript. Lần đầu bị lỗi từ các snapshot cũ trong outputs; một lần chạy đồng thời build gặp file .next/types đang được tái tạo, đã chạy lại tuần tự sau build.
+- `npm run build`: đạt với webpack; còn cảnh báo middleware đã deprecated có từ cấu hình hiện tại.
+- Playwright fixture trong bộ nhớ: đạt 2/2 (desktop 1440×900, mobile 390×844), kiểm tra kỹ thuật viên riêng/chưa có, nhiều khoản cùng phương thức không gộp, tổng 1.500.000đ/đã trả 1.500.000đ/nợ 0đ, dòng cần bỏ, Người tạo và không tràn ngang. Dùng Chrome cài sẵn vì Chromium của Playwright chưa có. Đã xem ảnh dịch vụ/phương thức ở cả hai kích thước. Artifacts: outputs/invoice-detail-20261105/results-final.
+- Integration MongoDB chưa chạy: preflight không kết nối được 127.0.0.1:27018; không ghi database vận hành và không coi kiểm thử mock là integration.
+
+## Thanh toán nhiều phương thức — 05/11/2026
+
+- `npm test`: đạt 213/213. Kiểm thử splitPayment bằng model doubles bao phủ 500.000đ chuyển khoản + 1.000.000đ tiền mặt, một phương thức, 0/vượt nợ/thiếu xác nhận/trùng phương thức, nợ một phần, retry/cạnh tranh, quyền/active/cùng spa/sổ đóng/chứng từ hủy hoặc thay thế. Xác nhận một transaction/một idempotency cho cả lần thu; lỗi khoản thứ hai ở Payment/CashEntry/Audit/SaleCommission rollback cả tiền, dòng, audit, hoa hồng và khóa. Có kiểm tra phân bổ nguồn sai tổng/dòng lạ/vượt dư và hoa hồng nguồn riêng không tính trùng.
+- `npm run typecheck`: đạt. `npm run build`: đạt với webpack; còn cảnh báo middleware deprecated hiện có.
+- Playwright dùng Chrome cài sẵn: bộ liên quan hóa đơn/thanh toán đạt 10/10 ở desktop 1440×900 và mobile 390×844. Kiểm tra một nút Thanh toán, tổng/nợ một phần, chặn 0/vượt nợ/thiếu thực nhận, một phương thức với ô còn lại trống, phân bổ từng nguồn, đổi số tiền phải xác nhận lại và không tràn ngang. Đã xem ảnh ở cả hai kích thước.
+- Chạy toàn bộ input-ui: 12/16 đạt; 4 lỗi ở dấu required-mark của money-test và kiểm tra “8/10 buổi” tại trang packages (mỗi ca lặp desktop/mobile). Đã chạy lại đúng các ca đó với fixture/Workspace/InvoiceDetail/globals.css từ HEAD: cả 4 lỗi tái hiện, không do splitPayment. Không ghi nhận bộ UI đầy đủ là đạt. Bằng chứng trong outputs/split-payment-20261105/{results,baseline-results}.
+- Integration MongoDB chưa chạy: preflight 127.0.0.1:27018 không khả dụng. Đã thêm subtest integration trên spa cô lập trong spacare_test, gồm retry, khoản thu riêng, nợ, phân bổ và lỗi lần ghi thứ hai rollback; chưa xác nhận kết quả trên database thật. Không dùng dữ liệu vận hành, không migration/backfill, không merge/deploy.
+
+## Ghép stash sau cập nhật main — 05/11/2026
+
+- Đã ghép từng vùng xung đột trong 9 file, giữ toàn bộ mục tài liệu của cả main và stash. Giữ menu Thao tác/Xử lý hóa đơn, sửa ngày, bố cục tổng tiền/chữ ký và lý do xử lý từ main; khôi phục kỹ thuật viên từng dòng, từng khoản thu và biểu mẫu thanh toán gộp từ stash. Dòng buổi liệu trình không trùng dòng dịch vụ cũng lấy kỹ thuật viên theo phân công riêng.
+- `npm test`: đạt 243/243; `npm run typecheck`: đạt; `npm run build`: đạt (cảnh báo middleware deprecated hiện có).
+- UI Chrome thật với fixture trong bộ nhớ: 10/10 ca thanh toán/chi tiết và 42/42 ca danh sách/xử lý/thay tư vấn/chữ ký/sổ thu, trên desktop 1440×900 và mobile 390×844. Điều chỉnh các assertion từ main về hai nút thu tiền/người thực hiện chung sang giao diện đã yêu cầu; giữ kiểm tra quyền, chữ ký, bố cục và các nội dung main khác. Không chạy lại hoặc sửa 4 lỗi UI ngoài phạm vi đã xác định trước đó.
+- `npm run test:integration`: BLOCKED, exit 1 ở DOCKER_CLI vì không tìm thấy docker trong PATH; không khởi động MongoDB hay gọi database khác để thay thế. Không ghi nhận integration đạt.
+- Đã kiểm tra không còn conflict marker hoặc unmerged index entry; HEAD và stash@{0} giữ nguyên. Các file mới trong working tree được giữ nguyên; next-env.d.ts được khôi phục đúng nội dung trước build. Chỉ sửa thêm các component/fixture/assertion cần thiết để giao diện mới của main và tính năng stash hoạt động cùng nhau. Không reset, xóa stash, commit, push, merge thêm hoặc deploy.
+- Bằng chứng UI và bản đối chiếu ban đầu: outputs/stash-resolution-20261105/.
