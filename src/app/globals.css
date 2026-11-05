@@ -802,6 +802,30 @@ pre {
   padding:24px
 }
 
+.modal .staff-initial-password {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  margin-top:8px;
+  min-width:0;
+}
+
+.modal .staff-initial-password input {
+  flex:1;
+  min-width:0;
+  margin:0;
+}
+
+.modal .staff-initial-password button {
+  display:grid;
+  place-items:center;
+  flex:0 0 48px;
+  width:48px;
+  height:48px;
+  padding:0;
+  color:var(--green);
+}
+
 .modal-actions {
   display:flex;
   justify-content:flex-end;
