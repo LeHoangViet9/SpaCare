@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
-import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa, Appointment, Payment } from '../src/lib/models';
+import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa, Appointment, Payment, CashEntry, User } from '../src/lib/models';
 import { invoiceExport } from '../src/lib/export-read';
 import { readTreatmentSignature } from '../src/lib/treatment-signature';
 import { readInvoice } from '../src/lib/invoice-read';
@@ -16,6 +16,7 @@ function query(result: any) {
 mock.method(Invoice, 'findOne', () => query(invoice));
 mock.method(Invoice, 'find', () => query([]));
 mock.method(Payment, 'find', () => query([]));
+mock.method(CashEntry, 'find', () => query([]));
 mock.method(Customer, 'findOne', () => query({ name: 'Customer', phone: '0329357116' }));
 mock.method(Spa, 'findById', () => query({ name: 'SpaCare' }));
 mock.method(Treatment, 'find', () => query([{ _id: packageId, name: 'Package' }]));
@@ -62,5 +63,43 @@ source={actorId:'another',signature};await assert.rejects(readTreatmentSignature
 const productPdf=await invoiceExport(owner,id);
 assert.equal(productPdf.tables[1].rows.length,2,'product-only invoice must not duplicate its total as an extra line');
 delete (invoice as any).productItems;
+
+// Detail reads preserve each recorded receipt and each explicit line assignment.
+const staffA = '1'.repeat(24), staffB = '2'.repeat(24);
+(invoice as any).performedBy = actorId;
+(invoice as any).serviceItems = [
+  { lineId: 'line-a', serviceId: 'a', name: 'Massage CVG', total: 500000, performerId: staffA },
+  { lineId: 'line-b', serviceId: 'b', name: 'Dầu gội khách', total: 1000000, performerId: staffB },
+  { lineId: 'line-c', serviceId: 'c', name: 'Chưa phân công', total: 0 },
+];
+invoice.total = 1500000; invoice.paid = 1500000;
+mock.method(User, 'findOne', () => query({ name: 'Invoice performer must not fill missing lines' }));
+mock.method(User, 'find', (filter: any) => {
+  assert.equal(filter.spaId, spaId);
+  assert.deepEqual(filter._id.$in, [staffA, staffB]);
+  return query([{ _id: staffA, name: 'Thư' }, { _id: staffB, name: 'Quỳnh' }]);
+});
+mock.method(Payment, 'find', (filter: any) => {
+  if (filter.invoiceId?.$in) assert.deepEqual(filter, { spaId, invoiceId: { $in: [id] } });
+  else assert.deepEqual(filter, { spaId, invoiceId: id, reversed: false });
+  return query([{ _id: 'p1', receiptId: 'r1', amount: 500000 }, { _id: 'p2', receiptId: 'r2', amount: 1000000 }, { _id: 'p3', receiptId: 'missing', amount: 100 }]);
+});
+mock.method(CashEntry, 'find', (filter: any) => {
+  assert.deepEqual(filter, { spaId, _id: { $in: ['r1', 'r2', 'missing'] }, kind: 'PAYMENT', direction: 'IN', reversed: false });
+  return query([{ _id: 'r1', method: 'BANK_TRANSFER' }, { _id: 'r2', method: 'CASH' }]);
+});
+const detail = await readInvoice(owner, id);
+assert.deepEqual(detail.invoice.serviceItems?.map((item: any) => item.performerName), ['Thư', 'Quỳnh', null]);
+assert.deepEqual(detail.payments, [
+  { _id: 'p1', amount: 500000, method: 'BANK_TRANSFER' },
+  { _id: 'p2', amount: 1000000, method: 'CASH' },
+  { _id: 'p3', amount: 100, method: null },
+]);
+assert.equal(detail.invoice.total, 1500000);
+assert.equal(detail.invoice.paid, 1500000);
+assert.ok(detail.handling, 'main handling reasons remain available with separate payment sources');
+(invoice as any).treatmentSessions = [{lineId:'session-a',treatmentUseId:'session',name:'Buổi gói',total:0,performerId:staffB}];
+const withSessions = await readInvoice(owner,id);
+assert.equal(withSessions.invoice.treatmentSessions?.[0].performerName,'Quỳnh');
 
 mock.restoreAll();

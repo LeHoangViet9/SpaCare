@@ -632,3 +632,30 @@ Không đổi schema/index. Workday giữ nguyên, chỉ đọc lịch sử; kh�
 
 ### Sửa payload tạo/cập nhật Payroll — 04/11/2026
 PROPOSED kỹ thuật: savePayroll chỉ lấy rõ salaryPolicy, leaveStats, workdays và attendanceDigest từ kết quả tải nghỉ để lưu snapshot. pendingLeaves là dữ liệu tạm chỉ dùng cho kiểm tra approvePayroll, không thuộc payload tạo/cập nhật và không thêm vào schema. Giữ strict:'throw', kiểm nghỉ PENDING/fingerprint trước duyệt, transaction/idempotency/audit và các quy tắc lương hiện hành. Không migration/backfill hay thay đổi bảng đã duyệt/đã chi.
+
+## Dữ liệu đọc chi tiết hóa đơn — 05/11/2026
+
+PROPOSED kỹ thuật: không đổi schema/index, không migration/backfill. GET chi tiết bổ sung serviceItems[].performerName từ User cùng spa theo performerId của đúng dòng (null khi thiếu); legacy một dịch vụ không có serviceItems vẫn dùng performedBy đã lưu. Payment lưu amount/receiptId; phương thức lấy CashEntry.method cùng spa, kind PAYMENT, direction IN và chưa đảo. payments[] là projection chỉ đọc, không cộng/chia lại Invoice.paid hoặc tự suy phương thức từ tổng tiền. Không có phiếu liên kết hợp lệ thì method=null, giao diện báo cần đối chiếu giao dịch gốc. Cọc/thẻ không biến thành khoản thu trực tiếp; cardPaid tiếp tục có chú thích riêng hiện tại.
+
+## Thanh toán nhiều phương thức — 05/11/2026
+
+PROPOSED kỹ thuật: không thêm schema/index. Mỗi khoản dương của splitPayment tạo Payment {invoiceId,amount,receiptId,lineAllocations?} và CashEntry {method:CASH|BANK_TRANSFER,kind:PAYMENT,direction:IN,amount,day,actorId} riêng. Tất cả tham chiếu cùng spa/hóa đơn; cập nhật Invoice.paid/status và paid từng dòng tuần tự. Audit payment giữ từng nguồn, Audit splitPayment giữ invoiceId/amount/paymentIds; một Idempotency lưu kết quả gồm invoiceId/paymentIds cho cả lần xác nhận. Không tự gộp hay thay đổi Payment/CashEntry cũ, không phân phối lại paid cũ và không migration dữ liệu vận hành.
+
+## Phân bổ tự động từ form rút gọn — 05/11/2026
+
+Không thêm field/schema/index hoặc backfill. Client đọc total/paid/lineId hiện có để tạo Payment.lineAllocations qua payload splitPayment, cho một dòng còn nợ hoặc trả hết công nợ. Thứ tự xử lý trùng các nhóm dòng backend (serviceItems, treatmentSessions không phản chiếu, packageItems, productItems). Các dòng đã trả đủ không được phân bổ thêm; không sửa paid cũ, amount khoản thu hay dữ liệu lịch sử. Backend tiếp tục kiểm tra tổng và số dư hiện hành; dữ liệu client cũ/lệch không vượt qua guard chỉ nhờ form ẩn ô nhập.
+
+## Số dư thanh toán cấp hóa đơn — 05/11/2026 (ưu tiên mới nhất)
+
+Không đổi schemas/indexes hoặc migration. Invoice.paid là tổng thanh toán được cập nhật từ các nghiệp vụ hiện có (Payment, áp cọc, dùng thẻ và các thao tác đảo tương ứng); nợ là Invoice.total-Invoice.paid. Không suy tổng đã trả/nợ từ serviceItems/packageItems/productItems/treatmentSessions.paid. Các field paid theo dòng và Payment/Allocation/CashCardUse.lineAllocations giữ để tra cứu tương thích, không backfill hoặc xóa dữ liệu cũ. Mọi khoản mới không lưu lineAllocations và không sửa paid theo dòng.
+
+Khi OWNER đảo khoản lịch sử có lineAllocations, chỉ áp dụng mảng gốc để giảm số dư dòng lịch sử và giảm Invoice.paid bằng số tiền gốc; tổng các dòng không phải guard của tổng hóa đơn nữa. Khoản mới không có mảng chỉ điều chỉnh số dư hóa đơn. Mảng/amount/liên kết lịch sử được giữ lại cùng cờ reversed, bút toán đối ứng và audit như quy trình cũ. Không thay quyền hoặc dùng đảo sai sót như hoàn tiền.
+
+## Invoice.serviceItems cho dịch vụ lặp — 05/11/2026
+
+Không đổi schema/index/migration hoặc dữ liệu cũ. Invoice.serviceItems[].serviceId có thể trùng; lineId là định danh từng lượt, được backend cấp mới độc lập. Mỗi dòng giữ name/total/commission/performerId snapshot riêng. Invoice.total và commission là tổng các dòng, không tính theo tập serviceId duy nhất. InvoiceLineCommission.lineId/sourceId trỏ đúng lượt; unique source index hiện hành không đổi. Tiền thanh toán mới vẫn gắn invoiceId ở cấp hóa đơn, không gán cho từng lượt. Xóa khỏi giỏ dùng mã lượt phía client, không xóa dịch vụ danh mục hoặc lịch sử đã ghi.
+
+
+## Bắt buộc KTV khi ghi nhận thực hiện — 05/11/2026
+
+Không đổi schema/index hoặc backfill. performerId/staffId vẫn có thể vắng trong hóa đơn lập trước làm và dữ liệu lịch sử. Guard action mới bắt KTV từng dòng/lượt thực hiện ngay; lưu performerId trên serviceItems/treatmentSessions và staffId trên TreatmentUse, ledger riêng theo lineId. createdBy/creatorName/actorId giữ vai trò người tạo/ghi nhận, không được dùng làm KTV dự phòng. Bán gói dùng sau/sản phẩm không tạo dữ liệu thực hiện hoặc ledger thực hiện chỉ vì có người tạo.

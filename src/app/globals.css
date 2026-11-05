@@ -1982,6 +1982,21 @@ label textarea { margin-top: 8px; }
 .cashier-service-line strong { overflow-wrap:anywhere; }
 .invoice-service-lines p { display:flex; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px solid var(--line); }
 .invoice-service-lines strong { white-space:nowrap; }
+.invoice-service-info { display:flex; flex-direction:column; gap:4px; min-width:0; overflow-wrap:anywhere; }
+.invoice-service-info small { color:var(--muted); }
+.invoice-payment-methods { margin-top:20px; padding:16px; border:1px solid var(--line); border-radius:12px; }
+.invoice-payment-methods ul { list-style:none; margin:0; padding:0; }
+.invoice-payment-methods li { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; padding:8px 0; }
+.invoice-payment-methods strong { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.invoice-payment-modal { width:min(720px,calc(100vw - 32px)); }
+.payment-summary { display:grid; gap:8px; padding:16px; background:var(--paper); border-radius:12px; }
+.payment-summary > div { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; }
+.payment-summary dd { margin:0; font-weight:700; white-space:nowrap; }
+.payment-method-fields { min-width:0; }
+.payment-method-entry { min-width:0; padding:12px 0; }
+.payment-method-entry + .payment-method-entry { border-top:1px solid var(--line); }
+.payment-collection-total strong { white-space:nowrap; }
+.invoice-payment-modal .payment-instructions img { max-width:100%; height:auto; }
 
 .product-origin-dates { display:grid; gap:6px; margin:12px 0; font-size:14px; }
 .product-origin-dates > div { display:flex; flex-wrap:wrap; gap:4px 12px; }
@@ -1996,7 +2011,7 @@ label textarea { margin-top: 8px; }
 .invoice-code { font-weight:700; color:var(--green); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .invoice-list-emphasis [data-label="Thanh toán"] strong { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
 
-.invoice-detail-money strong { font-weight:700; font-variant-numeric:tabular-nums; }
+.invoice-detail-money strong { display:inline-block; white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
 
 /* Invoice amounts need room for Vietnamese labels and readable digits. */
 .invoice-list-emphasis .responsive-table { font-family: Arial, Helvetica, sans-serif; }

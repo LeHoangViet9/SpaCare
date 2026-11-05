@@ -179,7 +179,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy} showPreview={false}/></>}
    {sessionItems.length>0 && !sessionItems.some(item=>item.recipientName?.trim()) && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
    {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard}/></section>}
-   {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ và phân bổ riêng tiền thẻ, tiền thu thêm cho từng dịch vụ.</p>}
+   {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ hoặc thanh toán số còn nợ.</p>}
    </fieldset>
    <div className="cashier-total"><span>Tổng giỏ</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}

@@ -269,8 +269,8 @@ await assert.rejects(call('use', {
   treatmentId,
   remainingBefore: 2,
   sessions: [
-    { recipientName: 'Khách Rollback 1', signature: sigC },
-    { recipientName: 'Khách Rollback 2', signature: sigD }
+    { recipientName: 'Khách Rollback 1', signature: sigC, staffId: staff1 },
+    { recipientName: 'Khách Rollback 2', signature: sigD, staffId: staff2 }
   ]
 }), /INJECTED_FAILURE/);
 failModel = '';

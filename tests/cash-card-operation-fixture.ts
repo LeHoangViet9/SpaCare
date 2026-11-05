@@ -127,7 +127,7 @@ assert.equal(state.Invoice.filter(v=>v._id===bundle.id).length,1);
 state.Service[0].name='Changed catalog';state.Service[0].commission=999;
 assert.notEqual(bundleBill.serviceItems[0].name,state.Service[0].name);
 assert.equal(bundleBill.serviceItems[0].commission,20000);
-for(const items of [[],[{serviceId},{serviceId}], [{serviceId,total:-1}], [{serviceId,total:1_000_000_000_000},{serviceId:secondServiceId,total:1}]]) {
+for(const items of [[], [{serviceId,total:-1}], [{serviceId,total:1_000_000_000_000},{serviceId:secondServiceId,total:1}]]) {
  const before=clone(state);await assert.rejects(call('serviceInvoice',{...bundleInput,items}));assert.deepEqual(state,before);
 }
 const foreignServiceId='5'.repeat(24);
@@ -139,7 +139,11 @@ await assert.rejects(operate({...actor,id:performerId,role:'STAFF'},'serviceInvo
 let bundleBefore=clone(state);failModel='InvoiceLineCommission';await assert.rejects(call('serviceInvoice',bundleInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,bundleBefore);
 const bundleCard=await call('sellCashCard',{...sale,amount:800000});
 const bundlePay={...bundleInput,cashCard:{cardId:bundleCard.id,amount:400000,additionalAmount:100000,method:'CASH',receivedConfirmation:true}};
-bundleBefore=clone(state);await assert.rejects(call('serviceInvoice',bundlePay),/phân bổ/);assert.deepEqual(state,bundleBefore);
+const inlineCard=await call('sellCashCard',{...sale,amount:800000});
+const inlineBundle=await call('serviceInvoice',{...bundlePay,cashCard:{...bundlePay.cashCard,cardId:inlineCard.id}});
+assert.equal(state.Invoice.find(row=>row._id===inlineBundle.id).paid,500000);
+assert.equal(state.CashCardUse.find(row=>row.invoiceId===inlineBundle.id).lineAllocations,undefined);
+assert.equal(state.Payment.find(row=>row.invoiceId===inlineBundle.id).lineAllocations,undefined);
 const paidBundle=await call('serviceInvoice',bundleInput);
 const paymentLines=state.Invoice.find(row=>row._id===paidBundle.id).serviceItems;
 const bundleRedemption={...bundlePay.cashCard,invoiceId:paidBundle.id,lineAllocations:[{lineId:paymentLines[0].lineId,amount:350000},{lineId:paymentLines[1].lineId,amount:50000}],additionalLineAllocations:[{lineId:paymentLines[1].lineId,amount:100000}]};
@@ -230,7 +234,7 @@ assert.equal(state.TreatmentUse.filter(row=>row.appointmentId===reserved.id).len
 
 const extraProductId='c3'.repeat(12);
 state.Product.push({_id:extraProductId,spaId,name:'Mua thêm',sku:'MIXED',unit:'ml',price:80000,stock:5,active:true});
-const mixedInput={...multiple,treatments:selections(3,3),additionalServices:[{serviceId,total:100000}],additionalProducts:[{productId:extraProductId,quantity:2,unitPrice:80000}]};
+const mixedInput={...multiple,treatments:selections(3,3),additionalServices:[{serviceId,total:100000,performerId}],additionalProducts:[{productId:extraProductId,quantity:2,unitPrice:80000}]};
 snapshot=clone(state);failModel='StockMovement';await assert.rejects(call('invoice',mixedInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,snapshot);
 const mixedKey=randomUUID(),mixed=await call('invoice',mixedInput,mixedKey);await call('invoice',mixedInput,mixedKey);
 const mixedBill=state.Invoice.find(row=>row._id===mixed.invoiceId);
@@ -259,7 +263,7 @@ assert.ok(state.Audit.find(row=>row.targetId===shared.invoiceId).details.signatu
 for(const id of [planA,planB])assert.equal(state.Treatment.find(row=>row._id===id).remaining,0);
 const unsignedPlan='d4'.repeat(12);
 state.Treatment.push({_id:unsignedPlan,spaId,customerId,invoiceId:purchaseA._id,serviceId,name:'Optional direct use',packageType:'SESSIONS',totalSessions:2,remaining:2,status:'ACTIVE'});
-const directKey=randomUUID(),directInput={treatmentId:unsignedPlan,remainingBefore:2};
+const directKey=randomUUID(),directInput={treatmentId:unsignedPlan,remainingBefore:2,staffId:performerId};
 const direct=await call('use',directInput,directKey);await call('use',directInput,directKey);
 assert.equal(state.Treatment.find(row=>row._id===unsignedPlan).remaining,1);
 assert.equal(state.TreatmentUse.find(row=>row._id===direct.id).method,'STAFF_RECORDED');
@@ -287,6 +291,7 @@ const mixedCompletionKey=randomUUID(),completedMixed=await call('completeTreatme
 await call('completeTreatmentAppointment',completion,mixedCompletionKey);
 const completedMixedBill=state.Invoice.find(row=>row._id===completedMixed.invoiceId);
 assert.equal(completedMixedBill.serviceItems.length,4);
+assert.ok(completedMixedBill.serviceItems.every((line:any)=>line.performerId===performerId),'mixed appointment keeps its assigned technician on every executed line');
 assert.equal(completedMixedBill.total,state.Service.find(row=>row._id===serviceId).price+state.Service.find(row=>row._id===secondServiceId).price);
 assert.equal(state.Treatment.find(row=>row._id===mixedPlanA).remaining,3);
 assert.equal(state.Treatment.find(row=>row._id===mixedPlanB).remaining,3);
@@ -326,7 +331,7 @@ assert.equal(state.Invoice.find(row=>row._id===singleGift.invoiceId).total,0);
 snapshot=clone(state);
 await assert.rejects(call('sellPackage',{...giftSale,gifts:[{templateId}]}));assert.deepEqual(state,snapshot);
 await assert.rejects(call('sellPackage',{...giftSale,gifts:[{serviceId:'9'.repeat(24)}]}));assert.deepEqual(state,snapshot);
-await call('use',{treatmentId:singleGift._id,remainingBefore:1});
+await call('use',{treatmentId:singleGift._id,remainingBefore:1,staffId:performerId});
 assert.equal(state.Treatment.find(row=>row._id===singleGift._id).remaining,0);
 await assert.rejects(call('use',{treatmentId:singleGift._id,remainingBefore:0}));
 
@@ -353,3 +358,68 @@ assert.equal(state.SaleCommission.filter(row=>row.invoiceId===grouped.invoiceId)
 snapshot=clone(state);failModel='CashCard';await assert.rejects(call('checkout',groupedInput),/INJECTED_LEDGER_FAILURE/);failModel='';assert.deepEqual(state,snapshot,'combined invoice, both plans and gifts roll back together');
 const badGroup={...groupedInput,actions:[groupedInput.actions[0],{...groupedInput.actions[1],data:{...groupedInput.actions[1].data,participantIds:[performerId]}}]};
 await assert.rejects(call('checkout',badGroup),/cùng người tư vấn/);assert.deepEqual(state,snapshot);
+// Repeated occurrences keep independent invoice lines and earned commissions.
+const repeatedServiceId=String(new mongoose.Types.ObjectId()),secondTechId=String(new mongoose.Types.ObjectId());
+state.Service.push({_id:repeatedServiceId,spaId,name:'Group massage',price:350000,commission:20000,active:true});
+state.User.push({_id:secondTechId,spaId,name:'Second group technician',role:'STAFF',active:true,cashier:false});
+const groupCashierId=String(new mongoose.Types.ObjectId());
+state.User.push({_id:groupCashierId,spaId,name:'Group cashier',role:'STAFF',active:true,cashier:true});
+const groupCall=(action:string,data:any,key=randomUUID())=>operate({...actor,id:groupCashierId,name:'Group cashier',role:'STAFF',cashier:true},action,data,key);
+for(const count of [2,3])for(const different of [false,true]){
+ const performers=Array.from({length:count},(_,index)=>different&&index%2?secondTechId:performerId);
+ const values={customerId,items:performers.map(performerId=>({serviceId:repeatedServiceId,performerId}))};
+ const action=count===3?'checkout':'serviceInvoice',data=count===3?{customerId,actions:[{action:'serviceInvoice',data:values}]}:values;
+ const key=randomUUID(),result=await groupCall(action,data,key);assert.deepEqual(await groupCall(action,data,key),result);
+ const id=result.invoiceId||result.id, bill=state.Invoice.find(row=>row._id===id), ledger=state.InvoiceLineCommission.filter(row=>row.invoiceId===id);
+ assert.equal(bill.serviceItems.length,count);assert.equal(bill.total,350000*count);assert.equal(bill.paid,0);
+ assert.equal(new Set(bill.serviceItems.map((row:any)=>row.lineId)).size,count);
+ assert.deepEqual(bill.serviceItems.map((row:any)=>row.performerId),performers);
+ assert.equal(ledger.length,count);assert.equal(ledger.reduce((sum,row)=>sum+row.amount,0),20000*count);
+ for(const [index,line]of bill.serviceItems.entries()){
+  const earned=ledger.find(row=>row.lineId===line.lineId);assert.equal(earned.staffId,performers[index]);assert.equal(earned.amount,20000);
+ }
+ const paymentKey=randomUUID(),payment={invoiceId:id,payments:[{method:'CASH',amount:100000,receivedConfirmation:true},{method:'BANK_TRANSFER',amount:150000,receivedConfirmation:true}]};
+ await groupCall('splitPayment',payment,paymentKey);await groupCall('splitPayment',payment,paymentKey);
+ const paid=state.Invoice.find(row=>row._id===id);assert.equal(paid.paid,250000);assert.equal(paid.total-paid.paid,350000*count-250000);
+ const receipts=state.Payment.filter(row=>row.invoiceId===id);assert.equal(receipts.length,2);assert.ok(receipts.every(row=>row.lineAllocations===undefined));
+ assert.deepEqual(paid.serviceItems,bill.serviceItems);
+}
+const repeatedPlan=await call('sellPackage',{customerId,templateId});
+const repeatedExtras=await call('invoice',{customerId,serviceId,staffId:performerId,treatments:[{treatmentId:repeatedPlan.id,remainingBefore:10,performerId}],additionalServices:[{serviceId:repeatedServiceId,total:350000,performerId:secondTechId},{serviceId:repeatedServiceId,total:350000,performerId}]});
+const extrasInvoice=state.Invoice.find(row=>row._id===repeatedExtras.id);
+assert.equal(extrasInvoice.serviceItems.length,3);assert.equal(extrasInvoice.total,700000);
+assert.equal(extrasInvoice.serviceItems.filter((line:any)=>String(line.serviceId)===repeatedServiceId).length,2);
+assert.equal(new Set(extrasInvoice.serviceItems.map((row:any)=>row.lineId)).size,3);
+assert.equal(state.InvoiceLineCommission.filter(row=>row.invoiceId===repeatedExtras.id).length,3);
+// A later invalid occurrence rolls back the whole invoice and any commission already written.
+const repeatedBefore=clone(state);
+await assert.rejects(call('serviceInvoice',{customerId,items:[{serviceId:repeatedServiceId,performerId},{serviceId:repeatedServiceId,performerId:'0'.repeat(24)}]}));
+assert.deepEqual(state,repeatedBefore);
+
+// Immediate services require an explicit performer on every occurrence, never a creator/global fallback.
+for(const count of [1,2,3]){
+ const items=Array.from({length:count},(_,index)=>({serviceId:repeatedServiceId,total:0,...(index<count-1?{performerId}: {})}));
+ const before=clone(state);
+ await assert.rejects(groupCall('serviceInvoice',{customerId,staffId:groupCashierId,items}),error=>(error as any).status===400 && (error as Error).message.includes(`dòng dịch vụ ${count} (Group massage)`));
+ assert.deepEqual(state,before,'missing performer rolls back counters, invoices, ledgers, audit and key');
+}
+const beforeMissing=clone(state);
+await assert.rejects(groupCall('invoice',{customerId,serviceId,staffId:groupCashierId,treatments:[{treatmentId:repeatedPlan.id,remainingBefore:9,performerId},{treatmentId:repeatedPlan.id,remainingBefore:8}]}),/lượt dùng gói 2/);
+assert.deepEqual(state,beforeMissing);
+await assert.rejects(groupCall('invoice',{customerId,serviceId,treatments:[{treatmentId:repeatedPlan.id,remainingBefore:9,performerId}],additionalServices:[{serviceId:repeatedServiceId,total:0,performerId},{serviceId:repeatedServiceId,total:0}]}),/dòng dịch vụ thêm 2 \(Group massage\)/);
+assert.deepEqual(state,beforeMissing);
+await assert.rejects(groupCall('use',{treatmentId:repeatedPlan.id,remainingBefore:9}),/Chọn kỹ thuật viên/);
+await assert.rejects(groupCall('use',{treatmentId:repeatedPlan.id,remainingBefore:9,sessions:[{staffId:performerId},{}]}),/lượt dùng gói 2/);
+assert.deepEqual(state,beforeMissing);
+// Sales and a pre-service invoice keep the creator separate from the future performer.
+const advanceKey=randomUUID(),advanceInput={customerId,serviceId:repeatedServiceId};
+const advance=await groupCall('invoice',advanceInput,advanceKey);await groupCall('invoice',advanceInput,advanceKey);
+const advanceBill=state.Invoice.find(row=>row._id===advance.id);
+assert.equal(advanceBill.createdBy,groupCashierId);assert.equal(advanceBill.performedBy,undefined);assert.equal(advanceBill.performedAt,undefined);
+assert.equal(advanceBill.serviceItems[0].performerId,undefined);assert.equal(state.InvoiceLineCommission.filter(row=>row.invoiceId===advance.id).length,0);
+const future=await groupCall('sellPackage',{customerId,templateId});
+const futureBill=state.Invoice.find(row=>row._id===future.invoiceId);assert.equal(futureBill.performedBy,undefined);assert.equal(futureBill.performedAt,undefined);
+const merchandise=await groupCall('productInvoice',{customerId,items:[{productId:secondProductId,quantity:1,unitPrice:50000}]});
+assert.equal(state.Invoice.find(row=>row._id===merchandise.id).performedBy,undefined);
+const selfChosen=await groupCall('serviceInvoice',{customerId,items:[{serviceId:repeatedServiceId,performerId:groupCashierId}]});
+assert.equal(state.Invoice.find(row=>row._id===selfChosen.id).serviceItems[0].performerId,groupCashierId,'creator may perform only when explicitly selected');

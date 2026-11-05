@@ -749,3 +749,34 @@ Chỉ nghỉ đã duyệt (hoặc legacy đã ghi thiếu status) được thố
 
 ### Sửa payload tạo/cập nhật Payroll — 04/11/2026
 PROPOSED kỹ thuật: savePayroll chỉ lấy rõ salaryPolicy, leaveStats, workdays và attendanceDigest từ kết quả tải nghỉ để lưu snapshot. pendingLeaves là dữ liệu tạm chỉ dùng cho kiểm tra approvePayroll, không thuộc payload tạo/cập nhật và không thêm vào schema. Giữ strict:'throw', kiểm nghỉ PENDING/fingerprint trước duyệt, transaction/idempotency/audit và các quy tắc lương hiện hành. Không migration/backfill hay thay đổi bảng đã duyệt/đã chi.
+
+## GET chi tiết hóa đơn: kỹ thuật viên và khoản thu — 05/11/2026
+
+PROPOSED kỹ thuật: GET /api/invoices/:id giữ invoiceScope và quyền chữ ký hiện có; bổ sung invoice.serviceItems[].performerName (string|null, tra User cùng spa theo performerId từng dòng) và payments:[{_id,amount,method}] từ Payment chưa đảo của đúng hóa đơn/cùng spa, thứ tự createdAt/_id tăng dần. Mỗi Payment là một dòng, không gộp theo phương thức. method là CASH/BANK_TRANSFER từ CashEntry liên kết cùng spa, kind PAYMENT/direction IN/chưa đảo, hoặc null khi thiếu liên kết hợp lệ; UI báo thiếu phương thức và cần đối chiếu, không đoán. Không trả actor/phiếu thu của hóa đơn khác; không đổi API ghi, schema, quyền, lịch sử, tổng tiền/paid hay công nợ. Không có khoản thu trực tiếp thì hiển thị đúng trạng thái đó; không suy cọc/thẻ thành tiền mặt/chuyển khoản.
+
+## POST operations: splitPayment — 05/11/2026
+
+PROPOSED kỹ thuật: action splitPayment, data strict {invoiceId,payments:[{method,amount,receivedConfirmation:true,note?,transferReference?,lineAllocations?}]}. payments có 1–2 khoản dương nguyên VNĐ, phương thức CASH/BANK_TRANSFER không trùng, tổng trong giới hạn tiền và không vượt công nợ. Giao diện bỏ các phương thức có số tiền 0; gửi mảng trống, khoản 0/âm/lẻ, thiếu xác nhận hoặc trùng phương thức bị từ chối. Response {id:invoiceId,invoiceId,paymentIds,message}. Từng phần dùng lại payment hiện có, ghi tuần tự trong một transaction snapshot/majority, cùng Control guard và một Idempotency-Key/fingerprint. Retry cùng khóa/nội dung trả kết quả cũ; đổi payload/actor cùng khóa 409; gửi cạnh tranh khác khóa vẫn kiểm nợ mới nhất.
+
+Quyền/tham chiếu active/cùng spa, OWNER/cashier hoặc STAFF được phân công, invoice chưa CANCELLED/chưa thay thế, sổ ngày thu OPEN, xác nhận thực nhận và hoa hồng nguồn giữ nguyên. lineAllocations thuộc từng phần tử: tổng bằng amount khoản đó; các nguồn được áp dụng tuần tự nên không thể thanh toán trùng dư một dòng. Một nguồn thu một phần trên nhiều dòng còn nợ cần phân bổ tường minh, dù tổng cả lần bằng công nợ. Bất kỳ lỗi phiếu thu/Payment/phân bổ/hoa hồng/audit/idempotency rollback toàn bộ. payment đơn cũ giữ payload và semantics. Không sửa lịch sử hay schema/index.
+
+## Payload từ biểu mẫu thanh toán rút gọn — 05/11/2026
+
+Không đổi action splitPayment hoặc validation backend. Client tự gửi lineAllocations riêng cho mỗi phần tử payments khi chỉ một dòng còn nợ hoặc trả hết nợ; mỗi nguồn vẫn có amount/method/xác nhận riêng. Trả hết bằng hai phương thức không có nghĩa API tự chấp nhận thiếu phân bổ: biểu mẫu tạo các phân bổ rõ ràng, backend kiểm tra như cũ trong cùng transaction. Khi nhiều dòng nợ và trả một phần, biểu mẫu chỉ gửi sau khi phân bổ qua resolve/apply hiện có; phần nhập nằm trong mục thu gọn, có thể mở khi thiếu/sai. Client không ghi invoice hoặc ledger trực tiếp, không đổi endpoint/quyền/schema/index/migration.
+
+## Thu tiền không phân bổ dòng — 05/11/2026 (ưu tiên mới nhất)
+
+Thay thế yêu cầu lineAllocations trong các mục trước: payment {invoiceId,amount,method,receivedConfirmation:true,note?,transferReference?}; splitPayment {invoiceId,payments:[{amount,method,receivedConfirmation:true,note?,transferReference?}]} không yêu cầu và không tạo phân bổ dòng. allocate áp cọc và redeemCashCard/inline cashCard/thu thêm cũng theo tổng nợ. Kiểm tổng không vượt Invoice.total-Invoice.paid tại backend; không kiểm paid/lineId của từng dòng để cho phép thu mới. Mỗi phương thức tạo Payment/CashEntry riêng, transaction/Control/idempotency/audit/phân quyền/sổ ngày giữ nguyên.
+
+Client cũ còn gửi lineAllocations hoặc additionalLineAllocations: field đã deprecated, được bỏ qua trong xử lý, không lưu vào ledger hay audit như một phân bổ đã áp dụng. Payload lịch sử hợp lệ vẫn được chuẩn hóa như trước để giữ fingerprint/idempotency; field lỗi định dạng bị bỏ qua, không trở thành điều kiện bắt nhập lại phân bổ. Amount/method/xác nhận và mọi kiểm tra nghiệp vụ khác vẫn bắt buộc. Không đổi schema đọc lịch sử: dữ liệu phân bổ cũ giữ nguyên. reverseCash/reverseAllocation dùng phân bổ gốc nếu có, không yêu cầu paid từng dòng khớp tổng sau khi có khoản thu mới; thiếu phân bổ ở khoản mới không dẫn đến việc tự tạo phân bổ khi đảo.
+
+## Dịch vụ lặp khi tạo hóa đơn thu ngân — 05/11/2026
+
+serviceInvoice.items[] (1–30 lượt) và invoice.additionalServices[] (tối đa 30 lượt thêm khi ghi buổi) nhận nhiều phần tử cùng serviceId. Mỗi phần tử vẫn kiểm service/performer active/cùng spa, giá nguyên không âm và tổng trong giới hạn. Backend tạo serviceItems/lineId/hoa hồng riêng; không deduplicate serviceId. checkout gọi các action này trong transaction hiện có, một Idempotency-Key, lỗi bất kỳ rollback toàn giỏ. Không đổi payload hoặc buộc client gửi lineId; ID dòng lưu do server cấp. Cùng key/nội dung trả kết quả cũ; nội dung khác cùng key 409. Thanh toán một phần/hai phương thức tiếp tục kiểm tổng nợ hóa đơn, không lineAllocations. Không mở quyền chỉnh lịch sử hoặc thay đổi quy tắc chọn dịch vụ khi đặt lịch công khai/nội bộ.
+
+
+## KTV bắt buộc theo ngữ cảnh thực hiện — 05/11/2026
+
+PROPOSED kỹ thuật: serviceInvoice.items[].performerId và invoice.additionalServices[].performerId khi ghi buổi bắt buộc ở backend với lỗi 400 chỉ rõ số dòng/tên dịch vụ. invoice.treatments[].performerId bắt buộc từng lượt, kể cả có staffId chung; use dùng staffId đã chọn hoặc staffId từng sessions[]/staffId chung tường minh. Không fallback actorId/createdBy. Legacy invoice {treatmentId,staffId} dùng KTV tường minh cho một buổi. Không đổi shape để giữ idempotency payload cũ: replay key/nội dung đã thành công vẫn trả kết quả đã lưu trước guard mới. Lỗi mới không lưu hóa đơn/buổi/ledger/audit/idempotency dở dang.
+
+invoice {customerId,serviceId,...} không staffId và không liệu trình vẫn cho lập trước thực hiện; sellPackage/productInvoice/sellProduct không bắt KTV. invoice đơn có staffId chọn tường minh giữ luồng ghi thực hiện. Phân công lịch đã lưu là nguồn KTV hợp lệ khi hoàn thành lịch, không phải mặc định từ người tạo. Mọi tham chiếu vẫn cùng spa, tài khoản active/vai trò hợp lệ và quyền hiện có; không đổi khoản thu, hoa hồng, lịch sử, schema/index.

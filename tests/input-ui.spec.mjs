@@ -1,4 +1,211 @@
 import {test,expect} from '@playwright/test';
+
+async function repeatedCart(page,count){
+ await page.goto('/repeated-services');
+ await page.getByRole('button',{name:/Nhóm QA.*1 dịch vụ/}).click();
+ for(let i=0;i<count;i++)await page.getByRole('button',{name:/^Massage nhóm/}).click();
+ await page.locator('.cashier-cart-group > summary').click();
+ await expect(page.getByText(/phân bổ.*từng dịch vụ/)).toHaveCount(0);
+}
+async function assignOccurrence(page,index,name){
+ const unit=page.locator('.cashier-cart-unit').nth(index);
+ await unit.locator(':scope > summary').click();
+ await unit.getByRole('button',{name:/Chọn kĩ thuật viên/}).click();
+ await unit.getByRole('checkbox',{name,exact:true}).check();
+ await unit.getByRole('button',{name:new RegExp(name)}).click();
+}
+for(const count of [2,3])for(const different of [false,true])test(`repeated services: ${count} occurrences, ${different?'different':'same'} technicians`,async({page})=>{
+ await repeatedCart(page,count);
+ for(let index=0;index<count;index++)await assignOccurrence(page,index,different&&index%2?'Kỹ thuật viên Bình':'Kỹ thuật viên An');
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
+ expect(saved.action).toBe('serviceInvoice');expect(saved.values.items).toHaveLength(count);
+ expect(saved.values.items.map(row=>row.performerId)).toEqual(Array.from({length:count},(_,index)=>(different&&index%2?'2':'1').repeat(24)));
+ expect(saved.values.items.reduce((sum,row)=>sum+row.total,0)).toBe(350000*count);
+ expect(new Set(saved.values.items.map(row=>row.serviceId)).size).toBe(1);
+});
+test('repeated services: removing the middle occurrence preserves other technicians and prices',async({page},testInfo)=>{
+ await repeatedCart(page,3);
+ await assignOccurrence(page,0,'Kỹ thuật viên An');
+ await assignOccurrence(page,2,'Kỹ thuật viên Bình');
+ const middle=page.locator('.cashier-cart-unit').nth(1);
+ await middle.locator(':scope > summary').click();
+ await middle.getByRole('button',{name:'Bỏ dịch vụ',exact:true}).click();
+ await expect(page.locator('.cashier-cart-unit')).toHaveCount(2);
+ await page.locator('.cashier-cart-unit').nth(1).getByLabel('Giá dịch vụ (VNĐ)').fill('400000');
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
+ expect(saved.values.items.map(row=>[row.performerId,row.total])).toEqual([['1'.repeat(24),350000],['2'.repeat(24),400000]]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('repeated-services.png')});
+});
+
+for(const count of [1,2,3])test(`technician requirement: immediate service row ${count} blocks save without creator fallback`,async({page},testInfo)=>{
+ if(count===1){await page.goto('/repeated-services');await page.getByRole('button',{name:/Nhóm QA.*1 dịch vụ/}).click();await page.getByRole('button',{name:/^Massage nhóm/}).click();}
+ else {await repeatedCart(page,count);for(let i=0;i<count-1;i++)await assignOccurrence(page,i,'Kỹ thuật viên An');}
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ await expect(page.getByRole('alert')).toHaveText(`Chọn kỹ thuật viên cho dòng dịch vụ ${count} (Massage nhóm).`);
+ await expect(page.locator('#saved-cashier')).toHaveText('');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.getByRole('alert').scrollIntoViewIfNeeded();await page.screenshot({path:testInfo.outputPath('missing-technician.png')});
+});
+
+test('technician requirement: purchased package occurrences each require their own technician',async({page})=>{
+ await page.goto('/repeated-services');await page.getByRole('button',{name:'Dùng gói đã mua',exact:true}).click();
+ for(let i=0;i<2;i++)await page.getByRole('button',{name:/^Gói chăm sóc da/}).click();
+ await page.locator('.cashier-cart-group > summary').click();
+ for(const unit of await page.locator('.cashier-cart-unit').all())await unit.locator(':scope > summary').click();
+ const selectors=page.getByLabel('Kĩ thuật viên lượt này',{exact:true});
+ await selectors.nth(0).selectOption('1'.repeat(24));
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ await expect(page.getByRole('alert')).toHaveText('Chọn kỹ thuật viên cho lượt dùng gói 2 (Gói chăm sóc da).');
+ await expect(page.locator('#saved-cashier')).toHaveText('');
+ await selectors.nth(1).selectOption('2'.repeat(24));await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
+ expect(saved.values.treatments.map(row=>row.performerId)).toEqual(['1'.repeat(24),'2'.repeat(24)]);
+});
+
+for(const [mode,item,action]of [['Bán gói mới','Gói dùng sau QA','sellPackage'],['Sản phẩm','Dầu gội QA','productInvoice']])test(`technician requirement: ${action} saves without a technician`,async({page})=>{
+ await page.goto('/repeated-services');await page.getByRole('button',{name:mode,exact:true}).click();
+ await page.getByRole('button',{name:new RegExp('^'+item)}).click();
+ if(action==='sellPackage')await page.getByRole('combobox',{name:'Người tư vấn',exact:true}).selectOption('1'.repeat(24));
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());expect(saved.action).toBe(action);
+ expect(saved.values.staffId).toBeUndefined();expect(saved.values.performerId).toBeUndefined();
+});
+
+test('technician requirement: advance invoice saves without a technician',async({page})=>{
+ await page.goto('/pre-service');await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ await page.getByRole('button',{name:'Lưu thông tin',exact:true}).click();
+ const saved=JSON.parse(await page.locator('#saved-advance').textContent());expect(saved.staffId).toBeUndefined();expect(saved.serviceId).toBe('c'.repeat(24));
+});
+
+test('technician requirement: recording a package in the invoice form requires an explicit line technician',async({page},testInfo)=>{
+ await page.goto('/pre-service');await page.getByRole('checkbox',{name:/Gói chăm sóc da/}).check();
+ const technician=page.getByRole('combobox',{name:'Kỹ thuật viên lượt dùng gói 1 (Gói chăm sóc da)',exact:true});
+ await expect(technician).toHaveValue('');await page.getByRole('button',{name:'Lưu thông tin',exact:true}).click();
+ await expect(page.locator('#saved-advance')).toHaveText('');
+ expect(await page.getByRole('dialog').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await technician.scrollIntoViewIfNeeded();await page.screenshot({path:testInfo.outputPath('package-technician.png')});
+ await technician.selectOption('a'.repeat(24));await page.getByRole('button',{name:'Lưu thông tin',exact:true}).click();
+ const saved=JSON.parse(await page.locator('#saved-advance').textContent());expect(saved.treatments[0].performerId).toBe('a'.repeat(24));
+});
+
+test('invoice list opens one payment form for both methods', async ({page}) => {
+ await page.goto('/workspace/invoices');
+ await page.locator('.invoice-list-actions summary').click();
+ await page.getByRole('button',{name:'Thanh toán',exact:true}).click();
+ await expect(page.getByRole('dialog')).toBeVisible();
+ await expect(page.getByRole('textbox',{name:'Tiền mặt',exact:true})).toBeVisible();
+ await expect(page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true})).toBeVisible();
+});
+
+test('split payment validates totals, confirms each method and preserves partial debt', async ({page},testInfo) => {
+ await page.goto('/split-payment?paid=300000');
+ const dialog = page.getByRole('dialog');
+ await expect(dialog.locator('.payment-summary')).toContainText('Còn phải thanh toán1.200.000 đ');
+ const submit=dialog.getByRole('button',{name:'Xác nhận đã nhận tiền'});
+ await expect(submit).toBeDisabled();
+ await dialog.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('1000000');
+ await dialog.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('500000');
+ await expect(dialog.getByRole('alert')).toHaveText('Tổng thu vượt số còn phải thanh toán.');
+ await expect(submit).toBeDisabled();
+ await dialog.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('200000');
+ await expect(dialog.locator('.payment-collection-total')).toHaveText('Tổng thu lần này: 1.200.000 đ');
+ await dialog.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await expect(submit).toBeDisabled();
+ await dialog.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await submit.click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments.map(row=>[row.method,row.amount,row.receivedConfirmation])).toEqual([['CASH',1000000,true],['BANK_TRANSFER',200000,true]]);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ const bounds = await dialog.boundingBox();
+ expect(bounds.x).toBeGreaterThanOrEqual(0);
+ expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize().width);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await dialog.locator('.payment-collection-total').scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('split-payment.png')});
+});
+
+test('split payment supports one method and blank unused amount', async ({page}) => {
+ await page.goto('/split-payment');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('1500000');
+ await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments).toHaveLength(1); expect(saved.payments[0].method).toBe('BANK_TRANSFER');
+ expect(saved.payments[0].amount).toBe(1500000);
+});
+
+test('partial mixed receipts on multiple services require only actual receipts and confirmation',async({page})=>{
+ await page.goto('/split-payment?lines=1');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('200000');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('100000');
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('199999');
+ await expect(page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'})).not.toBeChecked();
+ await expect(page.getByRole('button',{name:'Xác nhận đã nhận tiền'})).toBeDisabled();
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('200000');
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments.map(row=>[row.method,row.amount])).toEqual([['CASH',200000],['BANK_TRANSFER',100000]]);
+ expect(saved.payments.every(row=>!('lineAllocations' in row))).toBe(true);
+ await expect(page.getByRole('dialog').getByText(/phân bổ/i)).toHaveCount(0);
+});
+
+for(const scenario of [
+ {name:'single partial',query:'lines=single',cash:600000,bank:0},
+ {name:'single settled',query:'lines=single',cash:1500000,bank:0},
+ {name:'multiple partial single method',query:'lines=1&total=2300000',cash:2000000,bank:0},
+ {name:'multiple partial mixed methods',query:'lines=1&total=2300000',cash:1500000,bank:500000},
+ {name:'multiple settled mixed methods',query:'lines=1&paid=300000',cash:800000,bank:400000},
+ {name:'historical one outstanding',query:'lines=one-owing',cash:100000,bank:200000},
+])test('invoice-level payment without allocation: '+scenario.name,async({page},testInfo)=>{
+ await page.goto('/split-payment?'+scenario.query);
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill(String(scenario.cash));
+ await dialog.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill(String(scenario.bank));
+ await expect(dialog.getByRole('textbox')).toHaveCount(2);
+ await expect(dialog.locator('input[name*="Allocations"],.payment-service-allocation')).toHaveCount(0);
+ await expect(dialog.getByText(/phân bổ/i)).toHaveCount(0);
+ if(scenario.cash)await dialog.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ if(scenario.bank)await dialog.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await dialog.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ const saved=JSON.parse(await page.locator('#saved-payment').textContent());
+ expect(saved.payments.reduce((sum,row)=>sum+row.amount,0)).toBe(scenario.cash+scenario.bank);
+ expect(saved.payments.every(row=>!('lineAllocations' in row))).toBe(true);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await dialog.locator('.payment-summary').scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath(scenario.name.replaceAll(' ','-')+'.png')});
+});
+
+test('invoice detail keeps per-service staff, separate receipts and totals on desktop and mobile', async ({page}, testInfo) => {
+ const errors = [];
+ page.on('pageerror', error => errors.push(error.message));
+ await page.goto('/invoice-detail');
+ const dialog = page.getByRole('dialog', {name:'Chi tiết hóa đơn'});
+ const services = dialog.locator('.invoice-service-lines p');
+ await expect(services).toHaveCount(3);
+ await expect(services.nth(0)).toContainText('Massage CVG');
+ await expect(services.nth(0)).toContainText('Kỹ thuật viên: Thư');
+ await expect(services.nth(1)).toContainText('Kỹ thuật viên: Quỳnh');
+ await expect(services.nth(2)).toContainText('Kỹ thuật viên: Chưa có');
+ const payments = dialog.getByRole('region', {name:'Phương thức thanh toán'}).getByRole('listitem');
+ await expect(payments).toHaveText(['Chuyển khoản:500.000 đ', 'Tiền mặt:600.000 đ', 'Tiền mặt:400.000 đ']);
+ await expect(dialog.locator('.invoice-detail-money > span')).toHaveText(['Tổng tiền1.500.000 đ', 'Đã thanh toán1.500.000 đ', 'Còn nợ0 đ']);
+ await expect(dialog.getByText('Người tạo:', {exact:false})).toContainText('Chủ spa kiểm thử');
+ await expect(dialog.getByText(/hệ thống sẽ kiểm tra và chặn|Nhân viên đã ghi nhận|Đã thực hiện:/)).toHaveCount(0);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('invoice-detail.png'),fullPage:true});
+ await dialog.getByRole('region', {name:'Phương thức thanh toán'}).scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('invoice-payments.png'),fullPage:true});
+ expect(errors).toEqual([]);
+});
 test('packages search keeps its DOM node, focus and middle caret across delayed fetch and URL sync',async({page})=>{
  await page.goto('/workspace/packages');const input=page.getByRole('textbox',{name:'Tìm kiếm',exact:true});await expect(input).toBeVisible();
  await input.focus();await input.pressSequentially('Nguyễn Ánh 0900',{delay:45});await page.waitForTimeout(800);

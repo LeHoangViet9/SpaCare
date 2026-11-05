@@ -11,7 +11,7 @@ import { auditActions } from '@/lib/audit-view';
 import PdfExport from './pdf-export';
 type Row = Record<string, any>;
 const money = formatCurrency;
-export default function InvoiceDetail({ replacementStaff, onReplacement, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCorrectDate, onCancel, onDelete, canManageCards }: { replacementStaff?:Row[]; onReplacement?:()=>void; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row, method: string) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCorrectDate?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
+export default function InvoiceDetail({ replacementStaff, onReplacement, record, onClose, onInvoice, onPayment, onBook, onSell, onCompleteService, onRefund, onEdit, onCorrectDate, onCancel, onDelete, canManageCards }: { replacementStaff?:Row[]; onReplacement?:()=>void; canManageCards?: boolean; record: { kind: 'invoice' | 'customer'; id: string }; onClose: () => void; onInvoice: (id: string) => void; onPayment?: (invoice: Row) => void; onBook?: (id: string) => void; onSell?: (id: string) => void; onDelete?: (invoice:Row)=>void; onCorrectDate?: (invoice:Row)=>void; onCancel?: (invoice:Row)=>void; onEdit?: (invoice:Row, treatment:Row|null)=>void; onRefund?: (invoice:Row)=>void; onCompleteService?: (invoice: Row) => void }) {
   const [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [historyKind, setHistoryKind] = useState('invoices');
@@ -27,6 +27,8 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
     ...(data.invoice.serviceItems || []),
     ...(data.invoice.treatmentSessions || []).filter((session: Row) => !data.invoice.serviceItems?.some((item: Row) => item.lineId && item.lineId === session.lineId && item.total === 0 && session.total === 0)),
   ] : [];
+  if (!serviceLines.length && data?.invoice.serviceId && (!data.invoice.kind || ['SERVICE', 'SESSION'].includes(data.invoice.kind)))
+    serviceLines.push({ name: data.invoice.description, total: data.invoice.total, performerName: data.invoice.performerName });
   const signedRecords: Row[] = (data?.signatures || []).filter((record: Row) => record.signature?.strokes?.some((stroke: number[][]) => stroke.length > 1));
   return <div className="modal-backdrop"><section className="modal detail-modal" role="dialog" aria-modal="true" aria-label={record.kind === 'invoice' ? 'Chi tiết hóa đơn' : 'Hồ sơ khách hàng'} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
     <div className="section-head"><h2>{record.kind === 'invoice' ? 'Hóa đơn' : 'Hồ sơ khách hàng'}</h2><button autoFocus onClick={onClose}>Đóng</button></div>
@@ -50,7 +52,7 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
           <p><strong>{data.customer?.name}</strong>{data.customer?.phone ? ` · ${data.customer.phone}` : ''}</p>
           <h3>{data.invoice.description}</h3>
           {data.invoice.packageItems?.length>0 && <section className="invoice-service-lines"><h3>Gói liệu trình trong hóa đơn</h3>{data.invoice.packageItems.map((item:Row)=><p key={item.lineId || item.treatmentId}><span>{item.name}{item.promotion ? ' · '+item.promotion : ''}</span><strong>{money(item.total)}</strong></p>)}</section>}
-          {serviceLines.length > 0 && <section className="invoice-service-lines"><h3>Dịch vụ trong hóa đơn</h3>{serviceLines.map((item: Row, index: number) => <p key={item.lineId || `${item.serviceId || item.treatmentUseId}:${index}`}><span>{index + 1}. {item.name}</span><strong>{money(item.total)}</strong></p>)}</section>}
+          {serviceLines.length > 0 && <section className="invoice-service-lines"><h3>Dịch vụ trong hóa đơn</h3>{serviceLines.map((item: Row, index: number) => <p key={item.lineId || `${item.serviceId || item.treatmentUseId}:${index}`}><span className="invoice-service-info"><span>{index + 1}. {item.name}</span><small>Kỹ thuật viên: {item.performerName || 'Chưa có'}</small></span><strong>{money(item.total)}</strong></p>)}</section>}
           {data.invoice.productItems?.length>0 && <section className="invoice-service-lines"><h3>Sản phẩm mua thêm</h3>{data.invoice.productItems.map((item:Row)=><p key={item.lineId || item.productId}><span>{item.name} · {item.quantity} {item.unit} × {money(item.unitPrice)}</span><strong>{money(item.total)}</strong></p>)}</section>}
           <div className="invoice-detail-money"><span>Tổng tiền<strong>{money(data.invoice.total)}</strong></span><span>Đã thanh toán<strong>{money(data.invoice.paid)}</strong></span><span>Còn nợ<strong>{money(data.invoice.total - data.invoice.paid)}</strong></span></div>
         </section>
@@ -59,13 +61,15 @@ export default function InvoiceDetail({ replacementStaff, onReplacement, record,
         {data.giftCards?.map((card:Row)=><p key={card._id}>Thẻ tiền tặng: {money(card.amount)} · Còn {money(card.balance)}</p>)}
         {data.invoice.status === 'CANCELLED' && <p role="status"><strong>Đã hủy · Không tính công nợ</strong> · Giá trị trước hủy: {money(data.invoice.cancelledTotal)} · Lý do: {data.invoice.cancelReason}</p>}
 
-        {(onEdit || onCancel) && data.invoice.paid > 0 && <p>Hóa đơn đã thanh toán: hệ thống sẽ kiểm tra và chặn sửa/hủy trực tiếp để giữ đúng lịch sử thu tiền.</p>}
         {data.invoice.kind === 'PACKAGE' && <p>Người tư vấn bán gói: {data.invoice.saleParticipants?.length ? data.invoice.saleParticipants.map((p:Row)=>p.staffName).join(', ') : data.invoice.sellerName || 'Chưa ghi ở giao dịch cũ'}{data.invoice.saleParticipants?.length > 1 && ` · Chia đều quỹ 5% cho ${data.invoice.saleParticipants.length} người`} · Đã hoàn: {money(data.invoice.refunded || 0)}</p>}{onRefund && data.invoice.kind === 'PACKAGE' && data.invoice.paid > (data.invoice.refunded || 0) && <button onClick={()=>onRefund(data.invoice)}>Ghi nhận hoàn tiền gói</button>}
         {data.invoice.kind === 'PRODUCT' && !data.invoice.openingBalance && <p>Sản phẩm: {data.invoice.productSku} · {data.invoice.quantity} {data.invoice.productUnit} × {money(data.invoice.unitPrice)} · Đã xuất kho</p>}
         {data.treatments?.length>1 && <section><h3>Quyền lợi từng liệu trình</h3>{data.treatments.map((plan:Row)=><p key={plan._id}>{plan.name} · {packageLabel(plan)}</p>)}</section>}
-        {data.invoice.performedAt && <p>Người thực hiện: <strong>{data.invoice.performerName || 'Nhân viên đã ghi nhận'}</strong> · {new Date(data.invoice.performedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>}
+        <section className="invoice-payment-methods" aria-label="Phương thức thanh toán"><h3>Phương thức thanh toán</h3>
+          {data.payments?.length ? <ul>{data.payments.map((payment: Row) => <li key={payment._id}><span>{payment.method === 'BANK_TRANSFER' ? 'Chuyển khoản' : payment.method === 'CASH' ? 'Tiền mặt' : 'Chưa có phương thức'}:</span><strong>{money(payment.amount)}</strong></li>)}</ul> : <p>Chưa có khoản thu trực tiếp được ghi nhận.</p>}
+          {data.payments?.some((payment: Row) => !['CASH', 'BANK_TRANSFER'].includes(payment.method)) && <p>Thiếu phương thức trên phiếu thu liên kết; cần đối chiếu giao dịch gốc.</p>}
+        </section>
         {onCompleteService && data.invoice.status !== 'CANCELLED' && data.canCompleteService && <button onClick={() => onCompleteService(data.invoice)}>Hoàn thành dịch vụ / ghi hoa hồng</button>}
-        {onPayment && data.invoice.total > data.invoice.paid && <div className="actions"><button onClick={() => onPayment(data.invoice, 'CASH')}>Thu tiền mặt</button><button onClick={() => onPayment(data.invoice, 'BANK_TRANSFER')}>Chuyển khoản / QR</button></div>}
+        {onPayment && data.invoice.total > data.invoice.paid && <div className="actions"><button onClick={() => onPayment(data.invoice)}>Thanh toán</button></div>}
         {data.invoice.kind === 'SESSION' && <p>Buổi thuộc liệu trình: 0đ{data.invoice.total>0 ? ' · Có dịch vụ lẻ thu thêm trong hóa đơn' : ' · Không thu thêm tiền'}</p>}
         {data.invoice.kind === 'GIFT' && <p>Quà tặng 0đ · Hóa đơn mua #{data.invoice.giftOfInvoiceId?.slice(-6)}</p>}
         {data.invoice.promotion && <p>Khuyến mãi: {data.invoice.promotion}</p>}

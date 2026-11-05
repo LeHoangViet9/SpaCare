@@ -9,11 +9,11 @@ import { appointmentServiceIds } from './appointment-services';
 import { ServiceGroup } from './models';
 import { serviceGroupName, serviceGroupKey } from './service-groups';
 import { CashCard, CashCardUse } from './models';
-import { invoiceCardInput, cashCardInputs, cardPayment, ensureCardService } from './cash-card-rules';
+import { invoiceCardInput, cashCardInputs, cardPayment, ensureCardService, ignoredLineAllocations } from './cash-card-rules';
 import { nextSessionNumber, timedPackage, treatmentAvailable, useToken, packageSnapshot, packageStartOnPurchase } from './treatment-rules';
 import { leavesOverlap, summarizeLeave, monthlyLeaveSalary } from './leave-rules';
 import { packageCommissionDelta, sharedCommissionDeltas } from './sale-commission';
-import { applyInvoiceLinePayment, resolveInvoiceLineAllocations } from './invoice-line-payments';
+import { applyInvoiceLinePayment } from './invoice-line-payments';
 import { isValidSignature, type Signature } from './signature';
 import mongoose from 'mongoose';
 import { staffPhone } from './login-identity';
@@ -75,6 +75,7 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const signature = z.custom<Signature>(isValidSignature, 'Khách cần ký trực tiếp để xác nhận buổi.');
 const remainingBefore = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, '').replace(/^\+84/, '0')).pipe(z.string().regex(/^0\d{9,10}$/, 'Số điện thoại phải có 10–11 chữ số, bắt đầu bằng 0 hoặc +84.'));
+const paymentInput = z.object({ invoiceId: objectId, amount: moneySchema, method, note, transferReference: z.string().trim().max(500).optional(), receivedConfirmation: z.literal(true, 'Cần xác nhận đã thực nhận tiền.'), lineAllocations: ignoredLineAllocations });
 
 const schemas = {
   correctInvoiceDate: z.object({id:objectId,expectedUpdatedAt:date,issuedOn:dateOnly,adjustPaymentDates:z.boolean().default(false),reason:text}).strict(),
@@ -132,8 +133,7 @@ const schemas = {
   serviceInvoice: z.object({
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).max(30).optional(),
     customerId: objectId, staffId: objectId.optional(), dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
-    items: z.array(z.object({ serviceId: objectId, total: zeroMoney.optional(), performerId: objectId.optional() })).min(1).max(30)
-      .refine(items => new Set(items.map(item => item.serviceId)).size === items.length, 'Không chọn trùng dịch vụ.'),
+    items: z.array(z.object({ serviceId: objectId, total: zeroMoney.optional(), performerId: objectId.optional() })).min(1).max(30),
   }),
   invoice: z.object({
     treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore,performerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional(),
@@ -154,11 +154,12 @@ const schemas = {
     depositId: objectId,
     invoiceId: objectId,
     amount: moneySchema,
-    lineAllocations: z.array(z.object({lineId: objectId, amount: moneySchema})).min(1).optional(),
+    lineAllocations: ignoredLineAllocations,
     reason: text,
   }),
   reverseAllocation: z.object({ id: objectId, reason: text }),
-  payment: z.object({ invoiceId: objectId, amount: moneySchema, method, note, transferReference: z.string().trim().max(500).optional(), receivedConfirmation: z.literal(true, 'Cần xác nhận đã thực nhận tiền.'), lineAllocations: z.array(z.object({lineId:objectId,amount:moneySchema})).min(1).optional() }),
+  payment: paymentInput,
+  splitPayment: z.object({invoiceId:objectId,payments:z.array(paymentInput.omit({invoiceId:true}).strict()).min(1).max(2)}).strict().refine(data=>new Set(data.payments.map(payment=>payment.method)).size===data.payments.length,'Không lặp phương thức trong cùng lần thanh toán.'),
   cash: z.object({ direction: z.enum(['IN', 'OUT']), amount: moneySchema, method, note: text }),
   reverseCash: z.object({ id: objectId, reason: text }),
   treatment: z.object({
@@ -286,7 +287,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const doc = await model.findOne({ ...scope, _id: id }).session(session);
         ensure(doc, 'Không tìm thấy dữ liệu trong spa này.', 404);
         if(model === Invoice) ensure(doc.status !== 'CANCELLED', 'Hóa đơn đã hủy, không thể phát sinh thao tác mới.',409);
-        if(model === Invoice && doc.activeDocumentId && ['payment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
+        if(model === Invoice && doc.activeDocumentId && ['payment','splitPayment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
           ensure(false,'Chứng từ đã thay thế: phiên bản này chưa hỗ trợ thay đổi tài chính hoặc nội dung tiếp theo.',409);
         return doc;
       };
@@ -352,23 +353,21 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         invoice.status = invoiceState(invoice.total, invoice.paid);
         await invoice.save({ session });
       };
-      const updateLinePaid = async (invoice: any, allocations: { lineId: string; amount: number }[] | undefined, amount: number, direction: 'PAY' | 'REVERSE' = 'PAY') => {
+      // Only historical reversals touch stored line balances. New receipts are invoice-level.
+      const reverseHistoricalLinePaid = (invoice: any, allocations: { lineId: string; amount: number }[] | undefined, amount: number) => {
+        if (!allocations?.length) return;
         const groups = ['serviceItems', 'treatmentSessions', 'packageItems', 'productItems'] as const;
         const flattened = groups.flatMap(group => (invoice[group] || []).filter((line:any)=>group !== 'treatmentSessions' || !invoice.serviceItems?.some((item:any)=>item.lineId && String(item.lineId)===String(line.lineId) && item.total===0 && line.total===0)).map((line: any) => ({ ...line.toObject?.() || line, lineId: String(line.lineId || ''), paid: line.paid || 0 })));
-        let resolved;
         let updated;
         try {
-          resolved = resolveInvoiceLineAllocations(flattened, allocations?.map(line=>({lineId:String(line.lineId),amount:line.amount})), amount, invoice.paid, direction);
-          if (!resolved) return;
-          ensure(flattened.reduce((sum,line)=>sum+line.total,0)===invoice.total,'Tổng tiền theo dòng không khớp hóa đơn; cần đối soát.',409);
-          updated = applyInvoiceLinePayment(flattened, resolved, amount, direction);
+          // invoice.paid may include later aggregate receipts; never infer or redistribute those.
+          updated = applyInvoiceLinePayment(flattened, allocations.map(line=>({lineId:String(line.lineId),amount:line.amount})), amount, 'REVERSE');
         } catch (error) { ensure(false, (error as Error).message, 409); }
         const byId = new Map(updated.map(line => [line.lineId.toLowerCase(), line]));
         for (const group of groups) for (const line of invoice[group] || []) {
           const next = byId.get(String(line.lineId).toLowerCase());
           if (next) line.paid = next.paid;
         }
-        return [...resolved];
       };
       // Ordinary staff may collect/apply credit only for invoices attached to their visits.
       const assignedInvoice = async (invoice: any) => {
@@ -393,15 +392,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           card.balance = next.balance;
           await card.save({ session });
           invoice.cardPaid = money((invoice.cardPaid || 0) + d.amount, true);
-          ensure(d.additionalAmount || !d.additionalLineAllocations, 'Không phân bổ tiền thu thêm khi số thu thêm bằng 0.');
-          d.lineAllocations = await updateLinePaid(invoice, d.lineAllocations, d.amount);
           await updatePaid(invoice, d.amount);
-          const use = await create(CashCardUse, { cardId: card._id, customerId: invoice.customerId, invoiceId: invoice._id, amount: d.amount, balanceBefore: before, balanceAfter: next.balance, actorId: actor.id, ...(d.lineAllocations ? {lineAllocations:d.lineAllocations} : {}) });
+          const use = await create(CashCardUse, { cardId: card._id, customerId: invoice.customerId, invoiceId: invoice._id, amount: d.amount, balanceBefore: before, balanceAfter: next.balance, actorId: actor.id });
           if (d.additionalAmount) {
-            const additionalLineAllocations = await updateLinePaid(invoice, d.additionalLineAllocations, d.additionalAmount);
             await updatePaid(invoice, d.additionalAmount);
             const entry = await receipt({ customerId: invoice.customerId, amount: d.additionalAmount, method: d.method!, kind: 'PAYMENT', direction: 'IN', note: 'Thu thêm sau khi dùng thẻ tiền' });
-            await create(Payment, { invoiceId: invoice._id, amount: d.additionalAmount, receiptId: entry._id, receivedConfirmation: true, ...(additionalLineAllocations ? {lineAllocations:additionalLineAllocations} : {}) });
+            await create(Payment, { invoiceId: invoice._id, amount: d.additionalAmount, receiptId: entry._id, receivedConfirmation: true });
           }
           return use;
       };
@@ -500,10 +496,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         ensure(candidates.every(value=>JSON.stringify(value)===JSON.stringify(candidates[0])), 'Một hóa đơn chỉ dùng một chữ ký chung.');
         return candidates[0];
       };
-      const recordUse = async (d: any, appointmentId: string | undefined = checkoutAppointmentId, staffId: string | null | undefined = d.staffId || actor.id, sharedInvoice?: any) => {
+      const recordUse = async (d: any, appointmentId: string | undefined = checkoutAppointmentId, staffId: string | null | undefined = d.staffId, sharedInvoice?: any, lineLabel = 'lượt dùng gói 1') => {
         const resolvedStaffId = staffId || undefined;
         ensure(!d.staffId || d.staffId === actor.id || actor.role === 'OWNER' || actor.cashier, 'Chỉ chủ spa hoặc thu ngân được chọn nhân viên thực hiện khác.', 403);
         const treatment = await get(Treatment, d.treatmentId);
+        ensure(resolvedStaffId, `Chọn kỹ thuật viên cho ${lineLabel} (${treatment.name}).`);
         ensure(treatmentAvailable(treatment), 'Gói chưa đến ngày dùng, đã hết hạn, bảo lưu hoặc hết buổi.');
         if (d.remainingBefore !== undefined) {
           ensure(useToken(treatment) === d.remainingBefore, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
@@ -576,11 +573,11 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         return recorded;
       };
       const addServices = async (invoice:any, lines:{serviceId:string;total:number;performerId?:string}[]) => {
-        ensure(new Set(lines.map(item=>item.serviceId.toLowerCase())).size===lines.length,'Không chọn trùng dịch vụ lẻ.');
         const items=[];
-        for(const line of lines){
+        for(const [index,line] of lines.entries()){
           const service=await get(Service,line.serviceId);ensure(service.active,'Dịch vụ đã ngừng hoạt động.');
-          const performer = line.performerId ? await performerFor(line.performerId, undefined) : undefined;
+          ensure(line.performerId, `Chọn kỹ thuật viên cho dòng dịch vụ thêm ${index+1} (${service.name}).`);
+          const performer = await performerFor(line.performerId, undefined);
           items.push({lineId:newLineId(),serviceId:service._id,name:service.name,total:line.total,commission:performer ? service.commission || 0 : 0, ...(performer ? {performerId:performer._id} : {})});
         }
         if(!items.length)return;
@@ -639,9 +636,25 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         appointment.staffId=invoice.performedBy;appointment.status='COMPLETED';await appointment.save({session});
         await create(Audit,{actorId:actor.id,action:'linkAppointmentInvoice',targetId:appointment._id,details:{before,after:appointment.toObject(),invoiceId:invoice._id,reason}});
       };
-      const execute = async (op:Operation,data:any) => {
+      const execute = async (op:Operation,data:any): Promise<any> => {
       target=undefined;appointmentBefore=undefined;linkedInvoiceId=undefined;treatmentUseId=undefined;replacementAppointmentId=undefined;financialBefore=undefined;
       switch (op) {
+        case 'splitPayment': {
+          const d = schemas.splitPayment.parse(data);
+          const invoice = await get(Invoice, d.invoiceId);
+          const amount = money(d.payments.reduce((sum, payment) => sum + payment.amount, 0));
+          ensure(amount <= invoice.total - invoice.paid, 'Số thu vượt công nợ hóa đơn.');
+          const paymentIds: string[] = [];
+          // Reuse all receipt, assignment, day, allocation and commission guards.
+          // Child audits and both receipts commit with the single outer idempotency key.
+          for (const payment of d.payments) {
+            const result = await execute('payment', { ...payment, invoiceId: d.invoiceId });
+            paymentIds.push(result.id);
+          }
+          await create(Audit, { actorId: actor.id, action: 'splitPayment', targetId: invoice._id,
+            details: { invoiceId: d.invoiceId, amount, paymentIds } });
+          return { id: d.invoiceId, invoiceId: d.invoiceId, paymentIds, message: 'Đã ghi nhận thanh toán.' };
+        }
         case 'previewPackageAdvisorReplacement':
         case 'replacePackageAdvisor':
           return replacePackageAdvisor(actor, data, session, op==='replacePackageAdvisor');
@@ -1102,7 +1115,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const extras=[];
           for(const id of target.serviceIds || []){
             const service=await get(Service,String(id));ensure(service.active,'Dịch vụ đã ngừng hoạt động.');
-            extras.push({serviceId:String(service._id),total:money(service.price)});
+            extras.push({serviceId:String(service._id),total:money(service.price),performerId:String(target.staffId)});
           }
           await addServices(combined,extras);
           target.status = 'COMPLETED';
@@ -1486,11 +1499,12 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           if (d.dueDate) dayBounds(d.dueDate);
           const serviceItems = [];
           // Sequential reads/writes inside this transaction preserve rollback and session semantics.
-          for (const item of d.items) {
+          for (const [index,item] of d.items.entries()) {
             const service = await get(Service, item.serviceId);
             ensure(service.active, 'Dịch vụ đã ngừng hoạt động.');
             const total = invoiceCharge(service.price, item.total, false);
-            const performer = item.performerId ? await performerFor(item.performerId, undefined) : undefined;
+            ensure(item.performerId, `Chọn kỹ thuật viên cho dòng dịch vụ ${index+1} (${service.name}).`);
+            const performer = await performerFor(item.performerId, undefined);
             serviceItems.push({ lineId: newLineId(), serviceId: service._id, name: service.name, total, commission: performer ? service.commission || 0 : 0, ...(performer ? {performerId:performer._id} : {}) });
           }
           const total = money(serviceItems.reduce((sum, item) => sum + item.total, 0),true);
@@ -1513,7 +1527,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const service = await get(Service, d.serviceId);
           ensure(!d.cashCard || (!d.treatmentId && !d.treatments?.length), 'Thẻ tiền chỉ dùng cho dịch vụ lẻ.', 409);
           ensure(!(d.treatmentId && d.treatments), 'Chỉ gửi một danh sách liệu trình.');
-          const selections = d.treatments || (d.treatmentId ? [{treatmentId:d.treatmentId,signature:d.signature,remainingBefore:d.remainingBefore}] : []);
+          const selections = d.treatments || (d.treatmentId ? [{treatmentId:d.treatmentId,signature:d.signature,remainingBefore:d.remainingBefore,performerId:d.staffId}] : []);
           if (selections.length) {
             const sharedRecipients = selections.some(item=>'recipientName' in item && !!item.recipientName);
             ensure(!sharedRecipients || (!d.signature && selections.every(item=>!item.signature)), 'Không dùng chữ ký chung cho các người nhận khác nhau.');
@@ -1524,7 +1538,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               const purchase = await get(Invoice,String(plan.invoiceId));
               ensure(String(plan.customerId) === d.customerId && (index > 0 || String(plan.serviceId || purchase.serviceId) === d.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
               const performerId = 'performerId' in item ? item.performerId : undefined;
-              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore,...('recipientName' in item ? {recipientName:item.recipientName,recipientPhone:item.recipientPhone} : {})}),undefined,performerId || null,combined);
+              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore,...('recipientName' in item ? {recipientName:item.recipientName,recipientPhone:item.recipientPhone} : {})}),undefined,performerId || null,combined,`lượt dùng gói ${index+1}`);
               treatmentUseId ||= String(recorded._id);
               combined = await get(Invoice,linkedInvoiceId!);
             }
@@ -1597,10 +1611,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           allocationResult(deposit.balance, invoice.total - invoice.paid, d.amount);
           deposit.balance -= d.amount;
           await deposit.save({ session });
-          d.lineAllocations = await updateLinePaid(invoice, d.lineAllocations, d.amount);
           await updatePaid(invoice, d.amount);
           // No CashEntry here: allocation is not new money received.
-          target = await create(Allocation, { ...d, approvedBy: actor.id });
+          target = await create(Allocation, { depositId: d.depositId, invoiceId: d.invoiceId, amount: d.amount, reason: d.reason, approvedBy: actor.id });
           await syncSaleCommission(invoice,'ALLOCATION',String(target._id));
           break;
         }
@@ -1613,7 +1626,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           deposit.balance += target.amount;
           ensure(deposit.balance <= deposit.amount, 'Số dư cọc vượt tiền gốc.');
           await deposit.save({ session });
-          await updateLinePaid(invoice, target.lineAllocations, target.amount, 'REVERSE');
+          reverseHistoricalLinePaid(invoice, target.lineAllocations, target.amount);
           await updatePaid(invoice, -target.amount);
           ensure((invoice.refunded || 0) <= invoice.paid,'Không thể đảo tiền đã hoàn cho khách.');
           await syncSaleCommission(invoice,'REVERSE_ALLOCATION',String(target._id));
@@ -1636,7 +1649,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             kind: 'PAYMENT',
             direction: 'IN',
           });
-          d.lineAllocations = await updateLinePaid(invoice, d.lineAllocations, d.amount);
           await updatePaid(invoice, d.amount);
           target = await create(Payment, {
             invoiceId: d.invoiceId,
@@ -1644,7 +1656,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             receivedConfirmation: true,
             amount: d.amount,
             receiptId: entry._id,
-            ...(d.lineAllocations ? { lineAllocations: d.lineAllocations } : {}),
           });
           await syncSaleCommission(invoice,'PAYMENT',String(target._id));
           break;
@@ -1676,7 +1687,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             }).session(session);
             ensure(payment, 'Không tìm thấy lần thanh toán.');
             const invoice = await get(Invoice, String(payment.invoiceId));
-            await updateLinePaid(invoice, payment.lineAllocations, payment.amount, 'REVERSE');
+            reverseHistoricalLinePaid(invoice, payment.lineAllocations, payment.amount);
             await updatePaid(invoice, -payment.amount);
             ensure((invoice.refunded || 0) <= invoice.paid,'Không thể đảo tiền đã hoàn cho khách.');
             await syncSaleCommission(invoice,'REVERSE_PAYMENT',String(payment._id));
@@ -1773,7 +1784,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
                 recipientCustomerId: s.recipientCustomerId || d.recipientCustomerId,
                 recipientName: s.recipientName || d.recipientName,
                 recipientPhone: s.recipientPhone || d.recipientPhone,
-              }, s.appointmentId || d.appointmentId || checkoutAppointmentId, s.staffId || d.staffId || actor.id, combinedInvoice);
+              }, s.appointmentId || d.appointmentId || checkoutAppointmentId, s.staffId || d.staffId, combinedInvoice, `lượt dùng gói ${index+1}`);
               uses.push(recorded);
               combinedInvoice = await get(Invoice, linkedInvoiceId!);
             }
@@ -1825,6 +1836,14 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       }
       if(action!=='checkout') for (const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
       const details = { ...data } as Record<string, unknown>;
+      // Deprecated input fields are accepted for old clients/idempotency fingerprints only.
+      // Do not describe ignored line assignments as applied in a new operation's audit.
+      delete details.lineAllocations;
+      delete details.additionalLineAllocations;
+      if (details.cashCard && typeof details.cashCard === 'object') {
+        const card = { ...details.cashCard } as Record<string, unknown>;
+        delete card.lineAllocations; delete card.additionalLineAllocations; details.cashCard = card;
+      }
       if(action==='checkout')details.checkoutKey=sha(key);
       if (appointmentBefore) {
         details.before = appointmentBefore;

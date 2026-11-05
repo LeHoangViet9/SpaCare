@@ -843,3 +843,40 @@ Chỉ nghỉ đã duyệt (hoặc legacy đã ghi thiếu status) được thố
 
 ### Sửa payload tạo/cập nhật Payroll — 04/11/2026
 PROPOSED kỹ thuật: savePayroll chỉ lấy rõ salaryPolicy, leaveStats, workdays và attendanceDigest từ kết quả tải nghỉ để lưu snapshot. pendingLeaves là dữ liệu tạm chỉ dùng cho kiểm tra approvePayroll, không thuộc payload tạo/cập nhật và không thêm vào schema. Giữ strict:'throw', kiểm nghỉ PENDING/fingerprint trước duyệt, transaction/idempotency/audit và các quy tắc lương hiện hành. Không migration/backfill hay thay đổi bảng đã duyệt/đã chi.
+
+## Hiển thị chi tiết hóa đơn — 05/11/2026
+
+CONFIRMED theo yêu cầu người dùng: kỹ thuật viên hiển thị ngay dưới từng dịch vụ theo phân công đã lưu, thiếu thì ghi “Kỹ thuật viên: Chưa có”; không lấy nhân viên chung để điền dòng thiếu phân công. Các khoản thu trực tiếp hiển thị riêng phương thức và số tiền theo giao dịch thực tế, kể cả nhiều khoản cùng phương thức. Bỏ cảnh báo sửa/hủy hóa đơn đã trả và dòng người thực hiện chung kèm thời gian; giữ Người tạo, tổng tiền, đã trả, còn nợ. Chỉ thay cách đọc/hiển thị, không đổi quyền hay điều kiện sửa/hủy, thu tiền, lịch sử hoặc dữ liệu hóa đơn.
+
+## Thanh toán gộp nhiều phương thức — 05/11/2026
+
+CONFIRMED theo yêu cầu người dùng: một lần Thanh toán nhập tiền mặt/chuyển khoản, bỏ qua khoản 0 ở giao diện, tổng dương không vượt công nợ mới nhất ở backend. Lưu riêng từng khoản dương theo phương thức; lỗi một khoản hủy toàn bộ lần xác nhận, retry cùng nội dung/khóa không ghi trùng. Từng phương thức phải xác nhận đã thực nhận; giữ phiên active, spa, OWNER/thu ngân hoặc STAFF trong phạm vi lịch/gói được giao, ngày thu OPEN và phân bổ theo dòng hiện hành. Nhiều dòng: tổng phân bổ của từng nguồn bằng số tiền nguồn; dòng đã được nguồn trước thanh toán không được nguồn sau phân bổ vượt dư. Khi một nguồn trả một phần cho nhiều dòng nợ vẫn phải nhập phân bổ rõ ràng, kể cả tổng hai nguồn tất toán hóa đơn.
+
+PROPOSED kỹ thuật: action splitPayment bao 1–2 khoản dương không trùng phương thức, gọi tuần tự logic payment trong transaction Control hiện có, một fingerprint/idempotency ngoài cùng. Mỗi khoản giữ Payment/CashEntry/audit payment/hoa hồng nguồn riêng; audit splitPayment liên kết lần thao tác. Chưa có migration/backfill. Luồng payment đơn cũ vẫn tương thích; quy tắc thay thế chứng từ nhiều khoản thu vẫn bị chặn như trước.
+
+## Rút gọn phân bổ trong biểu mẫu thanh toán — 05/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: chỉ một dòng còn nợ hoặc trả hết công nợ thì ẩn các khung phân bổ và tự phân bổ theo số dư thực tế. Khi có nhiều dòng nợ và trả một phần, đưa các ô nhập vào mục thu gọn “Phân bổ theo dịch vụ”; mặc định đóng, mở khi người dùng chọn hoặc xác nhận mà phân bổ còn thiếu/sai. Giữ xác nhận thực nhận của từng phương thức. Yêu cầu này thay phần phải nhập tay kể cả khi tổng hai phương thức tất toán trong mô tả trước; không bỏ kiểm tra phân bổ hoặc thay cách lưu giao dịch.
+
+PROPOSED kỹ thuật: client tạo lineAllocations rõ ràng cho từng khoản tự động, theo thứ tự dòng mà backend đang dùng (bỏ dòng buổi được phản chiếu) và thứ tự phương thức trên form (tiền mặt rồi chuyển khoản). Mỗi nguồn lần lượt dùng số dư chưa được nguồn trước thanh toán; không chia đều/theo tỷ lệ, không đổi amount người dùng nhập. Chỉ áp dụng khi một dòng còn nợ hoặc tổng thu bằng công nợ, dữ liệu dòng/tổng/paid khớp. Thu một phần nhiều dòng vẫn dùng resolve/apply hiện có; thiếu hoặc vượt phân bổ mở mục để sửa và không gửi request. Hóa đơn legacy giữ thu theo tổng, dữ liệu lệch bị chặn đối soát. Backend, quyền, transaction, idempotency và lưu Payment/CashEntry không đổi.
+
+## Thanh toán theo tổng hóa đơn — 05/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu mới nhất: loại bỏ toàn bộ phân bổ tiền theo dòng khi thu tiền hóa đơn. Mục này thay thế quy tắc phân bổ theo lineId và mục rút gọn/tự phân bổ trước đây. Một hoặc hai phương thức có số tiền dương được lưu riêng theo hóa đơn; tổng đã trả/còn nợ dựa Invoice.paid và Invoice.total, không yêu cầu khớp paid ở từng dòng. Giữ xác nhận thực nhận từng phương thức, cùng spa/khách/phân công, tài khoản active, sổ ngày, transaction tuần tự, idempotency/audit và cấm thu vượt nợ. Không thay chính sách hoa hồng, hoàn tiền hoặc thay thế chứng từ V1.
+
+PROPOSED kỹ thuật: payment/splitPayment, áp cọc allocate và dùng thẻ redeemCashCard (kể cả inline/thu thêm) chỉ cập nhật tổng paid và ledger nguồn hiện có; không cập nhật line.paid hoặc tạo lineAllocations mới. Áp cọc/thẻ giữ bản chất không phải thu tiền mới, chỉ phần thu thêm tạo phiếu thu. Giao diện xóa hẳn các ô/mục/hướng dẫn và helper tạo phân bổ theo dịch vụ, không chặn thanh toán vì lineId/paid lịch sử thiếu hoặc lệch tổng.
+
+Giữ nguyên field và bản ghi lineAllocations/line.paid lịch sử. Khoản mới không có phân bổ khi đảo chỉ giảm tổng hóa đơn. Đảo một khoản cũ có phân bổ vẫn áp dụng đúng phân bổ gốc và cập nhật số dư lịch sử trong transaction theo quyền hiện có, không đòi sum(line.paid)=Invoice.paid vì có thể có thu mới theo tổng; không thay mảng phân bổ gốc hoặc phân phối lại khoản thu mới. Dữ liệu lịch sử không hợp lệ vẫn bị chặn khi đảo để đối soát, không tự bịa phân bổ.
+
+## Lặp dịch vụ trong giỏ thu ngân — 05/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: mỗi lần thêm một dịch vụ là một lượt riêng, kể cả serviceId hoặc kỹ thuật viên giống nhau. Lượt khác kỹ thuật viên/giá/thông tin thực hiện không được gộp khi lưu hoặc tính tiền/hoa hồng. Nhân viên bỏ đúng dòng nhập nhầm trước khi lưu; các dòng khác và thông tin đã gán giữ nguyên. Yêu cầu này thay giới hạn dịch vụ lẻ không được trùng trong cùng hóa đơn ở luồng tạo serviceInvoice và dịch vụ thêm khi dùng gói. Giới hạn 30 lượt, dịch vụ/nhân viên active/cùng spa và các guard hiện có vẫn giữ.
+
+PROPOSED kỹ thuật: serviceInvoice.items[] và invoice.additionalServices[] chấp nhận serviceId lặp, cấp lineId mới cho từng phần tử theo thứ tự gửi. InvoiceLineCommission dùng lineId/sourceId riêng, nên cùng dịch vụ/cùng người thực hiện vẫn có một ledger cho mỗi lượt. Giỏ có thể thu gọn hiển thị các lượt cùng danh mục, nhưng giữ từng occurrence/performer/giá trong array, không gom payload. Retry cùng key trả hóa đơn/ledger cũ; lỗi bất kỳ lượt nào rollback toàn bộ. Tiền thu theo Invoice.total/paid như quy tắc mới nhất, không tạo lineAllocations.
+
+
+## KTV từng lượt thực hiện — 05/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: mỗi dòng thực hiện ngay phải được chọn KTV hợp lệ; cùng dịch vụ 2–3 lần được dùng cùng hoặc khác KTV, không gộp dòng/hoa hồng. Thiếu bất kỳ dòng nào chặn toàn thao tác, thông báo số dòng và tên. Giá 0 không miễn yêu cầu này. Người tạo/người ghi nhận không phải KTV dự phòng. Thay mô tả KTV tùy chọn của các luồng ghi dịch vụ/buổi và mặc định nhân viên phiên ở BR ký buổi trước đây. Không yêu cầu KTV khi bán gói để dùng sau, bán sản phẩm, hoặc tạo hóa đơn dịch vụ chưa thực hiện.
+
+PROPOSED kỹ thuật: serviceInvoice.items và invoice.additionalServices khi ghi buổi phải có performerId mỗi lượt; invoice.treatments phải chọn performerId từng lượt, không bù từ invoice.staffId. invoice đơn không có buổi và không staffId vẫn tạo chứng từ trước làm, chưa performedAt/ledger thực hiện; nếu chọn staffId tường minh thì xác nhận thực hiện như hiện có. Payload legacy một treatmentId dùng staffId đã chọn cho đúng một buổi. use yêu cầu staffId tường minh (hoặc từng sessions[]/staffId chung được chọn); không lấy actor.id. Lịch đã được giao KTV giữ nguồn phân công đó khi xác nhận hoàn thành. Backend kiểm active/role/cùng spa và quyền chọn người khác, transaction tuần tự, idempotency/audit; thiếu KTV rollback toàn giỏ. Không thay dữ liệu lịch sử thiếu KTV, quy tắc hoa hồng hoặc thu tiền cấp hóa đơn.

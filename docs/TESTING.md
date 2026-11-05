@@ -32,9 +32,9 @@ Không cần JUnit cho dự án này vì code là TypeScript/Node.js. Hiện ch�
 - Pass: actual khớp toàn bộ expected, có bằng chứng cần thiết. Fail: khác expected. Blocked: không chạy được do môi trường/tiền điều kiện. Not Run: chưa chạy. Deferred: chờ chốt nghiệp vụ.
 - Retest: chạy lại ca đã lỗi sau khi sửa. Regression: chạy các ca liên quan để phát hiện ảnh hưởng phụ.
 
-## 4. Chuẩn bị môi trường
+## 4. Chuẩn bị môi trường kiểm thử thủ công
 
-Chỉ dùng dữ liệu giả trên máy phát triển. Trước thao tác thủ công, cấu hình app dùng database thử riêng (ví dụ spacare_manual_test), không dùng dữ liệu spa thật. Giữ bản cấu hình vận hành riêng và không ghi bí mật vào báo cáo.
+Chỉ dùng dữ liệu giả trên máy phát triển. Trước thao tác thủ công, cấu hình app dùng database thử riêng (ví dụ spacare_manual_test), không dùng dữ liệu spa thật. Giữ bản cấu hình vận hành riêng và không ghi bí mật vào báo cáo. Các bước dưới đây chỉ dành cho kiểm thử thủ công; integration dùng duy nhất lệnh ở mục 7, không sửa `.env.local` hoặc chạy `db:setup`/seed.
 
 1. Mở Docker Desktop và chờ engine hoạt động.
 2. Trong terminal tại thư mục dự án: `docker compose up -d`.
@@ -132,21 +132,41 @@ Phải đối chiếu thêm GET /api/workspace hoặc dữ liệu test để xá
 
 ## 7. Integration test tự động
 
-Tạo `.env.test.local` (không commit bí mật), ví dụ MongoDB replica set local:
+Từ thư mục dự án, chỉ cần một lệnh (Node.js >=24, đã cài dependencies bằng `npm install`):
 
-```dotenv
-MONGODB_URI=mongodb://127.0.0.1:27017/spacare_test?replicaSet=rs0
-```
-
-Đảm bảo Docker/replica set truy cập được, rồi chạy:
-
-```powershell
+```sh
 npm run test:integration
 ```
 
-Script yêu cầu đúng database spacare_test; tự tạo spa/dữ liệu test và dọn theo spa trong finally. Không cần seed vào database này trước; tạo collections/indexes do test thực hiện. Dừng và kiểm tra cấu hình nếu kết nối sai DB. Không chạy trực tiếp script này trên database thủ công hoặc vận hành.
+Trên Windows PowerShell nếu policy chặn `npm.ps1`, dùng `npm.cmd run test:integration` với cùng kết quả. Cần cài Docker CLI, Docker Compose v2 hỗ trợ `up --wait` (v2.20 trở lên) và Docker daemon local đang chạy. Lệnh kiểm tra và báo lỗi nếu thiếu; không tự cài hoặc tự mở Docker Desktop.
+
+`scripts/test-integration.ts` chạy lần lượt:
+
+1. Kiểm tra Docker CLI, context local, daemon và Compose. Giữ nguyên guard chặn Vercel/CI hiện hành; không hỗ trợ context Docker remote.
+2. Dùng đúng `compose.yaml` trong repository, project `spacare-invoice-replacement`, chạy `up --detach --wait --wait-timeout 90 mongo` (tối đa 180 giây cho bước pull/start). Cổng chỉ bind `127.0.0.1:27018` tới cổng container 27017; dùng volume hiện có `spacare_mongo` của project.
+3. Chạy `mongo-init` một lần với `compose run --rm --no-deps mongo-init`: chỉ gọi `rs.initiate` nếu replica set chưa khởi tạo (code 94); replica set khác `rs0` hoặc lỗi khác bị chặn. `--rm` chỉ dọn container init tạm, không xóa volume.
+4. Đợi tối đa 60 giây để driver kết nối đúng host/cổng/database và xác minh `hello` báo `rs0`/writable PRIMARY. Sau kiểm tra này mới tạo bổ sung collections/indexes test từ model hiện hành, rồi chạy read-only schema preflight. Không seed tài khoản, không sửa document cũ, không drop database/collection/index và không chạy `syncIndexes`; index cũ xung đột sẽ báo lỗi để đối chiếu riêng.
+5. Đóng kết nối chuẩn bị và chạy `node --import tsx --test tests/integration.test.ts`. Test vẫn kiểm tra lại environment, danh tính server và schema trước khi ghi fixture. Giới hạn thời gian tiến trình test là 10 phút.
+
+Runner truyền cố định các biến dưới đây; ghi đè cấu hình database kế thừa, không đọc `.env.local`, `.env.test.local` hay file cấu hình Atlas/demo/production:
+
+```dotenv
+NODE_ENV=test
+SPACARE_ENV=integration
+SPACARE_TARGET_DATABASE=spacare_test
+SPACARE_INTEGRATION_ISOLATED=local-rs0
+MONGODB_URI=mongodb://127.0.0.1:27018/spacare_test?replicaSet=rs0&directConnection=true
+```
+
+Guard và runner dùng chung hằng cấu hình trong `tests/integration-safety.ts`. Tên member trong container là `mongo:27017`; máy host dùng `directConnection=true` để không discovery sang hostname nội bộ này. Không đổi URI thành `localhost`, cổng 27017, SRV/Atlas hoặc database khác.
+
+Môi trường chưa sẵn sàng trả exit code 1 và `BLOCKED [bước]` với nguyên nhân. Khi test chạy, runner trả nguyên exit code của test; chỉ exit 0 khi test thực sự đạt. Không ghi nhận Pass nếu Docker, replica set, schema hoặc kết nối bị chặn. Các bước Docker có timeout; lỗi pull image/port 27018 đã bị chiếm/daemon chưa chạy đều dừng trước khi test ghi dữ liệu. Có thể dùng `docker compose --project-name spacare-invoice-replacement -f compose.yaml ps` để kiểm tra container; nếu cổng bị project khác chiếm thì dừng và đối chiếu container đó, không tự xóa volume hay dữ liệu.
+
+MongoDB và volume được giữ nguyên sau thành công hoặc thất bại; runner không gọi `docker compose down -v` hoặc bất kỳ lệnh xóa volume nào. Test tự tạo spa/dữ liệu giả và dọn đúng fixture spa trong `finally`; các dữ liệu test có sẵn khác được giữ nguyên. Không chạy trực tiếp test trên database thủ công hoặc vận hành.
 
 Bộ hiện có kiểm tra operate + MongoDB, không đi qua HTTP/cookie/origin và không thay các ca Postman/trình duyệt. Một test cha chứa nhiều assert; số test hiển thị không phải số test case trong tài liệu. EACCES/ECONNREFUSED là Blocked ở bước kết nối, không được kết luận nghiệp vụ Pass.
+
+Kiểm tra ngày 05/11/2026 cho runner mới: `npm test` đạt 223/223 và `npm run typecheck` đạt. `npm run test:integration` trả exit 1 ở `BLOCKED [DOCKER_CLI]` vì không tìm thấy `docker` trong PATH; chưa khởi động container hoặc chạy test MongoDB. Các kiểm thử runner có mô phỏng thứ tự khởi động, từng bước bị chặn, URI an toàn, timeout và mã thoát; chúng không chứng minh integration trên Docker thật đã đạt. Không đổi file nghiệp vụ thanh toán hoặc xử lý các lỗi UI ngoài phạm vi trong lượt này.
 
 ## 8. Thiết kế test theo kỹ thuật SWT
 
