@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
-import { allocateInvoicePayments } from '../src/lib/invoice-payment-allocation';
-import { SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
+import { Deposit, Allocation, SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
 const actor={id:ownerId,spaId,name:'Owner',role:'OWNER' as const,cashier:false};
@@ -13,7 +12,7 @@ function match(row:any,filter:any):boolean{return Object.entries(filter).every((
 function doc(name:string,row:any):any{if(!row)return null;return {...clone(row),...(name==='Appointment'?{startAt:new Date(row.startAt)}:{}),toObject(){const {toObject,save,...v}=this;return clone(v);},async save(){const i=state[name].findIndex(v=>String(v._id)===String(this._id));state[name][i]=this.toObject();}};}
 function query(value:any):any{return {distinct:(key:string)=>query([...new Set((value||[]).map((row:any)=>row[key]).filter(Boolean))]),session:async()=>value,then:(resolve:any,reject:any)=>Promise.resolve(value).then(resolve,reject)};}
 let failModel='', failAt=1, matchingWrites=0;
-for(const model of [SaleCommission,SharedSaleCommission,InvoiceLineCommission,Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
+for(const model of [Deposit,Allocation,SaleCommission,SharedSaleCommission,InvoiceLineCommission,Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
   (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
@@ -73,22 +72,68 @@ for(const model of ['Payment','CashEntry','Audit']){
 }
 const lineA='1'.repeat(24),lineB='2'.repeat(24);
 const lines=()=>[{lineId:lineA,name:'Massage',total:1000000,paid:0},{lineId:lineB,name:'Gội đầu',total:500000,paid:0}];
-const lineBill=invoice(1500000);(lineBill as any).serviceItems=lines();
-await split(lineBill,[payment('BANK_TRANSFER',500000,{lineAllocations:[{lineId:lineB,amount:500000}]}),payment('CASH',1000000,{lineAllocations:[{lineId:lineA,amount:1000000}]})]);
-assert.deepEqual(current(lineBill).serviceItems.map((line:any)=>line.paid),[1000000,500000]);
-assert.deepEqual(state.Payment.filter(row=>row.invoiceId===lineBill._id).map(row=>row.lineAllocations),[[{lineId:lineB,amount:500000}],[{lineId:lineA,amount:1000000}]]);
-const autoBill=invoice(1500000);(autoBill as any).serviceItems=lines();
-const autoSources=allocateInvoicePayments(autoBill,[payment('CASH',800000),payment('BANK_TRANSFER',700000)]);
-await split(autoBill,autoSources);
-assert.deepEqual(current(autoBill).serviceItems.map((line:any)=>line.paid),[1000000,500000]);
-assert.deepEqual(state.Payment.filter(row=>row.invoiceId===autoBill._id).map(row=>row.lineAllocations),[[{lineId:lineA,amount:800000}],[{lineId:lineA,amount:200000},{lineId:lineB,amount:500000}]]);
-const badAllocations=[
- [payment('CASH',200000),payment('BANK_TRANSFER',100000)],
- [payment('CASH',100000,{lineAllocations:[{lineId:lineA,amount:99999}]})],
- [payment('CASH',100000,{lineAllocations:[{lineId:'9'.repeat(24),amount:100000}]})],
- [payment('CASH',400000,{lineAllocations:[{lineId:lineB,amount:400000}]}),payment('BANK_TRANSFER',200000,{lineAllocations:[{lineId:lineB,amount:200000}]})],
-];
-for(const payments of badAllocations){const bill=invoice(1500000);(bill as any).serviceItems=lines();const before=clone(state);await assert.rejects(split(bill,payments));assert.deepEqual(state,before);}
+const lineBill=invoice(2300000);(lineBill as any).serviceItems=[{lineId:lineA,name:'Service A',total:1000000,paid:0},{lineId:lineB,name:'Service B',total:1300000,paid:0}];
+const originalLines=clone((lineBill as any).serviceItems), partialKey=randomUUID();
+const oneMethodBill=invoice(2300000);(oneMethodBill as any).serviceItems=clone((lineBill as any).serviceItems);
+const oneMethodKey=randomUUID();await split(oneMethodBill,[payment('CASH',2000000)],oneMethodKey);await split(oneMethodBill,[payment('CASH',2000000)],oneMethodKey);
+assert.equal(current(oneMethodBill).paid,2000000);assert.equal(current(oneMethodBill).total-current(oneMethodBill).paid,300000);
+assert.equal(state.Payment.filter(row=>row.invoiceId===oneMethodBill._id).length,1);assert.deepEqual(current(oneMethodBill).serviceItems,originalLines);
+await assert.rejects(split(oneMethodBill,[payment('BANK_TRANSFER',300001)]));
+const partialMixed=[payment('CASH',1500000),payment('BANK_TRANSFER',500000)];
+const partialResult=await split(lineBill,partialMixed,partialKey);assert.deepEqual(await split(lineBill,partialMixed,partialKey),partialResult);
+assert.equal(current(lineBill).paid,2000000);assert.equal(current(lineBill).total-current(lineBill).paid,300000);
+assert.deepEqual(current(lineBill).serviceItems,originalLines);
+assert.ok(state.Payment.filter(row=>row.invoiceId===lineBill._id).every(row=>row.lineAllocations===undefined));
+await split(lineBill,[payment('BANK_TRANSFER',300000)]);assert.equal(current(lineBill).paid,2300000);
+assert.deepEqual(current(lineBill).serviceItems,originalLines);
+// Deprecated optional client fields are accepted but never applied or persisted.
+const stale=invoice(1500000);(stale as any).serviceItems=lines();
+await split(stale,[payment('CASH',100000,{lineAllocations:[{lineId:lineA,amount:99999}]})]);
+assert.equal(current(stale).paid,100000);assert.deepEqual(current(stale).serviceItems,lines());
+assert.equal(state.Payment.find(row=>row.invoiceId===stale._id).lineAllocations,undefined);
+assert.ok(state.Audit.filter(row=>row.action==='payment').every(row=>row.details.lineAllocations===undefined));
+for(const lineAllocations of [[], 'obsolete', [{lineId:'invalid',amount:0}]]){
+ const bill=invoice(1500000);(bill as any).serviceItems=lines();await split(bill,[payment('CASH',100000,{lineAllocations})]);
+ assert.equal(current(bill).paid,100000);assert.equal(state.Payment.find(row=>row.invoiceId===bill._id).lineAllocations,undefined);
+}
+// A new receipt ignores stale/missing line identities and historical line paid totals.
+for(const serviceItems of [[{total:1500000,paid:0}], [{lineId:lineA,total:1500000,paid:17}]]){
+ const bill=invoice(1500000);(bill as any).serviceItems=serviceItems;await split(bill,[payment('CASH',200000)]);assert.equal(current(bill).paid,200000);assert.deepEqual(current(bill).serviceItems,serviceItems);
+}
+// Existing allocation ledgers remain readable; reversing old money after aggregate receipts works.
+const historical=invoice(1500000);(historical as any).serviceItems=lines();(historical as any).serviceItems[0].paid=100000;historical.paid=100000;
+const oldPaymentId=String(new mongoose.Types.ObjectId()),oldReceiptId=String(new mongoose.Types.ObjectId());
+const historicalAllocations=[{lineId:lineA,amount:100000}];
+state.Payment.push({_id:oldPaymentId,spaId,invoiceId:historical._id,receiptId:oldReceiptId,amount:100000,reversed:false,lineAllocations:clone(historicalAllocations)});
+state.CashEntry.push({_id:oldReceiptId,spaId,customerId,kind:'PAYMENT',direction:'IN',method:'CASH',amount:100000,day:spaDay(),actorId:ownerId,reversed:false});
+await split(historical,[payment('BANK_TRANSFER',200000)]);assert.equal(current(historical).paid,300000);assert.equal(current(historical).serviceItems[0].paid,100000);
+const reversalKey=randomUUID();await call('reverseCash',{id:oldReceiptId,reason:'Correct historical receipt'},reversalKey);await call('reverseCash',{id:oldReceiptId,reason:'Correct historical receipt'},reversalKey);
+assert.equal(current(historical).paid,200000);assert.equal(current(historical).serviceItems[0].paid,0);
+assert.deepEqual(state.Payment.find(row=>row._id===oldPaymentId).lineAllocations,historicalAllocations);
+// Pre-change idempotency fingerprints stay readable, including normalized legacy field order.
+const previousKey=randomUUID(),previousResult={id:historical._id,invoiceId:historical._id,paymentIds:[oldPaymentId],message:'Historical success'};
+const previousData={invoiceId:historical._id,payments:[{amount:100000,method:'CASH',note:'',receivedConfirmation:true,lineAllocations:historicalAllocations}]};
+state.Idempotency.push({_id:String(new mongoose.Types.ObjectId()),spaId,userId:ownerId,key:previousKey,fingerprint:createHash('sha256').update(JSON.stringify({action:'splitPayment',data:previousData})).digest('hex'),result:previousResult});
+const beforeReplay=state.Payment.length;
+assert.deepEqual(await split(historical,[payment('CASH',100000,{lineAllocations:[{amount:100000,lineId:lineA}]})],previousKey),previousResult);
+assert.equal(state.Payment.length,beforeReplay);assert.equal(current(historical).paid,200000);
+const deposited=invoice(1500000);(deposited as any).serviceItems=lines();(deposited as any).serviceItems[0].paid=100000;deposited.paid=100000;
+const depositId=String(new mongoose.Types.ObjectId()),allocationId=String(new mongoose.Types.ObjectId());
+state.Deposit=[{_id:depositId,spaId,customerId,amount:500000,balance:400000}];
+state.Allocation=[{_id:allocationId,spaId,depositId,invoiceId:deposited._id,amount:100000,reversed:false,lineAllocations:clone(historicalAllocations)}];
+await split(deposited,[payment('CASH',200000)]);await call('reverseAllocation',{id:allocationId,reason:'Correct old deposit assignment'});
+assert.equal(current(deposited).paid,200000);assert.equal(current(deposited).serviceItems[0].paid,0);assert.equal(state.Deposit[0].balance,500000);
+assert.deepEqual(state.Allocation.find(row=>row._id===allocationId).lineAllocations,historicalAllocations);
+const newCreditBill=invoice(1500000);(newCreditBill as any).serviceItems=lines();
+const creditResult=await call('allocate',{depositId,invoiceId:newCreditBill._id,amount:100000,reason:'Invoice credit'});
+assert.equal(current(newCreditBill).paid,100000);assert.equal(state.Allocation.find(row=>row._id===creditResult.id).lineAllocations,undefined);
+assert.deepEqual(current(newCreditBill).serviceItems,lines());
+const cardId=String(new mongoose.Types.ObjectId());state.CashCard=[{_id:cardId,spaId,customerId,origin:'OPENING',amount:800000,balance:800000,actorId:ownerId}];
+const cardBill=invoice(1500000);(cardBill as any).serviceItems=lines();
+const cardResult=await call('redeemCashCard',{cardId,invoiceId:cardBill._id,amount:200000,additionalAmount:100000,method:'CASH',receivedConfirmation:true});
+assert.equal(current(cardBill).paid,300000);assert.equal(current(cardBill).cardPaid,200000);assert.equal(state.CashCard[0].balance,600000);
+assert.equal(state.CashCardUse.find(row=>row._id===cardResult.id).lineAllocations,undefined);
+assert.equal(state.Payment.find(row=>row.invoiceId===cardBill._id).lineAllocations,undefined);assert.deepEqual(current(cardBill).serviceItems,lines());
 // Concurrent submissions cannot collect more than the remaining debt, even with different keys.
 const race=invoice(1500000);const settled=await Promise.allSettled([split(race,values),split(race,values)]);assert.equal(settled.filter(row=>row.status==='fulfilled').length,1);assert.equal(current(race).paid,1500000);
 const saleBill=invoice(1500000,'PACKAGE');Object.assign(saleBill,{sellerId:ownerId,sellerName:'Owner',saleCommissionVersion:1,saleCommissionAccrued:0,description:'Package'});

@@ -30,9 +30,13 @@ export function cashierActions(input:{
   const actions:{action:string;data:Row}[]=[];
   // Each service line may carry either legacy performerId (string) or new performerIds (string[]).
   // The backend accepts a single performerId per line; send the first selected performer.
-  const items=services.map(item=>{
+  const items=services.map((item,index)=>{
     const performerId=Array.isArray(item.performerIds) ? (item.performerIds[0] || undefined) : (item.performerId || undefined);
+    if(!performerId)throw new Error(`Chọn kỹ thuật viên cho dòng dịch vụ ${index+1} (${item.name || item._id}).`);
     return {serviceId:item._id,total:parseMoney(item.total),...(performerId?{performerId}:{})};
+  });
+  sessions.forEach((item,index)=>{
+    if(!item.performerId)throw new Error(`Chọn kỹ thuật viên cho lượt dùng gói ${index+1} (${item.name || item._id}).`);
   });
   const productItems=products.map(item=>({productId:item._id,quantity:Number(item.quantity),unitPrice:parseMoney(item.unitPrice)}));
   if(sessions.length) actions.push({action:'invoice',data:{customerId,serviceId:sessions[0].serviceId,...(staffId?{staffId}:{}),treatments:sessions.map((item,index)=>({treatmentId:item._id,remainingBefore:useToken(item)-sessions.slice(0,index).filter(previous=>previous._id===item._id).length,...(item.recipientName?.trim()?{recipientName:item.recipientName.trim(),...(item.recipientPhone?.trim()?{recipientPhone:item.recipientPhone.trim()}:{})}:{}),...(item.performerId?{performerId:item.performerId}: {})})),additionalServices:items,additionalProducts:productItems,...(signature?{signature}:{}),...(dueDate?{dueDate}:{})}});

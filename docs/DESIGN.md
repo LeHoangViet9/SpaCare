@@ -689,3 +689,18 @@ CONFIRMED: danh sách và chi tiết hóa đơn dùng một nút Thanh toán. Fo
 ## Biểu mẫu thanh toán gọn trên mobile — 05/11/2026
 
 Theo yêu cầu mới nhất, ẩn phân bổ khi một dòng còn nợ hoặc tổng thu trả hết nợ. Client tự chuẩn bị lineAllocations từ số dư từng dòng cho các trường hợp này. Khi nhiều dòng còn nợ và trả một phần, hiển thị mục “Phân bổ theo dịch vụ” đóng sẵn, dùng một hướng dẫn ngắn khi mở; xác nhận thiếu/sai phân bổ tự mở mục và không gửi thanh toán. Xóa hướng dẫn phân bổ dài khỏi form chính, giữ các checkbox thực nhận. Đổi số tiền đóng mục phân bổ và yêu cầu xác nhận lại phương thức đã đổi. Chuyển sang trả hết bỏ dữ liệu nhập tay cũ và tính từ số dư; chuyển về trả một phần dùng lại kiểm tra phân bổ bắt buộc.
+
+## Giao diện thanh toán chỉ theo hóa đơn — 05/11/2026 (ưu tiên mới nhất)
+
+Theo yêu cầu mới nhất, xóa hoàn toàn mục Phân bổ theo dịch vụ, các khung/ô/hướng dẫn/trạng thái liên quan và helper phân bổ tự động; không còn nhánh giao diện theo số dịch vụ hoặc số dòng nợ. Form gồm hai ô tiền mặt/chuyển khoản, tổng hóa đơn/đã thanh toán/còn nợ/tổng thu, xác nhận thực nhận từng nguồn và thông tin QR có thể mở. Nội dung tham chiếu SPACARE + mã hóa đơn được gửi tự động, không thêm ô nhập ghi chú. Một dịch vụ/nhiều dịch vụ, trả một phần/trả hết dùng cùng payload chỉ có khoản thu theo phương thức.
+
+Đã rà soát và bỏ phân bổ theo dòng ở InvoicePayment, FormModal payment/allocate, CashCards debit/thu thêm, backend payment/splitPayment/allocate/redeemCashCard và inline cashCard. Model giữ field lịch sử; chỉ nhánh đảo giao dịch lịch sử còn đọc/apply phân bổ cũ. Các báo cáo và chi tiết hóa đơn tiếp tục dùng tổng hóa đơn/Invoice.paid và Payment/CashEntry thực tế. Không thay giao diện/quy tắc phân công kỹ thuật viên theo dịch vụ; đó là dữ liệu thực hiện, tách biệt khoản thu.
+
+## Thu ngân nhóm khách có dịch vụ lặp — 05/11/2026
+
+Giữ giỏ hiện có: mỗi lần chọn dịch vụ tạo occurrence với lineId phía client; nhóm ×số lượt chỉ thu gọn hiển thị, mở để gán kỹ thuật viên/giá hoặc Bỏ dịch vụ của đúng lượt. remove/update theo lineId, không theo serviceId. cashierActions gửi toàn bộ occurrence theo thứ tự, không gộp dòng trùng. Backend bỏ kiểm trùng ở schema serviceInvoice.items và addServices, tiếp tục cấp ID dòng và ghi hoa hồng tuần tự. Không sửa UI/luồng thanh toán hóa đơn hoặc gộp kỹ thuật viên giữa các lượt.
+
+
+## Chọn KTV cho các lượt thực hiện — 05/11/2026
+
+Giỏ thu ngân là luồng ghi dịch vụ thực hiện ngay: kiểm KTV từng dòng dịch vụ/lượt dùng gói trước gửi; lỗi nêu số dòng và tên, giữ toàn bộ giỏ để sửa. Các lượt trùng vẫn có lựa chọn riêng. Form hóa đơn khi chọn dùng gói đã mua hiển thị KTV bắt buộc ngay dưới từng gói và gửi performerId cùng lượt; đổi KTV bỏ chữ ký đã vẽ. Ghi buổi trực tiếp yêu cầu chọn KTV, nhân viên thường chỉ được chọn bản thân, không tự lấy người đăng nhập. Bán gói mới, sản phẩm hoặc lập hóa đơn trước làm không thêm yêu cầu KTV; người tư vấn bán gói giữ yêu cầu riêng như cũ. Không đổi form hoặc phân bổ tiền thanh toán.

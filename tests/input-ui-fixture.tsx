@@ -5,6 +5,7 @@ import MoneyInput from '../src/components/money-input';
 import ValidatedForm from '../src/components/validated-form';
 import {parseMoney} from '../src/lib/currency';
 import InvoiceDetail from '../src/components/invoice-detail';
+import Cashier from '../src/components/cashier';
 const id='a'.repeat(24), customer='b'.repeat(24),service='c'.repeat(24);
 const fixture:any={user:{id,name:'Chủ spa kiểm thử',role:'OWNER',cashier:true},today:'2026-10-23',totals:{treatments:1,remaining:8,bookings:0,debt:0,credit:0,inflow:0},pages:{},staff:[{_id:id,name:'Nhân viên A',role:'OWNER',active:true}],customers:[{_id:customer,name:'Nguyễn Ánh',phone:'0900000000'}],services:[{_id:service,name:'Chăm sóc da',active:true,price:100000,duration:60}],products:[],productGroups:[],packageTemplates:[],appointments:[],invoices:[],deposits:[],allocations:[],cash:[],days:[],uses:[],audit:[],treatments:[{_id:'d'.repeat(24),customerId:customer,serviceId:service,name:'Gói chăm sóc da',status:'ACTIVE',remaining:8,totalSessions:10}]};
 const replace=history.replaceState.bind(history);history.replaceState=(...args)=>{replace(...args);window.dispatchEvent(new Event('urlchange'));};
@@ -21,14 +22,26 @@ function PaymentHarness() {
  const [saved,setSaved] = React.useState('');
  const options = new URLSearchParams(location.search);
  const paid=Number(options.get('paid') || (options.get('lines')==='one-owing' ? 1000000 : 0));
- const invoice = {...paymentInvoice,paid,...(options.has('lines') ? {serviceItems:options.get('lines')==='single' ? [
+ const invoice = {...paymentInvoice,total:Number(options.get('total') || 1500000),paid,...(options.has('lines') ? {serviceItems:options.get('lines')==='single' ? [
   {lineId:'1'.repeat(24),name:'Massage CVG',total:1500000,paid},
  ] : [
   {lineId:'1'.repeat(24),name:'Massage CVG',total:1000000,paid},
-  {lineId:'2'.repeat(24),name:'Dầu gội khách',total:500000,paid:0},
+  {lineId:'2'.repeat(24),name:'Dầu gội khách',total:Number(options.get('total') || 1500000)-1000000,paid:0},
  ]} : {})};
  return <><FormModal catalogs={{paymentInfo:{bankName:'Ngân hàng thử',accountNumber:'000000',accountName:'SPA TEST'}}} busy={false} error="" onClose={()=>{}} onSubmit={values=>setSaved(JSON.stringify(values))} spec={{title:'Thanh toán',action:'splitPayment',defaults:{invoice},fields:[]}}/><output hidden id="saved-payment">{saved}</output></>;
 }
+function RepeatedServiceHarness() {
+ const [saved,setSaved]=React.useState('');
+ const data={...fixture,products:[{_id:'3'.repeat(24),name:'Dầu gội QA',unit:'chai',price:50000,stock:10,active:true}],packageTemplates:[{_id:'4'.repeat(24),serviceId:service,name:'Gói dùng sau QA',price:600000,totalSessions:3,active:true}],services:[{_id:service,name:'Massage nhóm',category:'Nhóm QA',price:350000,commission:20000,active:true}],staff:[
+  {_id:'1'.repeat(24),name:'Kỹ thuật viên An',role:'STAFF',active:true},
+  {_id:'2'.repeat(24),name:'Kỹ thuật viên Bình',role:'STAFF',active:true},
+ ]};
+ return <><Cashier data={data} busy={false} initialMode="service" initialCustomer={data.customers[0]} onSubmit={(action,values)=>setSaved(JSON.stringify({action,values}))} onInvoices={()=>{}} onNewCustomer={()=>{}}/><output hidden id="saved-cashier">{saved}</output></>;
+}
+function AdvanceInvoiceHarness() {
+ const [saved,setSaved]=React.useState('');
+ return <><FormModal catalogs={fixture} busy={false} error="" onClose={()=>{}} onSubmit={values=>setSaved(JSON.stringify(values))} spec={{title:'Lập hóa đơn trước khi thực hiện',action:'invoice',defaults:{customerId:customer},fields:[{key:'customerId',label:'Khách hàng',remoteCustomers:true},{key:'staffId',label:'Kỹ thuật viên khi thực hiện ngay',optional:true,options:[[id,'Chủ spa kiểm thử']]}]}}/><output hidden id="saved-advance">{saved}</output></>;
+}
 window.fetch=async(input:any)=>{await new Promise(resolve=>setTimeout(resolve,35));return new Response(JSON.stringify(String(input).startsWith('/api/cash-cards')?{cards:[],uses:[],total:0,useTotal:0}:String(input).startsWith('/api/invoices/')?detailFixture:String(input).includes('/api/workspace')?fixture:{customers:fixture.customers,total:1,page:1}),{status:200,headers:{'Content-Type':'application/json'}});};
 function Harness(){const [saved,setSaved]=React.useState('');return <><Workspace/><aside id="money-test" style={{margin:20,padding:20,background:'white'}}><h2>Kiểm thử tiền</h2><ValidatedForm onSubmit={e=>{e.preventDefault();setSaved(String(parseMoney(String(new FormData(e.currentTarget).get('amount')))));}}><label>Số tiền<MoneyInput name="amount" required/></label><label>Ghi chú<textarea name="note"/></label><button>Lưu tiền kiểm thử</button></ValidatedForm><output id="saved-money">{saved}</output><p>Dữ liệu minh họa trong bộ nhớ, không kết nối database.</p></aside></>;}
-createRoot(document.getElementById('root')!).render(location.pathname === '/split-payment' ? <PaymentHarness/> : location.pathname === '/invoice-detail' ? <InvoiceDetail record={{kind:'invoice',id}} onClose={()=>{}} onInvoice={()=>{}} onEdit={()=>{}}/> : <Harness/>);
+createRoot(document.getElementById('root')!).render(location.pathname === '/pre-service' ? <AdvanceInvoiceHarness/> : location.pathname === '/repeated-services' ? <RepeatedServiceHarness/> : location.pathname === '/split-payment' ? <PaymentHarness/> : location.pathname === '/invoice-detail' ? <InvoiceDetail record={{kind:'invoice',id}} onClose={()=>{}} onInvoice={()=>{}} onEdit={()=>{}}/> : <Harness/>);

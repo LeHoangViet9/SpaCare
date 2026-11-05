@@ -58,27 +58,50 @@ const actions=cashierActions(base);
 assert.deepEqual(actions.map(row=>row.action),['productInvoice','sellPackage','sellPackage']);
 assert.equal(actions[0].data.items.length,2);
 assert.ok(actions.every(row=>row.data.customerId==='c'));
-const mixed=cashierActions({...base,services:[{_id:'s1',total:'100'}],sessions:[{_id:'t1',serviceId:'s1',remaining:3}]});
+const mixed=cashierActions({...base,services:[{_id:'s1',total:'100',performerId:'s'}],sessions:[{_id:'t1',serviceId:'s1',remaining:3,performerId:'s'}]});
 assert.equal(mixed[0].action,'invoice');assert.equal(mixed[0].data.additionalProducts.length,2);
 assert.equal(mixed[0].data.additionalServices.length,1);assert.equal(mixed[0].data.treatments[0].remainingBefore,3);
 assert.equal(mixed[0].data.signature,undefined,'signature remains optional');
-assert.equal(cashierActions({...base,services:[{_id:'s1',total:'100'}]})[0].action,'serviceInvoice');
-const optionalPerformers=cashierActions({...base,staffId:'',services:[{_id:'s1',total:'100',performerId:'a'},{_id:'s2',total:'200'}],sessions:[],products:[],packages:[]})[0];
+assert.equal(cashierActions({...base,services:[{_id:'s1',total:'100',performerId:'s'}]})[0].action,'serviceInvoice');
+assert.throws(()=>cashierActions({...base,services:[{_id:'s1',name:'Massage',total:'100',performerId:'a'},{_id:'s1',name:'Massage',total:'100'}]}),/dòng dịch vụ 2 \(Massage\)/);
+assert.throws(()=>cashierActions({...base,sessions:[{_id:'t1',name:'Gói Massage',remaining:3}]}),/lượt dùng gói 1 \(Gói Massage\)/);
+const optionalPerformers=cashierActions({...base,staffId:'',services:[{_id:'s1',total:'100',performerId:'a'},{_id:'s2',total:'200',performerId:'b'}],sessions:[],products:[],packages:[]})[0];
 assert.equal(optionalPerformers.data.staffId,undefined);
 assert.equal(optionalPerformers.data.items[0].performerId,'a');
-assert.equal(optionalPerformers.data.items[1].performerId,undefined);
+assert.equal(optionalPerformers.data.items[1].performerId,'b');
 
 // performerIds mapping to single performerId in cashierActions
-const multiPerformerService=cashierActions({...base,staffId:'',services:[{_id:'s1',total:'100',performerIds:['staff-a','staff-b']},{_id:'s2',total:'200',performerIds:[]}],sessions:[],products:[],packages:[]})[0];
+const multiPerformerService=cashierActions({...base,staffId:'',services:[{_id:'s1',total:'100',performerIds:['staff-a','staff-b']},{_id:'s2',total:'200',performerIds:['staff-b']}],sessions:[],products:[],packages:[]})[0];
 assert.equal(multiPerformerService.data.items[0].performerId,'staff-a');
-assert.equal(multiPerformerService.data.items[1].performerId,undefined);
+assert.equal(multiPerformerService.data.items[1].performerId,'staff-b');
 
-const optionalSession=cashierActions({...base,staffId:'',services:[{_id:'s2',total:'200'}],sessions:[{_id:'t1',serviceId:'s1',remaining:3,performerId:'b'}],products:[],packages:[]})[0];
+const optionalSession=cashierActions({...base,staffId:'',services:[{_id:'s2',total:'200',performerId:'a'}],sessions:[{_id:'t1',serviceId:'s1',remaining:3,performerId:'b'}],products:[],packages:[]})[0];
 assert.equal(optionalSession.data.staffId,undefined);
 assert.equal(optionalSession.data.treatments[0].performerId,'b');
-assert.equal(optionalSession.data.additionalServices[0].performerId,undefined);
+assert.equal(optionalSession.data.additionalServices[0].performerId,'a');
 assert.throws(()=>cashierActions({...base,products:[],packages:[]}),/ít nhất/);
 
 const noDeadline = cashierActions({...base,dueDate:''}).filter(row=>row.action==='sellPackage');
 assert.ok(noDeadline.length>0);
 assert.ok(noDeadline.every(row=>!Object.hasOwn(row.data,'dueDate')));
+
+// Cart identities and payload order preserve repeated service occurrences independently.
+let repeated:any[]=[];
+for(let index=0;index<3;index++)repeated=addServiceItem(repeated,{_id:'same-massage',name:'Massage',price:350000});
+const occurrenceIds=repeated.map(item=>item.lineId);
+assert.equal(new Set(occurrenceIds).size,3);
+repeated=updateServiceItemPerformers(repeated,occurrenceIds[0],['tech-a']);
+repeated=updateServiceItemPerformers(repeated,occurrenceIds[1],['tech-a']);
+repeated=updateServiceItemPerformers(repeated,occurrenceIds[2],['tech-b']);
+const repeatedInput={...base,services:repeated,sessions:[],products:[],packages:[]};
+let repeatedAction=cashierActions(repeatedInput)[0];
+assert.deepEqual(repeatedAction.data.items.map((row:any)=>row.performerId),['tech-a','tech-a','tech-b']);
+assert.equal(repeatedAction.data.items.reduce((sum:number,row:any)=>sum+row.total,0),1050000);
+repeated=removeServiceItem(repeated,occurrenceIds[1]);
+assert.deepEqual(repeated.map(item=>item.lineId),[occurrenceIds[0],occurrenceIds[2]]);
+repeatedAction=cashierActions({...repeatedInput,services:repeated})[0];
+assert.deepEqual(repeatedAction.data.items.map((row:any)=>row.performerId),['tech-a','tech-b']);
+assert.equal(repeatedAction.data.items.reduce((sum:number,row:any)=>sum+row.total,0),700000);
+const repeatedMixed=cashierActions({...repeatedInput,sessions:[{_id:'plan',serviceId:'same-massage',remaining:3,performerId:'tech-b'}]})[0];
+assert.equal(repeatedMixed.data.additionalServices.length,3);
+assert.deepEqual(repeatedMixed.data.additionalServices.map((row:any)=>row.performerId),['tech-a','tech-a','tech-b']);

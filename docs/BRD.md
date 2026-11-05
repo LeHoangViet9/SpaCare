@@ -405,3 +405,16 @@ Chỉ nghỉ đã duyệt (hoặc legacy đã ghi thiếu status) được thố
 ## Thanh toán nhiều phương thức trong một lần — 05/11/2026
 
 CONFIRMED theo yêu cầu người dùng: Thao tác hóa đơn có một lựa chọn Thanh toán, nhập riêng tiền mặt và chuyển khoản/QR. Có thể để 0/bỏ trống phương thức không dùng; tổng thu phải lớn hơn 0 và không vượt nợ hiện tại. Mỗi khoản dương có xác nhận thực nhận riêng, tạo Payment và CashEntry riêng đúng phương thức; tất cả cùng một transaction/idempotency/audit. Lỗi bất kỳ rollback toàn bộ, không có trạng thái thu dở dang. Phân bổ từng khoản theo dòng giữ nguyên kiểm tra hiện có, không tự chia tiền giữa phương thức hoặc dòng dịch vụ. Không sửa/xóa hóa đơn hay giao dịch cũ, không mở rộng quyền thu hoặc phạm vi thay chứng từ tư vấn V1 (vẫn chặn nhiều khoản thu).
+
+## Công nợ ở cấp hóa đơn, bỏ phân bổ theo dịch vụ — 05/11/2026
+
+CONFIRMED theo yêu cầu mới nhất của người dùng: khi thanh toán, chỉ nhập tiền mặt/chuyển khoản và xác nhận thực nhận; không nhập hoặc tự tạo phân bổ khoản thu vào dịch vụ. Công nợ dùng tổng hóa đơn trừ tổng đã thanh toán, không phụ thuộc số dòng. Bill 2.300.000đ thu 2.000.000đ còn nợ 300.000đ. Mỗi phương thức dương giữ Payment/CashEntry riêng, cùng transaction/idempotency/audit, quyền và kiểm tra không vượt nợ. Quy định này thay thế toàn bộ yêu cầu phân bổ dòng trước đó, kể cả nhập tay khi trả một phần và tự chia khi tất toán. Giữ nguyên dữ liệu phân bổ lịch sử; không migration/backfill hoặc chỉnh hóa đơn cũ để chuyển cách tính.
+
+## Nhiều lượt cùng dịch vụ trên một hóa đơn — 05/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: nhóm khách được chọn cùng dịch vụ 2–3 lần hoặc nhiều lượt trong giới hạn giỏ hiện hành, mỗi lượt là dòng độc lập. Không từ chối chỉ vì serviceId trùng; kỹ thuật viên/giá/thông tin thực hiện giữ riêng, có thể bỏ từng lượt nhập nhầm. Tổng hóa đơn bằng tổng giá từng lượt, hoa hồng thực hiện theo từng dòng. Giữ thanh toán ở cấp hóa đơn, không phân bổ khoản thu vào dịch vụ. Không đổi quyền, transaction/idempotency hoặc lịch sử chứng từ.
+
+
+## Kỹ thuật viên khi thực hiện dịch vụ — 05/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: dịch vụ thực hiện ngay bắt buộc có kỹ thuật viên trên từng dòng/lượt, kể cả cùng dịch vụ nhiều lần hoặc giá 0. Thiếu thì chặn lưu và nêu đúng dòng. Không lấy người tạo hóa đơn/người đăng nhập thay người thực hiện. Bán gói dùng sau, bán sản phẩm và lập hóa đơn trước khi làm không bắt KTV; người bán/người tư vấn tách biệt. Giữ thanh toán cấp hóa đơn, quyền, transaction/idempotency/audit và lịch sử. Quy tắc này thay mô tả cho phép bỏ KTV khi ghi nhận dịch vụ đã làm hoặc mặc định người ghi buổi là người thực hiện.

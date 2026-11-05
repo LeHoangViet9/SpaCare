@@ -1997,11 +1997,6 @@ label textarea { margin-top: 8px; }
 .payment-method-entry + .payment-method-entry { border-top:1px solid var(--line); }
 .payment-collection-total strong { white-space:nowrap; }
 .invoice-payment-modal .payment-instructions img { max-width:100%; height:auto; }
-.payment-service-allocation { border:1px solid var(--line); border-radius:12px; }
-.payment-service-allocation > summary { cursor:pointer; padding:12px; min-height:44px; font-weight:600; }
-.payment-service-allocation > p { margin:0 12px 12px; font-size:14px; }
-.payment-service-allocation > fieldset { margin:0 12px 12px; padding:0; border:0; min-width:0; }
-.payment-service-allocation fieldset fieldset { min-width:0; }
 
 .product-origin-dates { display:grid; gap:6px; margin:12px 0; font-size:14px; }
 .product-origin-dates > div { display:flex; flex-wrap:wrap; gap:4px 12px; }

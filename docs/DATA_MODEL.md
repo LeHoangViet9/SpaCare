@@ -644,3 +644,18 @@ PROPOSED kỹ thuật: không thêm schema/index. Mỗi khoản dương của sp
 ## Phân bổ tự động từ form rút gọn — 05/11/2026
 
 Không thêm field/schema/index hoặc backfill. Client đọc total/paid/lineId hiện có để tạo Payment.lineAllocations qua payload splitPayment, cho một dòng còn nợ hoặc trả hết công nợ. Thứ tự xử lý trùng các nhóm dòng backend (serviceItems, treatmentSessions không phản chiếu, packageItems, productItems). Các dòng đã trả đủ không được phân bổ thêm; không sửa paid cũ, amount khoản thu hay dữ liệu lịch sử. Backend tiếp tục kiểm tra tổng và số dư hiện hành; dữ liệu client cũ/lệch không vượt qua guard chỉ nhờ form ẩn ô nhập.
+
+## Số dư thanh toán cấp hóa đơn — 05/11/2026 (ưu tiên mới nhất)
+
+Không đổi schemas/indexes hoặc migration. Invoice.paid là tổng thanh toán được cập nhật từ các nghiệp vụ hiện có (Payment, áp cọc, dùng thẻ và các thao tác đảo tương ứng); nợ là Invoice.total-Invoice.paid. Không suy tổng đã trả/nợ từ serviceItems/packageItems/productItems/treatmentSessions.paid. Các field paid theo dòng và Payment/Allocation/CashCardUse.lineAllocations giữ để tra cứu tương thích, không backfill hoặc xóa dữ liệu cũ. Mọi khoản mới không lưu lineAllocations và không sửa paid theo dòng.
+
+Khi OWNER đảo khoản lịch sử có lineAllocations, chỉ áp dụng mảng gốc để giảm số dư dòng lịch sử và giảm Invoice.paid bằng số tiền gốc; tổng các dòng không phải guard của tổng hóa đơn nữa. Khoản mới không có mảng chỉ điều chỉnh số dư hóa đơn. Mảng/amount/liên kết lịch sử được giữ lại cùng cờ reversed, bút toán đối ứng và audit như quy trình cũ. Không thay quyền hoặc dùng đảo sai sót như hoàn tiền.
+
+## Invoice.serviceItems cho dịch vụ lặp — 05/11/2026
+
+Không đổi schema/index/migration hoặc dữ liệu cũ. Invoice.serviceItems[].serviceId có thể trùng; lineId là định danh từng lượt, được backend cấp mới độc lập. Mỗi dòng giữ name/total/commission/performerId snapshot riêng. Invoice.total và commission là tổng các dòng, không tính theo tập serviceId duy nhất. InvoiceLineCommission.lineId/sourceId trỏ đúng lượt; unique source index hiện hành không đổi. Tiền thanh toán mới vẫn gắn invoiceId ở cấp hóa đơn, không gán cho từng lượt. Xóa khỏi giỏ dùng mã lượt phía client, không xóa dịch vụ danh mục hoặc lịch sử đã ghi.
+
+
+## Bắt buộc KTV khi ghi nhận thực hiện — 05/11/2026
+
+Không đổi schema/index hoặc backfill. performerId/staffId vẫn có thể vắng trong hóa đơn lập trước làm và dữ liệu lịch sử. Guard action mới bắt KTV từng dòng/lượt thực hiện ngay; lưu performerId trên serviceItems/treatmentSessions và staffId trên TreatmentUse, ledger riêng theo lineId. createdBy/creatorName/actorId giữ vai trò người tạo/ghi nhận, không được dùng làm KTV dự phòng. Bán gói dùng sau/sản phẩm không tạo dữ liệu thực hiện hoặc ledger thực hiện chỉ vì có người tạo.
