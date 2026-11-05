@@ -20,8 +20,11 @@ fixture.invoices = [paymentInvoice]; fixture.pages.invoices = {rows:[paymentInvo
 function PaymentHarness() {
  const [saved,setSaved] = React.useState('');
  const options = new URLSearchParams(location.search);
- const invoice = {...paymentInvoice,paid:Number(options.get('paid') || 0),...(options.has('lines') ? {serviceItems:[
-  {lineId:'1'.repeat(24),name:'Massage CVG',total:1000000,paid:0},
+ const paid=Number(options.get('paid') || (options.get('lines')==='one-owing' ? 1000000 : 0));
+ const invoice = {...paymentInvoice,paid,...(options.has('lines') ? {serviceItems:options.get('lines')==='single' ? [
+  {lineId:'1'.repeat(24),name:'Massage CVG',total:1500000,paid},
+ ] : [
+  {lineId:'1'.repeat(24),name:'Massage CVG',total:1000000,paid},
   {lineId:'2'.repeat(24),name:'Dầu gội khách',total:500000,paid:0},
  ]} : {})};
  return <><FormModal catalogs={{paymentInfo:{bankName:'Ngân hàng thử',accountNumber:'000000',accountName:'SPA TEST'}}} busy={false} error="" onClose={()=>{}} onSubmit={values=>setSaved(JSON.stringify(values))} spec={{title:'Thanh toán',action:'splitPayment',defaults:{invoice},fields:[]}}/><output hidden id="saved-payment">{saved}</output></>;

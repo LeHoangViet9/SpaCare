@@ -685,3 +685,7 @@ Chỉ nghỉ đã duyệt (hoặc legacy đã ghi thiếu status) được thố
 ## Biểu mẫu Thanh toán nhiều phương thức — 05/11/2026
 
 CONFIRMED: danh sách và chi tiết hóa đơn dùng một nút Thanh toán. Form hiển thị tổng hóa đơn/đã thanh toán/còn phải thanh toán, hai ô tiền mặt/chuyển khoản và tổng thu cập nhật khi gõ; khóa xác nhận khi tổng 0/không hợp lệ/vượt nợ hoặc thiếu xác nhận thực nhận. Mỗi phương thức dương có checkbox thực nhận riêng và phân bổ dòng riêng từ component hiện hành. Thay số tiền yêu cầu xác nhận lại phương thức đó. QR/thông tin tài khoản cấu hình có thể mở trong form; không tự xác minh chuyển khoản. Gửi một splitPayment qua cơ chế khóa bấm/idempotency retry của Workspace, thành công mới đóng và tải lại dữ liệu. Không đổi nghiệp vụ cọc/thẻ/hoàn tiền hoặc điều kiện sửa/hủy/thay thế chứng từ.
+
+## Biểu mẫu thanh toán gọn trên mobile — 05/11/2026
+
+Theo yêu cầu mới nhất, ẩn phân bổ khi một dòng còn nợ hoặc tổng thu trả hết nợ. Client tự chuẩn bị lineAllocations từ số dư từng dòng cho các trường hợp này. Khi nhiều dòng còn nợ và trả một phần, hiển thị mục “Phân bổ theo dịch vụ” đóng sẵn, dùng một hướng dẫn ngắn khi mở; xác nhận thiếu/sai phân bổ tự mở mục và không gửi thanh toán. Xóa hướng dẫn phân bổ dài khỏi form chính, giữ các checkbox thực nhận. Đổi số tiền đóng mục phân bổ và yêu cầu xác nhận lại phương thức đã đổi. Chuyển sang trả hết bỏ dữ liệu nhập tay cũ và tính từ số dư; chuyển về trả một phần dùng lại kiểm tra phân bổ bắt buộc.

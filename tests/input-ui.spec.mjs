@@ -47,21 +47,77 @@ test('split payment supports one method and blank unused amount', async ({page})
  expect(saved.payments[0].amount).toBe(1500000);
 });
 
-test('split payment submits independent allocations and resets confirmation after amount changes', async ({page}) => {
+test('split payment reveals required partial allocations only when needed and resets confirmation after amount changes', async ({page},testInfo) => {
  await page.goto('/split-payment?lines=1');
- await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('1000000');
- await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('500000');
- await page.locator('input[name="CASHAllocations:'+'1'.repeat(24)+'"]').fill('1000000');
- await page.locator('input[name="BANK_TRANSFERAllocations:'+'2'.repeat(24)+'"]').fill('500000');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('200000');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('100000');
+ const allocation=page.locator('.payment-service-allocation');
+ await expect(allocation).toHaveJSProperty('open',false);
+ await expect(page.locator('input[name^="CASHAllocations:"]').first()).toBeHidden();
+ await allocation.locator('summary').click();
+ await expect(page.locator('input[name^="CASHAllocations:"]').first()).toBeVisible();
  await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
  await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
- await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('999999');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('199999');
  await expect(page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'})).not.toBeChecked();
- await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('1000000');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('200000');
  await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await expect(allocation).toHaveJSProperty('open',false);
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ await expect(page.locator('#saved-payment')).toBeEmpty();
+ await expect(allocation).toHaveJSProperty('open',true);
+ await expect(page.getByRole('alert')).toContainText('Kiểm tra phân bổ');
+ await page.locator('input[name="CASHAllocations:'+'1'.repeat(24)+'"]').fill('1.00');
+ await allocation.locator('summary').click();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ await expect(allocation).toHaveJSProperty('open',true);
+ await expect(page.locator('#saved-payment')).toBeEmpty();
+ await page.locator('input[name="CASHAllocations:'+'1'.repeat(24)+'"]').fill('200000');
+ await page.locator('input[name="BANK_TRANSFERAllocations:'+'2'.repeat(24)+'"]').fill('100000');
  await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
  const saved=JSON.parse(await page.locator('#saved-payment').textContent());
- expect(saved.payments.map(row=>row.lineAllocations)).toEqual([[{lineId:'1'.repeat(24),amount:1000000}],[{lineId:'2'.repeat(24),amount:500000}]]);
+ expect(saved.payments.map(row=>row.lineAllocations)).toEqual([[{lineId:'1'.repeat(24),amount:200000}],[{lineId:'2'.repeat(24),amount:100000}]]);
+ await allocation.scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('partial-allocation.png')});
+});
+
+for(const amount of [600000,1500000])test(`one service hides allocation fields for collection ${amount}`,async({page})=>{
+ await page.goto('/split-payment?lines=single');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill(String(amount));
+ await expect(page.locator('.payment-service-allocation, input[name^="CASHAllocations:"]')).toHaveCount(0);
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ expect(JSON.parse(await page.locator('#saved-payment').textContent()).payments[0].lineAllocations).toEqual([{lineId:'1'.repeat(24),amount}]);
+});
+
+test('only one outstanding service hides both allocation panels for a partial mixed receipt',async({page},testInfo)=>{
+ await page.goto('/split-payment?lines=one-owing');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('100000');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('200000');
+ await expect(page.locator('.payment-service-allocation, input[name*="Allocations:"]')).toHaveCount(0);
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ expect(JSON.parse(await page.locator('#saved-payment').textContent()).payments.map(row=>row.lineAllocations)).toEqual([[{lineId:'2'.repeat(24),amount:100000}],[{lineId:'2'.repeat(24),amount:200000}]]);
+ await page.locator('.payment-summary').scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('one-outstanding-service.png')});
+});
+
+test('full mixed settlement hides manual panels and uses actual balances instead of stale manual input',async({page},testInfo)=>{
+ await page.goto('/split-payment?lines=1&paid=300000');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('100000');
+ await page.locator('.payment-service-allocation summary').click();
+ await page.locator('input[name="CASHAllocations:'+'2'.repeat(24)+'"]').fill('100000');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('800000');
+ await page.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill('400000');
+ await expect(page.locator('.payment-service-allocation, input[name*="Allocations:"]')).toHaveCount(0);
+ await page.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
+ await page.getByRole('checkbox',{name:'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}).check();
+ await page.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
+ expect(JSON.parse(await page.locator('#saved-payment').textContent()).payments.map(row=>row.lineAllocations)).toEqual([[{lineId:'1'.repeat(24),amount:700000},{lineId:'2'.repeat(24),amount:100000}],[{lineId:'2'.repeat(24),amount:400000}]]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.locator('.payment-summary').scrollIntoViewIfNeeded();
+ await page.screenshot({path:testInfo.outputPath('full-settlement.png')});
 });
 
 test('invoice detail keeps per-service staff, separate receipts and totals on desktop and mobile', async ({page}, testInfo) => {

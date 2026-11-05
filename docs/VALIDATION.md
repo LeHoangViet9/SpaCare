@@ -200,3 +200,11 @@ Không backfill chữ ký/hạn dùng và không cần index mới; khởi độ
 - `npm run test:integration`: BLOCKED, exit 1 ở DOCKER_CLI vì không tìm thấy docker trong PATH; không khởi động MongoDB hay gọi database khác để thay thế. Không ghi nhận integration đạt.
 - Đã kiểm tra không còn conflict marker hoặc unmerged index entry; HEAD và stash@{0} giữ nguyên. Các file mới trong working tree được giữ nguyên; next-env.d.ts được khôi phục đúng nội dung trước build. Chỉ sửa thêm các component/fixture/assertion cần thiết để giao diện mới của main và tính năng stash hoạt động cùng nhau. Không reset, xóa stash, commit, push, merge thêm hoặc deploy.
 - Bằng chứng UI và bản đối chiếu ban đầu: outputs/stash-resolution-20261105/.
+
+## Biểu mẫu phân bổ rút gọn — 05/11/2026
+
+- `npm test`: đạt 248/248, gồm tự phân bổ một dòng còn nợ, tất toán một/hai phương thức theo số dư sau khoản thu trước, không sửa object hóa đơn, không đếm trùng buổi phản chiếu, legacy và đối soát dữ liệu lệch. Model doubles của splitPayment nhận đúng payload tự phân bổ và lưu từng nguồn/dòng như cũ; kiểm tra phân bổ một phần và rollback hiện có vẫn đạt.
+- `npm run typecheck`: đạt. `npm run build`: đạt với webpack; cảnh báo middleware deprecated hiện có. Khôi phục next-env.d.ts đúng nội dung trước build.
+- Playwright Chrome cài sẵn: 18/18 ca UI liên quan đạt trên desktop 1440×900 và mobile 390×844. Bao phủ một dịch vụ trả một phần/trả hết, nhiều dịch vụ nhưng một dòng còn nợ, trả một phần nhiều dòng (mục mặc định đóng, mở theo thao tác hoặc khi thiếu/sai), trả hết hỗn hợp theo số dư thật, bỏ phân bổ tay cũ khi chuyển sang trả hết, giữ xác nhận từng nguồn và không tràn ngang. Đã xem ảnh mobile của một dòng nợ, trả hết và mục phân bổ mở. Artifacts: outputs/payment-compact-20261105/results.
+- `npm run test:integration`: BLOCKED/exit 1 tại DOCKER_CLI vì không tìm thấy docker trong PATH. Không chạy MongoDB test, không dùng database khác và không ghi nhận integration đạt.
+- Không sửa operations.ts, resolver/apply phân bổ backend, quyền, transaction/idempotency, schema/index hoặc dữ liệu vận hành. Không commit/push/deploy.

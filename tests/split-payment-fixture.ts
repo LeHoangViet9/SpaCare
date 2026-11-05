@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
+import { allocateInvoicePayments } from '../src/lib/invoice-payment-allocation';
 import { SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product, StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission, ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse, Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service } from '../src/lib/models';
 import { spaDay } from '../src/lib/rules';
 const spaId='a'.repeat(24),ownerId='b'.repeat(24),customerId='c'.repeat(24),serviceId='d'.repeat(24);
@@ -76,6 +77,11 @@ const lineBill=invoice(1500000);(lineBill as any).serviceItems=lines();
 await split(lineBill,[payment('BANK_TRANSFER',500000,{lineAllocations:[{lineId:lineB,amount:500000}]}),payment('CASH',1000000,{lineAllocations:[{lineId:lineA,amount:1000000}]})]);
 assert.deepEqual(current(lineBill).serviceItems.map((line:any)=>line.paid),[1000000,500000]);
 assert.deepEqual(state.Payment.filter(row=>row.invoiceId===lineBill._id).map(row=>row.lineAllocations),[[{lineId:lineB,amount:500000}],[{lineId:lineA,amount:1000000}]]);
+const autoBill=invoice(1500000);(autoBill as any).serviceItems=lines();
+const autoSources=allocateInvoicePayments(autoBill,[payment('CASH',800000),payment('BANK_TRANSFER',700000)]);
+await split(autoBill,autoSources);
+assert.deepEqual(current(autoBill).serviceItems.map((line:any)=>line.paid),[1000000,500000]);
+assert.deepEqual(state.Payment.filter(row=>row.invoiceId===autoBill._id).map(row=>row.lineAllocations),[[{lineId:lineA,amount:800000}],[{lineId:lineA,amount:200000},{lineId:lineB,amount:500000}]]);
 const badAllocations=[
  [payment('CASH',200000),payment('BANK_TRANSFER',100000)],
  [payment('CASH',100000,{lineAllocations:[{lineId:lineA,amount:99999}]})],

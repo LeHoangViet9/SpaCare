@@ -640,3 +640,7 @@ PROPOSED kỹ thuật: không đổi schema/index, không migration/backfill. GE
 ## Thanh toán nhiều phương thức — 05/11/2026
 
 PROPOSED kỹ thuật: không thêm schema/index. Mỗi khoản dương của splitPayment tạo Payment {invoiceId,amount,receiptId,lineAllocations?} và CashEntry {method:CASH|BANK_TRANSFER,kind:PAYMENT,direction:IN,amount,day,actorId} riêng. Tất cả tham chiếu cùng spa/hóa đơn; cập nhật Invoice.paid/status và paid từng dòng tuần tự. Audit payment giữ từng nguồn, Audit splitPayment giữ invoiceId/amount/paymentIds; một Idempotency lưu kết quả gồm invoiceId/paymentIds cho cả lần xác nhận. Không tự gộp hay thay đổi Payment/CashEntry cũ, không phân phối lại paid cũ và không migration dữ liệu vận hành.
+
+## Phân bổ tự động từ form rút gọn — 05/11/2026
+
+Không thêm field/schema/index hoặc backfill. Client đọc total/paid/lineId hiện có để tạo Payment.lineAllocations qua payload splitPayment, cho một dòng còn nợ hoặc trả hết công nợ. Thứ tự xử lý trùng các nhóm dòng backend (serviceItems, treatmentSessions không phản chiếu, packageItems, productItems). Các dòng đã trả đủ không được phân bổ thêm; không sửa paid cũ, amount khoản thu hay dữ liệu lịch sử. Backend tiếp tục kiểm tra tổng và số dư hiện hành; dữ liệu client cũ/lệch không vượt qua guard chỉ nhờ form ẩn ô nhập.
