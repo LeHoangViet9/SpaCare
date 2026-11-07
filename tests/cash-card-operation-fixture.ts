@@ -15,6 +15,7 @@ let failModel='';
 for(const model of [SaleCommission,SharedSaleCommission,InvoiceLineCommission,Product,StockMovement,TreatmentUse,ActivityNotification,Appointment,Commission,ServiceGroup,User,Control,Customer,Invoice,CashEntry,CashCard,CashCardUse,Payment,Day,Audit,Idempotency,Treatment,PackageTemplate,Service]){
   const name=model.modelName;state[name]=[];
   (model as any).find=(filter:any)=>query(state[name].filter(row=>match(row,filter)));
+  if(name==='TreatmentUse')(model as any).countDocuments=(filter:any)=>query(state[name].filter(row=>match(row,filter)).length);
   (model as any).findOne=(filter:any)=>query(doc(name,state[name].find(row=>match(row,filter))));
   (model as any).exists=(filter:any)=>query(state[name].find(row=>match(row,filter))||null);
   (model as any).findOneAndUpdate=(filter:any,update:any)=>{

@@ -19,6 +19,7 @@ export async function replacePackageAdvisor(actor:Actor, d:ReplacementInput, ses
   const scope={spaId:actor.spaId};
   const invoice=await Invoice.findOne({...scope,_id:d.id}).session(session);
   ensure(invoice,'Không tìm thấy hóa đơn trong spa này.',404);
+  ensure(!invoice.financialRevision,'Hóa đơn đã điều chỉnh tài chính: không thay tư vấn bằng luồng cũ.',409);
   ensure(invoice.updatedAt.toISOString()===d.expectedUpdatedAt && String(invoice.activeDocumentId || invoice._id)===d.expectedDocumentId,
     'Chứng từ đã thay đổi hoặc đã hết hiệu lực. Tải lại trước khi thay thế.',409);
   ensure(await Customer.exists({...scope,_id:invoice.customerId}).session(session),'Khách không thuộc spa.',409);

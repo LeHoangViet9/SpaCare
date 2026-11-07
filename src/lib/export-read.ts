@@ -13,12 +13,12 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
   ensure(['OWNER', 'STAFF'].includes(user.role), 'Không có quyền xuất hóa đơn.', 403);
   const data = await readInvoice(user, id);
   const bill = data.invoice;
-  const replacementNotes = bill.activeDocumentId ? [`Chứng từ thay thế hiện hành. Chứng từ trước đã hết hiệu lực: ${(bill.documentHistory || []).map(historicalInvoiceCode).join(', ')}. Giữ nguyên khoản thu và quyền lợi; không thu tiền lần nữa.`] : [];
+  const replacementNotes = bill.activeDocumentId && !bill.financialRevision ? [`Chứng từ thay thế hiện hành. Chứng từ trước đã hết hiệu lực: ${(bill.documentHistory || []).map(historicalInvoiceCode).join(', ')}. Giữ nguyên khoản thu và quyền lợi; không thu tiền lần nữa.`] : [];
   return {
     filename: `${invoiceCode(bill)}.pdf`, title: bill.status === 'CANCELLED' ? 'HÓA ĐƠN ĐÃ HỦY' : bill.openingBalance ? 'CHỨNG TỪ CHUYỂN SỐ DƯ' : 'HÓA ĐƠN BÁN HÀNG',
     subtitle: 'Thanh Thư Spa',
     receipt: { name: 'Thanh Thư Spa', address: 'CL12 Đầm Lau, xã Phụng Công, tỉnh Hưng Yên', phone: '0329 357 116', cashier: bill.creatorName || 'Chưa ghi nhận' },
-    notes: [...replacementNotes, ...(bill.status === 'CANCELLED' ? [`Đã hủy, không tính công nợ. Giá trị trước hủy: ${money(bill.cancelledTotal)}. Lý do: ${bill.cancelReason || '-'}`] : []), ...(bill.openingBalance ? [bill.kind === 'PACKAGE' ? 'Liệu trình đã trả đủ trước chuyển đổi. Chưa có giá mua gốc; 0đ là không thu thêm, không phải gói tặng.' : 'Công nợ chuyển từ sổ cũ, không phải lần bán hoặc xuất kho mới.'] : []), 'Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.',
+    notes: [...replacementNotes, ...(bill.financialRevision ? ['Hóa đơn có chứng từ điều chỉnh. Các dòng hàng/dịch vụ gốc giữ nguyên; tổng hiện hành gồm các điều chỉnh. Vô hiệu hóa không có nghĩa đã hoàn tiền.'] : []), ...(bill.status === 'CANCELLED' ? [`Đã hủy, không tính công nợ. Giá trị trước hủy: ${money(bill.cancelledTotal)}. Lý do: ${bill.cancelReason || '-'}`] : []), ...(bill.openingBalance ? [bill.kind === 'PACKAGE' ? 'Liệu trình đã trả đủ trước chuyển đổi. Chưa có giá mua gốc; 0đ là không thu thêm, không phải gói tặng.' : 'Công nợ chuyển từ sổ cũ, không phải lần bán hoặc xuất kho mới.'] : []), 'Bản PDF tra cứu/giao khách, không phải hóa đơn điện tử có mã cơ quan thuế.',
       'Số tiền phản ánh dữ liệu tại thời điểm xuất. Hóa đơn còn nợ không phải xác nhận đã thanh toán.'],
     tables: [
       { columns: ['Thông tin', 'Chi tiết'], widths: [0.28, 0.72], rows: [
@@ -32,7 +32,9 @@ export async function invoiceExport(user: Actor, id: string): Promise<ExportDocu
         ...(bill.productItems || []).map((item:any)=>[`${item.name} · ${item.quantity} ${item.unit} × ${money(item.unitPrice)}`,money(item.total)]),
         ...data.gifts.map(gift => [`Quà tặng: ${gift.description || 'Gói tặng'}`, money(0)]),
       ] },
+      ...(data.adjustments?.length ? [{heading:'Chứng từ điều chỉnh',columns:['Thời điểm / người sửa','Nội dung / lý do','Chênh lệch chứng từ'],widths:[0.25,0.5,0.25],rows:data.adjustments.map(a=>[date(a.createdAt)+' · '+a.actorName, a.mode+' · '+a.reason+' · #'+String(a._id)+(a.before?.createdAt&&a.after?.createdAt&&String(a.before.createdAt)!==String(a.after.createdAt)?' · Ngày hóa đơn: '+date(a.before.createdAt)+' → '+date(a.after.createdAt):''),money(a.delta)])}] : []),
       { heading: 'Thanh toán', columns: ['Khoản mục', 'Số tiền'], widths: [0.65, 0.35], rows: [
+        ...(bill.adjustmentCredit ? [['Tiền trực tiếp giữ chờ xử lý (chưa hoàn)', money(bill.adjustmentCredit)]] : []),
         ['Tổng hóa đơn', money(bill.total)], ['Đã thanh toán', money(bill.paid)],
         ...(bill.cardPaid ? [['Trong đó dùng thẻ tiền (không thu mới)', money(bill.cardPaid)]] : []),
         ...(bill.giftCashCardAmount ? [['Mệnh giá thẻ tặng kèm', money(bill.giftCashCardAmount)]] : []),

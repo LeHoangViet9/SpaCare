@@ -1,5 +1,17 @@
 # SpaCare — Business Requirements
 
+## Gộp sửa ngày và làm gọn vô hiệu hóa — 06/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu người dùng: một form Sửa hóa đơn gồm ngày/nội dung/tổng tiền đang hỗ trợ; một luồng Vô hiệu hóa hóa đơn dùng cho chưa thu và đã thu, không xóa cứng hoặc tự hoàn tiền. Chỉ hiện kho/gói/quà khi có liên quan thực tế. Dịch vụ đơn chỉ hiện hóa đơn/khách, số đã thanh toán/còn nợ, ảnh hưởng, lý do, Quay lại và Vô hiệu hóa hóa đơn; vẫn xem trước/đối soát trước xác nhận. Đảo giao dịch trong sổ tiền vẫn riêng cho khoản thu ghi nhầm/trùng khi hóa đơn đúng, giữ guard hiện có. Đổi tư vấn giữ luồng riêng do giới hạn đối soát hoa hồng V1; không gộp thay tư vấn với sửa ngày/tiền. Hai điểm sửa gói đang dùng và các bất biến lịch sử vẫn giữ.
+
+
+## Sửa sai/vô hiệu hóa đã thanh toán và điều chỉnh quyền lợi — 06/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu người dùng: chỉ active OWNER được sửa sai/vô hiệu hóa hóa đơn, kể cả đã trả đủ; giữ chứng từ/khoản thu gốc và tạo chứng từ điều chỉnh liên kết, lý do/người/thời điểm/trước sau. Vô hiệu hóa giữ hóa đơn, ghi đảo nghĩa vụ tài chính, không tự coi là trả tiền cho khách. Đối soát cọc/thẻ, quà, kho và hoa hồng; không sửa snapshot payroll APPROVED/PAID. Gói đang dùng sửa riêng từ hồ sơ khách và Gói của khách, có đối chiếu/lý do; giữ buổi/KTV/chữ ký/tiền gốc. Giảm quyền lợi dưới phần đã dùng phải xác nhận cách xử lý tường minh.
+
+Phạm vi local triển khai: sửa nội dung/tổng tiền bằng chứng từ điều chỉnh riêng, vô hiệu hóa có lựa chọn kho/quyền lợi/quà; hiển thị tiền trực tiếp chờ xử lý và action riêng ghi hoàn thực tế. Chưa sửa từng dòng hàng/dịch vụ, số lượng hoặc tư vấn qua luồng mới; chứng từ chuyển số dư và nguồn thanh toán không khớp bị chặn để đối soát. Giữ luồng sửa gói đã có, không tự thay tiền khi sửa quyền lợi. Chi tiết kỹ thuật PROPOSED và giới hạn tại BR-INV-ADJ-001. Không commit/push/deploy/migration/backfill hoặc sửa dữ liệu thật trong yêu cầu này.
+
+
 ## Thay thế chứng từ sửa tư vấn bán gói — 02/11/2026
 
 CONFIRMED theo yêu cầu trên nhánh feature/invoice-replacement: OWNER thay người tư vấn bán gói qua chứng từ thay thế, bắt buộc xem trước, lý do và một lần xác nhận. Giữ bản gốc để tra cứu, cấp mã mới, phân biệt đã thay thế với hủy. Không thu lại tiền/hoàn tiền/hoàn tác buổi thật hoặc sửa nội dung khác. Chỉ tự điều chỉnh hoa hồng chưa chốt; payroll APPROVED/PAID bất biến, kể cả legacy. Ngoại lệ mới chỉ dành cho luồng thay thế, không mở sửa riêng nhân sự trên hóa đơn.
@@ -418,3 +430,11 @@ CONFIRMED theo yêu cầu mới nhất: nhóm khách được chọn cùng dịc
 ## Kỹ thuật viên khi thực hiện dịch vụ — 05/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED: dịch vụ thực hiện ngay bắt buộc có kỹ thuật viên trên từng dòng/lượt, kể cả cùng dịch vụ nhiều lần hoặc giá 0. Thiếu thì chặn lưu và nêu đúng dòng. Không lấy người tạo hóa đơn/người đăng nhập thay người thực hiện. Bán gói dùng sau, bán sản phẩm và lập hóa đơn trước khi làm không bắt KTV; người bán/người tư vấn tách biệt. Giữ thanh toán cấp hóa đơn, quyền, transaction/idempotency/audit và lịch sử. Quy tắc này thay mô tả cho phép bỏ KTV khi ghi nhận dịch vụ đã làm hoặc mặc định người ghi buổi là người thực hiện.
+
+
+## Sửa gói trong hồ sơ khách hàng — 06/11/2026
+
+CONFIRMED theo yêu cầu người dùng: OWNER sửa gói trong Hồ sơ khách → Liệu trình → Sửa gói, kể cả đã dùng/đã thu đủ. Cho sửa tên, dịch vụ/quyền lợi, số buổi hoặc thời hạn, ngày đầu/cuối và ghi chú; bắt đối chiếu trước/sau, lý do và audit nguyên tử. Giữ buổi đã làm, KTV, chữ ký, hóa đơn và khoản thu. Không thu/hoàn tiền; tổng buổi mới không thấp hơn đã dùng. Ngoại lệ mới này thay hạn chế cũ về sửa quyền lợi đã dùng trong đúng thao tác riêng; không nới updateInvoice, quyền STAFF hoặc chính sách định giá đổi dịch vụ BR-OPEN-008 (vẫn OPEN). Xem BR-TRT-EDIT-001.
+
+
+Bổ sung 06/11/2026 (CONFIRMED theo yêu cầu người dùng): trang Gói của khách thêm mục Sửa gói trong menu Thao tác từng dòng, chỉ OWNER. Giữ điểm vào trong hồ sơ khách; cả hai dùng chung TreatmentEdit và action updateCustomerTreatment, cùng đối chiếu/lý do/audit trước sau. Sau lưu tải lại danh sách; không thêm điều kiện chặn gói đã dùng/đã thu đủ hoặc thay đổi quy tắc tài chính. PROPOSED kỹ thuật: điểm vào danh sách mở dialog ngoài menu để menu đóng không làm mất form. Không đổi schema/API/quyền backend.
