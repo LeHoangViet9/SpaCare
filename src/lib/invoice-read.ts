@@ -1,4 +1,5 @@
 import { readTreatmentSignature } from './treatment-signature';
+import { InvoiceAdjustment, SaleCommission, SharedSaleCommission, StockMovement } from './models';
 import { readInvoiceHandling } from './invoice-handling-read';
 import { CashEntry, Payment } from './models';
 import { CashCard } from './models';
@@ -30,7 +31,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   ensure(invoice, 'Không tìm thấy hóa đơn trong phạm vi được phép.', 404);
   const customer = await Customer.findOne({ ...scope, _id: invoice.customerId }).select('name phone').lean();
   const gifts = await Invoice.find({ ...scope, giftOfInvoiceId: invoice._id, customerId: invoice.customerId }).select('description promotion total').lean();
-  const giftCards = invoice.giftCashCardAmount ? await CashCard.find({ ...scope, sourceInvoiceId: invoice._id }).select('amount balance origin').lean() : [];
+  const giftCards = await CashCard.find({ ...scope, sourceInvoiceId: invoice._id }).select('amount balance origin').lean();
   const use = invoice.treatmentUseId ? await TreatmentUse.findOne({ ...scope, _id: invoice.treatmentUseId }).select('+signature').lean() : null;
   // Signature access remains as strict as the existing treatment-use endpoint.
   const canSeeSignature = !!use && (user.role === 'OWNER' || String(use.actorId) === user.id || String(use.staffId) === user.id);
@@ -64,7 +65,22 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const signatures = await TreatmentUse.find(signatureFilter).select('+signature').sort({ performedAt: -1, _id: -1 }).skip((signaturePage - 1) * 5).limit(5).lean();
   const events = await Audit.find({ ...scope, $or: [{ targetId: invoice._id }, { 'details.invoiceId': id }, ...(use ? [{ targetId: use._id }, { 'details.treatmentUseId': String(use._id) }] : [])] }).sort({ createdAt: -1 }).select('action actorId createdAt details.amount details.reason details.note').lean();
   const handling = user.role === 'OWNER' ? await readInvoiceHandling(user.spaId,invoice,gifts,packages) : undefined;
-  return { handling, payments, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, serviceItems, treatmentSessions, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
+  if(handling && invoice.status!=='CANCELLED' && !invoice.openingBalance){
+    handling.edit='';handling.void='';
+    if(invoice.financialRevision){handling.replace='Hóa đơn đã điều chỉnh tài chính; không thay tư vấn bằng luồng cũ.';handling.date='Hóa đơn đã điều chỉnh tài chính; giữ ngày gốc của chứng từ.';handling.cancel='Dùng Vô hiệu hóa có đối soát cho hóa đơn đã điều chỉnh.';}
+  }
+  const packageSaleLedger=user.role==='OWNER'&&(
+    !!await SaleCommission.exists({...scope,invoiceId:invoice._id,cancelledAt:{$exists:false}})||
+    !!await SharedSaleCommission.exists({...scope,invoiceId:invoice._id,cancelledAt:{$exists:false}})
+  );
+  const adjustmentContext=user.role==='OWNER'?{
+    stock:!!(invoice.productId||invoice.productItems?.length||await StockMovement.exists({...scope,$or:[{invoiceId:invoice._id},{checkoutInvoiceId:invoice._id}],direction:'OUT'})),
+    packages:!!(invoice.packageItems?.length||packages.some(p=>String(p.invoiceId)===String(invoice._id))||packageSaleLedger),
+    gifts:!!(gifts.length||giftCards.length),
+  }:undefined;
+  const adjustments=invoice.financialRevision ? await InvoiceAdjustment.find({...scope,invoiceId:invoice._id}).select('mode actorId reason createdAt before.createdAt before.description before.total before.paid before.adjustmentCredit after.createdAt after.description after.total after.paid after.adjustmentCredit delta receiptId').sort({createdAt:1,_id:1}).lean() : [];
+  const adjustmentPeople=adjustments.length?await User.find({...scope,_id:{$in:adjustments.map(a=>a.actorId)}}).select('name').lean():[];
+  return { adjustmentContext, canAdjustInvoice:user.role==='OWNER',adjustments:adjustments.map(a=>({...a,actorName:adjustmentPeople.find(p=>String(p._id)===String(a.actorId))?.name||'Chủ spa'})), handling, payments, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, serviceItems, treatmentSessions, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
     canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
     signatures: await Promise.all(signatures.map(async s => ({ id: s._id, signature: await readTreatmentSignature(user,s), sessionNumber: s.sessionNumber,
       packageName: invoice.treatmentSessions?.find((item: {treatmentUseId:unknown;name?:string})=>String(item.treatmentUseId)===String(s._id))?.name || packages.find(p => String(p._id) === String(s.treatmentId))?.name,

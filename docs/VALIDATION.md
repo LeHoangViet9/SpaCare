@@ -1,5 +1,33 @@
 # Kiểm tra và giới hạn bàn giao
 
+## Kiểm tra bổ sung gộp ngày/modal có điều kiện — 06/11/2026
+
+- Ngày trong CORRECT: chặn ngày không tồn tại, tương lai, issuedOn ở VOID, ngày cũ/mới CLOSED khi đổi; không đổi ngày không chặn vì ngày cũ CLOSED. Date-only delta tiền=0, snapshot ngày đúng, nguồn tiền/ngày làm/earnedAt không đổi; lỗi audit rollback cả update ngày bất biến. Đã bổ sung ca trong model doubles và MongoDB integration (integration chỉ xác nhận khi thực chạy spacare_test).
+- UI dịch vụ đơn không selector kho/gói/quà, không input nội dung/giá; trường hợp kho/gói/quà riêng chỉ có nhóm tương ứng. Gói tặng không làm hiện nhóm gói bán. Backend vẫn đối soát đủ và từ chối thiếu lựa chọn thực có, dù UI bị can thiệp.
+- Menu chỉ còn Sửa hóa đơn/Thay tư vấn riêng/Vô hiệu hóa; ngày nằm trong form sửa, không có nút hủy chưa thu riêng. Bút chì/thùng rác và Thanh toán giữ quyền, tooltip/aria-label; Quay lại không ghi dữ liệu. Đảo giao dịch vẫn theo guard sổ tiền cũ.
+
+Kết quả vòng bổ sung 06/11/2026: npm test đạt 252/252; npm run typecheck đạt; npm run build đạt (cảnh báo middleware deprecated hiện có). Playwright Chrome cài sẵn: 34/34 ca liên quan desktop 1440×900/mobile 390×844 đạt; sau rút gọn nhãn chạy lại 12/12 ca modal đạt. Bao phủ menu gộp, icon/quyền/Thanh toán, dịch vụ đơn không nhóm thừa, kho/gói/quà riêng và hỗn hợp, lý do bắt buộc, preview rồi xác nhận, ngày gửi cùng CORRECT và không có adjustPaymentDates. Đã xem ảnh mobile đơn dịch vụ và hỗn hợp; ảnh ở outputs/invoice-void-*.png.
+
+Sandbox Windows gặp CreateProcessWithLogonW 1909; chạy lại các lệnh local cần thiết ngoài sandbox. Ở môi trường này Docker khả dụng: npm run test:integration đạt 59/59 trên đúng spacare_test local do runner xác minh host/database. Lần đầu lỗi hai assertion mới (ID lượt dùng và thứ tự khóa JSON); đã sửa theo contract hiện có, chạy lại toàn bộ và đạt. Runner chỉ chuẩn bị collections/indexes test, tạo/xóa fixture test; không sửa database vận hành. Không dùng kết quả model doubles thay cho MongoDB integration. Log integration: outputs/invoice-unified-integration-20261106.log.
+
+Giữ nhánh feature/invoice-replacement và mọi thay đổi có sẵn; không sửa dữ liệu khách thật, không commit/push/merge/deploy. Các kết quả phía dưới là lịch sử lần chạy trước; trạng thái BLOCKED Docker cũ không mô tả lần chạy mới này.
+
+
+## Điều chỉnh hóa đơn đã thanh toán / gói đang dùng — 06/11/2026
+
+Ma trận xác nhận theo BR-INV-ADJ-001 và BR-TRT-EDIT-001:
+- OWNER active/cùng spa được preview/apply/refund; STAFF và cashier bị 403 qua API, inactive 401; không nhận spaId/actorId từ client.
+- Giữ Payment/CashEntry/dòng thực hiện gốc; CORRECT lưu delta và before/after; VOID giữ Invoice CANCELLED và delta đảo nghĩa vụ, không tạo REVERSAL/REFUND tiền giả. Nguồn tiền sai, chuyển số dư, đã vô hiệu hóa, preview/timestamp cũ và tham chiếu ngoài spa phải bị từ chối.
+- Giảm giá: trả dư cọc/thẻ về đúng nguồn theo thứ tự đã nêu, direct credit tách riêng; không tăng/xóa số tiền gốc. Tăng giá: tiền còn giữ được áp lại, phần thiếu thành nợ. Hoàn thực tế phải xác nhận đã trả, amount dương trong credit, đủ evidence và sổ OPEN. Retry không hoàn/nhập kho/ghi ledger hai lần.
+- VOID có kho/gói/quà cần lựa chọn tường minh; nhập bù kho chỉ khi xác nhận RETURN, kiểm reversalOf; CANCEL_REMAINING giữ buổi gốc. KEEP gói sau VOID cho dùng tiếp bằng marker; không khôi phục buổi đã tiêu. Snapshot payroll APPROVED/PAID giữ nguyên, kể cả legacy; delta hoa hồng vào kỳ chưa chốt, draft cần tính lại.
+- Sửa gói có preview/lý do/OWNER ở cả hai điểm vào; giảm dưới đã dùng không xác nhận thì 409, có confirmUsedFloor giữ tổng hiệu lực = đã dùng và remaining=0, ghi tổng yêu cầu/rightsImpact; không sửa tiền hoặc lịch sử.
+- UI danh sách có hai icon tiếng Việt (tooltip/aria-label), không dropdown; icon thùng rác chỉ mở luồng VOID. Nhân viên không có nút sửa/vô hiệu hóa; còn nợ vẫn có Thanh toán. Gói đã dùng và hóa đơn trả đủ không tự chặn chức năng mới.
+
+Bộ kiểm thử thêm: tests/invoice-adjustment.test.mjs, invoice-adjustment-fixture.ts (model doubles; chặn mọi kết nối thật), invoice-adjustment-ui-fixture.tsx (render/callback); cập nhật treatment-edit.test.mjs và integration.test.ts, thêm invoice-adjustment-integration.ts cho database spacare_test. Model doubles kiểm rollback cả state khi lỗi audit/kho, immutable nguồn/payroll, retry, compensation kỳ mở, cọc/thẻ nhiều lượt cùng nguồn, hoàn thực tế và nguồn sai. Integration chỉ được xem là đạt nếu đã thực chạy trên spacare_test; kết quả mới ghi ngay bên dưới, không dùng các kết quả lịch sử thay cho lần kiểm tra này.
+
+Kết quả lần kiểm tra trước trong phiên local 06/11/2026: npm test đạt 252/252 (gồm model doubles và render/callback UI, không phải browser E2E); npm run typecheck đạt; npm run build đạt với webpack, còn cảnh báo middleware deprecated hiện có. npm run test:integration BLOCKED/exit 1 ở DOCKER_CLI vì không tìm thấy Docker; chưa chạy MongoDB spacare_test, không xác nhận integration đạt. Không chạy migration/setup/backfill hoặc ghi dữ liệu vận hành. Giữ nhánh feature/invoice-replacement, toàn bộ thay đổi có sẵn; không commit/push/merge/deploy. Các lựa chọn phân bổ nguồn/kỳ bù triển khai vẫn PROPOSED kỹ thuật, không được nâng thành xác nhận của spa chỉ vì test đạt.
+
+
 ## Có thể kiểm tra không cần dependencies
 
 `npm test` chạy Node test runner cho quy tắc tính tiền, phân bổ cọc, công nợ, thời gian lịch, biên ngày Việt Nam, yêu cầu xác nhận và password scrypt. Kết quả thực tế nằm trong `test-results.txt` ở thư mục gốc.

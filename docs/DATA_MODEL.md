@@ -1,5 +1,25 @@
 # SpaCare — Data Model
 
+## Snapshot ngày và projection hiển thị — 06/11/2026
+
+PROPOSED kỹ thuật: không thêm schema/index trong vòng bổ sung này. issuedOn là input của CORRECT, cập nhật Invoice.createdAt bằng updateOne overwriteImmutable theo pattern sửa ngày có sẵn, trong cùng transaction với InvoiceAdjustment/Audit/idempotency. Invoice.recordedAt giữ mốc nguồn; before/after giữ createdAt/recordedAt trước sau, reader/PDF thể hiện ngày thay đổi. Không sửa ngày CashEntry/Payment, buổi hoặc ledger hoa hồng.
+
+adjustmentContext là projection chỉ đọc, không lưu vào schema và không tin từ client để bỏ kiểm tra ghi. Phân biệt Treatment.invoiceId là hóa đơn mua trực tiếp với hóa đơn quà: chỉ gói bán trực tiếp yêu cầu entitlementHandling; gói thuộc quà dùng giftHandling. Không đổi các trường lưu lịch sử quyền lợi, khoản thu hoặc payroll.
+
+
+## Chứng từ điều chỉnh tài chính — 06/11/2026 (ưu tiên mới nhất)
+
+PROPOSED kỹ thuật, nghiệp vụ CONFIRMED tại BR-INV-ADJ-001:
+- InvoiceAdjustment mới: spaId, invoiceId/customerId/actorId, mode CORRECT|VOID|REFUND, reason, before/after Mixed, delta, reconciliation Mixed, receiptId?, previousAdjustmentId?, timestamps. Index đọc `{spaId,invoiceId,createdAt:-1}`. Append-only qua operations; invoiceId luôn trỏ Invoice vận hành gốc, before giữ snapshot chứng từ trước điều chỉnh (bao gồm documentHistory cũ nếu có). previousAdjustmentId nối chuỗi; REFUND liên kết CashEntry thực chi. Không cộng InvoiceAdjustment như hóa đơn bán mới.
+- Invoice thêm financialRevision?, adjustmentCredit? (tiền trực tiếp còn giữ chờ xử lý, >=0), lastAdjustmentId?. Projection total/paid/status hiện hành thay đổi cùng chứng từ điều chỉnh; dòng dịch vụ/sản phẩm, Payment/CashEntry gốc không thay. Snapshot gốc không bị mất dù projection đã CANCELLED. Invoice.refunded tiếp tục cộng mọi khoản hoàn thực tế; sau revision, paid là tiền đang áp vào hóa đơn đã trừ các khoản hoàn trước đó, không trừ refunded lần hai khi tính hoa hồng.
+- Allocation/CashCardUse thêm adjustmentReturned?:number >=0, giữ amount/lineAllocations gốc. Khôi phục balance Deposit/CashCard cùng transaction, chứng từ adjustment lưu nguồn và số trả về. Các thao tác đảo lịch sử cũ bị chặn trên hóa đơn đã revision để tránh trả lại hai lần.
+- InvoiceLineCommission thêm sourceType INVOICE_ADJUSTMENT, adjustmentId?, originalLedgerIds?; mỗi bút toán dịch vụ dùng sourceId/lineId mới riêng để giữ unique index production. SharedSaleCommission dùng sourceType INVOICE_ADJUSTMENT/sourceId=InvoiceAdjustment._id và staffId theo unique index sẵn có; reconciliation giữ IDs ledger gốc và thay đổi từng người. Không sửa ledger/payroll đã ghi; các delta được tổng hợp bởi payroll reader/pendingCommissions sẵn có. Payroll APPROVED/PAID và legacy snapshot giữ nguyên; chỉ DRAFT.needsRecalculation được đánh dấu.
+- Treatment thêm retainedAfterVoid?:boolean cho quyết định giữ quyền lợi sau vô hiệu hóa chứng từ mua. Không sửa TreatmentUse, chữ ký hoặc sessionNumber. updateCustomerTreatment audit thêm rightsImpact: requestedTotalSessions/appliedTotalSessions/remainingBefore/remainingAfter/historicalUsesPreserved/moneyChange=0. Nếu confirmUsedFloor, số yêu cầu chỉ trong audit, tổng hiệu lực không thấp hơn đã dùng.
+- StockMovement nhập bù chỉ khi OWNER chọn RETURN, dùng reversalOf trỏ phiếu xuất gốc; giữ phiếu xuất. Quà/thẻ bị thu hồi chỉ phần chưa dùng và có snapshot trước trong adjustment.
+
+Thêm model vào allModels để setup/test schema hiện có biết collection/index; không chạy setup, migration, backfill hoặc kết nối dữ liệu thật trong phiên triển khai. Index/model thay đổi cần chuẩn bị theo quy trình triển khai riêng trước vận hành; không có lệnh tự chạy migration khi mở form.
+
+
 ## Chứng từ thay tư vấn bán gói — 02/11/2026
 
 CONFIRMED về mô hình nghiệp vụ — nguồn: xác nhận chủ spa do người dùng cung cấp ngày 02/11/2026. Duy trì một hóa đơn vận hành, giữ lịch sử bản cũ và mã riêng cho chứng từ thay thế; mọi giao dịch phát sinh sau thay thế phải gắn với chứng từ hiện hành. Bản cũ chỉ để tra cứu, không cộng trùng doanh thu/hoa hồng. Phạm vi V1 đã CONFIRMED: thu đủ bằng một khoản trực tiếp, chưa hoàn/đảo; chặn cọc, thẻ, nhiều khoản thu và hóa đơn hỗn hợp. Các schemas/field và cách lưu trữ cụ thể bên dưới vẫn là PROPOSED kỹ thuật, không được xác nhận chỉ vì đã có code.
@@ -659,3 +679,10 @@ Không đổi schema/index/migration hoặc dữ liệu cũ. Invoice.serviceItem
 ## Bắt buộc KTV khi ghi nhận thực hiện — 05/11/2026
 
 Không đổi schema/index hoặc backfill. performerId/staffId vẫn có thể vắng trong hóa đơn lập trước làm và dữ liệu lịch sử. Guard action mới bắt KTV từng dòng/lượt thực hiện ngay; lưu performerId trên serviceItems/treatmentSessions và staffId trên TreatmentUse, ledger riêng theo lineId. createdBy/creatorName/actorId giữ vai trò người tạo/ghi nhận, không được dùng làm KTV dự phòng. Bán gói dùng sau/sản phẩm không tạo dữ liệu thực hiện hoặc ledger thực hiện chỉ vì có người tạo.
+
+
+## Điều chỉnh gói khách — 06/11/2026
+
+Nghiệp vụ CONFIRMED tại BR-TRT-EDIT-001. PROPOSED kỹ thuật: Treatment thêm notes?: String. Action riêng sửa name/serviceId/totalSessions hoặc durationMonths/startsOn/expiresOn/notes và tính lại remaining theo buổi đã dùng. Không đổi loại gói/templateId/invoiceId/customerId/openingRemaining nguồn; invoice snapshots và TreatmentUse gốc giữ nguyên. Không collection/index/migration/backfill mới.
+
+Audit hiện có: action=updateCustomerTreatment, targetId=Treatment._id; actorId/createdAt từ backend; details.reason, details.before/after là snapshot gói kèm serviceName tại thời điểm sửa. Không nét ký trong audit. Lịch sử hồ sơ chỉ trả các trường quyền lợi, lý do, tên người sửa/thời gian trong phạm vi đọc gói. Treatment, audit và Idempotency lưu cùng transaction Control tuần tự. Số thứ tự buổi tiếp theo theo tổng trừ dư hoặc usedSessions (TIME/chuyển sổ), không đánh số lại lịch sử.

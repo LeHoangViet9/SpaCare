@@ -1,15 +1,28 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Modal thống nhất và chỉ hiện phần liên quan — 06/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: Sửa hóa đơn gộp ngày/nội dung/tổng, một luồng Vô hiệu hóa cho chưa thu/đã thu; giữ Đảo giao dịch ở sổ tiền và thay tư vấn riêng có giải thích giới hạn V1. Danh sách giữ bút chì/thùng rác tiếng Việt và Thanh toán khi còn nợ. Hai nơi sửa gói vẫn chung TreatmentEdit.
+
+PROPOSED kỹ thuật: Workspace GET invoice mới nhất để lấy khách và adjustmentContext rồi mở dialog. VOID đơn dịch vụ không có input nội dung/giá hoặc lựa chọn kho/gói/quà. Chỉ render từng nhóm có cờ thực từ API; không có lựa chọn “không có hàng/gói/quà” gây hiểu lầm. Footer Quay lại/Vô hiệu hóa hóa đơn; lần đầu preview đầy đủ, sau đó hiển thị ảnh hưởng thực có và lần xác nhận mới apply. Không hiển thị số lượng kỹ thuật của các nhóm trống. CORRECT có input date và bảng ngày cũ/mới; ghi date trong cùng chứng từ, không chuyển ngày thu tiền/ngày làm. Giữ phiên bản/previewToken, transaction tuần tự, rollback, idempotency và audit. Gói chỉ thuộc quà được xử lý theo lựa chọn quà, không mở thêm nhóm gói bán.
+
+
+## Luồng sửa sai/vô hiệu hóa có đối soát — 06/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: danh sách hóa đơn thay dropdown bằng nút bút chì “Sửa hóa đơn” và thùng rác “Vô hiệu hóa hóa đơn”, tooltip/aria-label tiếng Việt; chỉ OWNER, giữ nút Thanh toán khi còn nợ. Dùng SVG theo cách vẽ icon hiện có, không thêm thư viện. Thùng rác mở xác nhận, không gọi xóa cứng. Hồ sơ khách và danh sách Gói của khách vẫn dùng chung TreatmentEdit.
+
+PROPOSED kỹ thuật: InvoiceAdjustmentDialog → nhập nội dung/tổng mới hoặc chọn xử lý VOID → lý do → previewInvoiceAdjustment → đối chiếu cũ/mới/nguồn tiền/quyền lợi/kho/quà/hoa hồng → applyInvoiceAdjustment. Dialog giữ stable idempotency key theo payload commit; preview luôn key mới để tải lại đối soát. Backend revalidate active OWNER, scope, timestamp và previewToken trong Control transaction. Preview không ghi chứng từ/tiền; apply ghi projection, chứng từ điều chỉnh, nguồn cọc/thẻ, bù kho/ledger, audit và idempotency tuần tự. Lỗi bất kỳ bước nào rollback cả lần lưu.
+
+InvoiceAdjustment giữ snapshot bất biến; Invoice hiện hành tránh cộng trùng công nợ. Khoản thu gốc vẫn đi vào dòng tiền, không có reversal tiền giả vì VOID. Chỉ receipt OUT/REFUND có xác nhận thực trả mới làm giảm dòng tiền. Chi tiết hóa đơn/PDF có lịch sử điều chỉnh với delta/người/lý do/thời gian và số tiền đang giữ. InvoiceAdjustmentRefund là form riêng cho OWNER, hỗ trợ cả chứng từ đã vô hiệu hóa, không hoàn quá adjustmentCredit.
+
+Bất biến: không sửa buổi/signature/KTV/lịch đã làm; không thay payroll APPROVED/PAID; ledger bù dùng IDs riêng/liên kết gốc và kỳ mở. Không đồng nhất hoàn kho với hủy hóa đơn: OWNER phải chọn KEEP_OUT hoặc xác nhận RETURN. KEEP quyền lợi sau VOID lưu retainedAfterVoid để recordUse chỉ cho dùng gói được giữ rõ ràng. CANCEL_REMAINING dừng dùng mới, giữ remaining/historical uses để đối chiếu. Cọc/thẻ trả nguồn không phải tiền mới, không sinh chi thực tế.
+
+Giảm tổng gói dưới đã dùng phải tích xác nhận mức hiệu lực giữ bằng đã dùng/còn 0 rồi xem trước; audit lưu cả mức yêu cầu và mức hiệu lực. Đây là thao tác quyền lợi riêng, không tự tạo tài chính; chênh lệch tiền xử lý qua chứng từ điều chỉnh hóa đơn. Các mô tả trước về form sửa chỉ đổi ngày khi đã trả đủ và chưa có điều chỉnh gói đã dùng được thay bởi các luồng mới này; ngày đã gộp vào form mới; thay tư vấn vẫn riêng với guard V1.
+
+
 ## Điểm vào xử lý hóa đơn
 
-Chi tiết dùng mục mở rộng “Xử lý hóa đơn”; mỗi thao tác có mô tả, trạng thái và
-lý do chặn. Dùng lại form lý do/xác nhận và preview thay tư vấn hiện có. Sửa ngày
-được ghi rõ là sửa ngày, không chuyển âm thầm từ thao tác sửa nội dung bị chặn.
-Giao diện không mở request ghi khi chỉ mở menu. Giữ các liên kết ở danh sách.
-Để hỗ trợ điều chỉnh gói đã dùng về sau cần chính sách được chốt cho quyền lợi đã
-tiêu, công nợ/hoàn tiền và hoa hồng, rồi một action điều chỉnh có preview/version,
-transaction/idempotency/audit đồng bộ Treatment, TreatmentUse, chứng từ/ledger.
-Phần đó chưa được triển khai hoặc tự suy ra trong thay đổi giao diện này.
+Chi tiết có Sửa hóa đơn (gồm ngày), Thay tư vấn riêng và Vô hiệu hóa hóa đơn. Danh sách dùng bút chì/thùng rác trực tiếp và Thanh toán khi còn nợ. Modal chỉ hiện nhóm có nguồn liên quan từ API; backend không bỏ đối soát vì UI ẩn. Sửa gói đã dùng là action quyền lợi riêng từ hồ sơ khách/danh sách; buổi và chữ ký lịch sử bất biến.
 
 ## Thay thế chứng từ sửa tư vấn bán gói — 02/11/2026
 
@@ -704,3 +717,13 @@ Giữ giỏ hiện có: mỗi lần chọn dịch vụ tạo occurrence với li
 ## Chọn KTV cho các lượt thực hiện — 05/11/2026
 
 Giỏ thu ngân là luồng ghi dịch vụ thực hiện ngay: kiểm KTV từng dòng dịch vụ/lượt dùng gói trước gửi; lỗi nêu số dòng và tên, giữ toàn bộ giỏ để sửa. Các lượt trùng vẫn có lựa chọn riêng. Form hóa đơn khi chọn dùng gói đã mua hiển thị KTV bắt buộc ngay dưới từng gói và gửi performerId cùng lượt; đổi KTV bỏ chữ ký đã vẽ. Ghi buổi trực tiếp yêu cầu chọn KTV, nhân viên thường chỉ được chọn bản thân, không tự lấy người đăng nhập. Bán gói mới, sản phẩm hoặc lập hóa đơn trước làm không thêm yêu cầu KTV; người tư vấn bán gói giữ yêu cầu riêng như cũ. Không đổi form hoặc phân bổ tiền thanh toán.
+
+
+## Sửa quyền lợi gói trong hồ sơ khách — 06/11/2026
+
+CONFIRMED: Hồ sơ khách → Liệu trình → Sửa gói trên từng Treatment chỉ OWNER; nhập → Xem trước thay đổi → bảng cũ/mới + lý do bắt buộc → Xác nhận lưu gói. Lưu xong tải lại tab/lịch sử; lỗi giữ form. Người được xem gói thấy lịch sử điều chỉnh với người/thời điểm/lý do/nội dung. Không mở form sửa hóa đơn.
+
+PROPOSED kỹ thuật: TreatmentEdit client component dùng capability, danh mục dịch vụ và số TreatmentUse thật từ API history/workspace; backend tính preview cùng treatmentEditRights và từ chối lưu nếu expectedUseCount đã đổi kể từ lúc xem trước. Không hiện con số quyền lợi khi chưa tải được lịch sử cần thiết. Khóa idempotency theo payload để retry; khóa nút khi gửi. expectedUpdatedAt chống ghi đè khi có sử dụng/chỉnh sửa đồng thời; khi xung đột cần tải lại hồ sơ và đối chiếu lại. Transaction tuần tự lưu Treatment/audit/idempotency; giữ bản ghi tài chính/buổi/chữ ký/hoa hồng gốc. Mô hình một dịch vụ mỗi gói, giữ loại hiện có, TIME nhập ngày cuối tường minh. Không suy ra chính sách định giá BR-OPEN-008.
+
+
+Bổ sung 06/11/2026 (CONFIRMED theo yêu cầu người dùng): trang Gói của khách thêm mục Sửa gói trong menu Thao tác từng dòng, chỉ OWNER. Giữ điểm vào trong hồ sơ khách; cả hai dùng chung TreatmentEdit và action updateCustomerTreatment, cùng đối chiếu/lý do/audit trước sau. Sau lưu tải lại danh sách; không thêm điều kiện chặn gói đã dùng/đã thu đủ hoặc thay đổi quy tắc tài chính. PROPOSED kỹ thuật: điểm vào danh sách mở dialog ngoài menu để menu đóng không làm mất form. Không đổi schema/API/quyền backend.

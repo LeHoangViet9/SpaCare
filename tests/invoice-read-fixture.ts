@@ -4,7 +4,7 @@ import { Invoice, Customer, Treatment, TreatmentUse, Audit, Spa, Appointment, Pa
 import { invoiceExport } from '../src/lib/export-read';
 import { readTreatmentSignature } from '../src/lib/treatment-signature';
 import { readInvoice } from '../src/lib/invoice-read';
-import { Allocation, CashCard, CashCardUse, Commission, Day, InvoiceLineCommission, SaleCommission, SharedSaleCommission } from '../src/lib/models';
+import { StockMovement, Allocation, CashCard, CashCardUse, Commission, Day, InvoiceLineCommission, SaleCommission, SharedSaleCommission } from '../src/lib/models';
 import type { Actor } from '../src/lib/auth';
 const id = 'a'.repeat(24), spaId = 'b'.repeat(24), packageId = 'c'.repeat(24), actorId = 'd'.repeat(24);
 const signature = { version: 1, strokes: [[[0, 0], [0.2, 0.2], [0.4, 0.3]]] };
@@ -26,7 +26,7 @@ mock.method(Audit, 'find', () => query([]));
 mock.method(Appointment, 'find', () => query([{ _id: 'appointment', staffId: actorId, status: 'COMPLETED', treatmentId: 'treatment' }]));
 const owner: Actor = { id: actorId, spaId, name: 'Owner', role: 'OWNER', cashier: true };
 for(const model of [Payment,CashCard,Commission,InvoiceLineCommission,SaleCommission,SharedSaleCommission])mock.method(model,'find',()=>query([]));
-for(const model of [TreatmentUse,Appointment,Allocation,CashCardUse])mock.method(model,'exists',async(filter:any)=>{assert.equal(filter.spaId,spaId);return null;});
+for(const model of [StockMovement,TreatmentUse,Appointment,Allocation,CashCardUse,SaleCommission,SharedSaleCommission])mock.method(model,'exists',async(filter:any)=>{assert.equal(filter.spaId,spaId);return null;});
 mock.method(Day,'findOne',()=>query(null));
 const result = await readInvoice(owner, id, 99);
 assert.equal(result.signaturePage, 2);
@@ -102,4 +102,20 @@ assert.ok(detail.handling, 'main handling reasons remain available with separate
 const withSessions = await readInvoice(owner,id);
 assert.equal(withSessions.invoice.treatmentSessions?.[0].performerName,'Quỳnh');
 
+// Display decisions come from scoped operational references, not only invoice metadata.
+(invoice as any).kind='SERVICE';delete (invoice as any).productItems;delete (invoice as any).productId;delete (invoice as any).packageItems;
+mock.method(Payment,'find',()=>query([]));mock.method(CashEntry,'find',()=>query([]));
+mock.method(Invoice,'find',()=>query([]));mock.method(Treatment,'find',()=>query([]));
+mock.method(StockMovement,'exists',async(filter:any)=>{assert.equal(filter.spaId,spaId);return null;});
+assert.deepEqual((await readInvoice(owner,id)).adjustmentContext,{stock:false,packages:false,gifts:false});
+mock.method(StockMovement,'exists',async(filter:any)=>{assert.deepEqual(filter.$or,[{invoiceId:id},{checkoutInvoiceId:id}]);return {_id:'legacy-stock'};});
+assert.equal((await readInvoice(owner,id)).adjustmentContext?.stock,true);
+mock.method(StockMovement,'exists',async()=>null);
+mock.method(Invoice,'find',()=>query([{_id:'gift',customerId:invoice.customerId,total:0}]));
+mock.method(Treatment,'find',()=>query([{_id:'gift-plan',invoiceId:'gift',name:'Gift only'}]));
+assert.deepEqual((await readInvoice(owner,id)).adjustmentContext,{stock:false,packages:false,gifts:true});
+mock.method(Invoice,'find',()=>query([]));mock.method(Treatment,'find',()=>query([{_id:packageId,invoiceId:id,name:'Purchased plan'}]));
+assert.equal((await readInvoice(owner,id)).adjustmentContext?.packages,true);
+mock.method(StockMovement,'exists',async()=>assert.fail('STAFF must not receive owner adjustment context'));
+assert.equal((await readInvoice({...owner,role:'STAFF'},id)).adjustmentContext,undefined);
 mock.restoreAll();

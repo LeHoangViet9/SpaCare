@@ -143,6 +143,7 @@ const serviceItemSchema = new Schema({ lineId: optionalId, serviceId: id, name: 
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  financialRevision: Number, adjustmentCredit: {type:Number,min:0}, lastAdjustmentId: optionalId,
   // One operational invoice, immutable prior document snapshots. Replacements
   // are not new sales and never enter financial aggregates as extra invoices.
   activeDocumentId: optionalId, effectiveCode: String,
@@ -196,6 +197,7 @@ export const CashCard = model('CashCard', {
   [{ spaId: 1, receiptId: 1 }, { unique: true, partialFilterExpression: { receiptId: { $exists: true } } }],
   [{ spaId: 1, sourceInvoiceId: 1 }, { unique: true, partialFilterExpression: { sourceInvoiceId: { $exists: true } } }]]);
 export const CashCardUse = model('CashCardUse', {
+  adjustmentReturned: {type:Number,min:0},
   reversedAt:Date,
   cardId: id, customerId: id, invoiceId: id, amount, balanceBefore: amount, balanceAfter: amount, actorId: id,
   lineAllocations: { type: [new Schema({ lineId: id, amount }, { _id: false, versionKey: false, strict: 'throw' })], default: undefined },
@@ -210,6 +212,7 @@ export const Deposit = model('Deposit', {
 });
 
 export const Allocation = model('Allocation', {
+  adjustmentReturned: {type:Number,min:0},
   depositId: id,
   invoiceId: id,
   amount,
@@ -263,6 +266,7 @@ export const CashEntry = model(
 export const Treatment = model(
   'Treatment',
   {
+    retainedAfterVoid: Boolean,
     openingBalance: Boolean, openingRemaining: Number,
     templateId: optionalId,
     giftOfInvoiceId: optionalId,
@@ -273,6 +277,7 @@ export const Treatment = model(
     name: String,
     packageType: { type: String, enum: ['SESSIONS', 'TIME'] },
     durationMonths: Number, startsOn: String, usedSessions: { type: Number, min: 0 },
+    notes: String,
     totalSessions: Number,
     remaining: Number,
     status: { type: String, enum: ['ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED'], default: 'ACTIVE' },
@@ -322,9 +327,10 @@ export const Commission = model('Commission', {
 // Additive per-line ledger. Legacy Commission keeps its production unique
 // invoice index; new line rows use a separate collection and stable identity.
 export const InvoiceLineCommission = model('InvoiceLineCommission', {
+  adjustmentId: optionalId, originalLedgerIds: {type:[Schema.Types.ObjectId],default:undefined},
   cancelledAt: Date, staffId: id, staffName: String, serviceId: optionalId, serviceName: String, customerId: id,
   invoiceId: id, lineId: id, category: { type: String, enum: ['SERVICE'], default: 'SERVICE' },
-  sourceType: { type: String, enum: ['INVOICE_LINE', 'TREATMENT_USE_LINE', 'APPOINTMENT_LINE'], required: true },
+  sourceType: { type: String, enum: ['INVOICE_LINE', 'TREATMENT_USE_LINE', 'APPOINTMENT_LINE', 'INVOICE_ADJUSTMENT'], required: true },
   sourceId: id, amount: { ...amount, min: -1_000_000_000_000 }, earnedAt: { type: Date, required: true }, payrollId: optionalId,
 }, [[{ spaId: 1, invoiceId: 1, lineId: 1, category: 1 }, { unique: true }], [{ spaId: 1, sourceType: 1, sourceId: 1 }, { unique: true }], [{ spaId: 1, staffId: 1, earnedAt: -1 }]]);
 
@@ -386,6 +392,13 @@ export const Audit = model('Audit', {
   details: Schema.Types.Mixed,
 });
 
+// Append-only correction documents; cash movement remains in CashEntry, never inferred.
+export const InvoiceAdjustment = model('InvoiceAdjustment', {
+  invoiceId:id, customerId:id, actorId:id, mode:{type:String,enum:['CORRECT','VOID','REFUND'],required:true},
+  reason:String, before:Schema.Types.Mixed, after:Schema.Types.Mixed, reconciliation:Schema.Types.Mixed,
+  delta:Number, receiptId:optionalId, previousAdjustmentId:optionalId,
+}, [[{spaId:1,invoiceId:1,createdAt:-1}]]);
+
 export const Idempotency = model(
   'Idempotency',
   { userId: id, key: String, fingerprint: String, result: Schema.Types.Mixed },
@@ -422,6 +435,7 @@ export const PushDevice = model('PushDevice', {
 }, [[{ endpoint: 1 }, { unique: true }], [{ spaId: 1, userId: 1 }]]);
 
 export const allModels = [
+  InvoiceAdjustment,
   ServiceGroup,
   CashCard, CashCardUse,
   Notification, ActivityNotification, PushDevice,

@@ -1,17 +1,32 @@
 # SpaCare — Business Rules
 
+## Bổ sung BR-INV-ADJ-001: ngày và điểm vào thống nhất — 06/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: Sửa hóa đơn bao gồm ngày cùng nội dung/tổng tiền; chi tiết bỏ nút Sửa ngày riêng. Hủy chưa thu và vô hiệu hóa nhập nhầm dùng chung Vô hiệu hóa hóa đơn, chưa thu thì bỏ công nợ, đã thu thì ghi chứng từ/nguồn điều chỉnh; không xem là đã hoàn tiền. Đảo giao dịch ở sổ tiền vẫn riêng, theo quyền/guard cũ (nguồn trên hóa đơn đã financialRevision vẫn bị chặn đảo cũ để tránh lệch số dư), không dùng vô hiệu hóa làm thay thế. Đổi tư vấn giữ riêng vì chỉ hỗ trợ V1 một khoản trực tiếp đủ, chưa hoàn/đảo, chưa chốt hoa hồng; chưa gộp an toàn cùng thay giá/ngày.
+
+PROPOSED kỹ thuật đã triển khai: issuedOn chỉ cho CORRECT, ngày lịch thực không tương lai. Khi đổi ngày, ngày cũ/mới không được CLOSED; không đổi ngày thì không cần mở lại sổ cũ chỉ để sửa nội dung/giá. Lưu createdAt hiện hành/recordedAt nguồn và trước sau trong InvoiceAdjustment/Audit; không đổi CashEntry.day, Payment, performedAt hoặc earnedAt. Modal dùng cờ đọc có scope từ backend: kho từ sản phẩm/phiếu xuất, gói từ gói bán trực tiếp, quà từ hóa đơn/thẻ tặng. Gói chỉ tặng kèm thuộc giftHandling, không đòi entitlementHandling lần nữa. Ẩn UI không miễn kiểm tra nguồn/phiên bản/transaction tại backend. Nút Vô hiệu hóa lần đầu chạy preview; xác nhận lần tiếp mới apply, vẫn đủ lý do/đối soát/audit/idempotency. Giữ tất cả quy tắc gói đã dùng và xác nhận mức quyền lợi dưới đã dùng ở BR-TRT-EDIT-001.
+
+
+## BR-INV-ADJ-001 — Điều chỉnh/vô hiệu hóa đã thanh toán — 06/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu người dùng: active OWNER duy nhất được sửa sai/vô hiệu hóa, kể cả hóa đơn đã thanh toán. STAFF/cashier không được gọi API. Giữ chứng từ gốc, khoản thu, lịch sử thực hiện/chữ ký; lưu chứng từ điều chỉnh liên kết với trước/sau, lý do/người/thời điểm. Chênh lệch tách riêng, không âm thầm đổi Payment/CashEntry. Vô hiệu hóa không xóa cứng và không đồng nghĩa hoàn tiền; giữ bảng lương APPROVED/PAID, ghi bù qua ledger. Phần này thay hạn chế cũ về không sửa hóa đơn đã trả đủ/đã dùng gói trong đúng luồng điều chỉnh mới. Không mở lại các action sửa trực tiếp cũ.
+
+PROPOSED kỹ thuật đã triển khai (chưa phải chính sách spa xác nhận):
+- Invoice là projection vận hành duy nhất; InvoiceAdjustment append-only giữ bản gốc/trước sau và delta. CORRECT sửa description/tổng/ngày hóa đơn, giữ dòng gốc; VOID đưa projection total/paid về 0, status CANCELLED, giữ giá trị gốc trong snapshot. Các báo cáo công nợ dùng projection; báo cáo dòng tiền tiếp tục đếm khoản thu thật, chỉ giảm khi ghi REFUND thật. Không tạo CashEntry REVERSAL để giả giảm tiền thu khi vô hiệu hóa.
+- Đối chiếu tổng Payment chưa đảo + cọc/thẻ chưa hoàn nguồn − refunded với paid + adjustmentCredit (trước revision đầu trừ refunded khỏi paid). Nguồn lệch/chuyển sổ thiếu chứng từ bị chặn; không tự suy nguồn tiền. Khi giảm tổng, trả phần dư về cọc trước, rồi thẻ theo thứ tự ID nguồn. Giữ amount và lineAllocations gốc, tăng adjustmentReturned trên ledger nguồn; ghi lại trước/sau ở chứng từ điều chỉnh. Phần dư tiền trực tiếp nằm adjustmentCredit, chưa chi trả/chưa tự chuyển thành cọc. Tăng tổng tái áp dụng số tiền trực tiếp đang giữ trước khi tạo nợ mới. Không cho staff tùy ý sử dụng tiền chờ xử lý.
+- VOID bắt lựa chọn: KEEP_OUT hoặc RETURN (chủ spa xác nhận hàng đã nhận lại/chưa xuất thật, mới nhập bù bằng StockMovement.reversalOf); KEEP hoặc CANCEL_REMAINING cho gói; KEEP hoặc REVOKE_UNUSED cho quà/thẻ tặng. Thu hồi chỉ dừng quyền lợi/số dư chưa dùng, không xóa lượt cũ, không tự tạo nợ cho quà đã dùng. Giữ gói sau VOID dùng retainedAfterVoid; buổi tiếp theo vẫn đọc gói hiện hành, không phục hồi buổi đã tiêu. Lịch hẹn cũ không bị xóa/sửa; gói bị dừng không ghi thêm buổi, OWNER xử lý lịch riêng.
+- Hoa hồng thực hiện cố định giữ nguyên khi chỉ sửa nội dung/giá; VOID ghi bù số net theo người ở InvoiceLineCommission. Hoa hồng bán gói phiên bản 1/2 theo quỹ 5% tiền áp dụng sau sửa; giữ danh sách tư vấn trên chứng từ hiện hành và thuật toán chia đều/làm tròn tích lũy hiện có theo staffId ổn định, ghi delta trong SharedSaleCommission. Bản gốc/payroll đã chốt không thay; điều chỉnh vào tháng hiện tại hoặc tháng kế tiếp đầu tiên chưa APPROVED/PAID, đánh dấu draft cần tính lại. Không tự chi lương hay tự cho payroll tổng âm; khi khoản bù vượt lương khả dụng cần xử lý theo quy trình lương hiện có.
+- Chỉ refundInvoiceAdjustment giảm adjustmentCredit và tạo CashEntry OUT/REFUND sau xác nhận đã thực trả và evidence hiện có; chỉ hoàn trong số tiền trực tiếp đang giữ. Cọc/thẻ trả về số dư nguồn không phải dòng tiền mới. Sau revision, chặn reverseCash/reverseAllocation/refundPackage/updateInvoice/cancelInvoice/correctInvoiceDate/treatment cũ để tránh ghi kép; vẫn thu nợ/áp cọc/thẻ/hoàn thành dịch vụ bằng cơ chế hiện hành khi phù hợp. deleteInvoice cũ không nhận bất kỳ lịch sử Payment/Allocation/CashCardUse; action cũ chỉ còn phạm vi chưa thanh toán theo guard cũ, không phải nút thùng rác mới.
+- PROPOSED guard kỹ thuật: GIFT giữ nguyên tổng tiền, không cho CORRECT đổi giá. Trước VOID, kiểm tra nguồn thanh toán từng hóa đơn quà con; chỉ REVOKE_UNUSED khi số đã thu/chờ xử lý sau khoản hoàn thực tế bằng 0. Nếu còn tiền chưa xử lý, chặn thu hồi thay vì đặt paid=0/CANCELLED. Hóa đơn có packageItems/gói trực tiếp/ledger bán gói và đồng thời có dòng dịch vụ, sản phẩm hoặc ledger dịch vụ được xem là hỗn hợp; không cho đổi tổng vì chưa phân bổ chênh lệch theo dòng. Không phân loại hỗn hợp chỉ theo kind=PACKAGE.
+
+BR-TRT-EDIT-001 bổ sung CONFIRMED: OWNER sửa gói ở cả hai nơi dù đã dùng/đã trả đủ; thao tác riêng không tự sửa hóa đơn/tiền. PROPOSED kỹ thuật: nếu tổng yêu cầu < số đã dùng, chỉ cho lưu khi confirmUsedFloor=true sau xem trước. Giữ tổng hiệu lực = đã dùng, remaining=0, lưu cả tổng yêu cầu và rightsImpact trong audit; không xóa lịch sử/hoàn tiền. Nếu không xác nhận thì trả 409, không tự hạ số đã dùng. Quy tắc này thay chặn tuyệt đối dưới số đã dùng trong phần mô tả trước; các guard khác giữ nguyên.
+
+Giới hạn: không sửa danh mục/performer/số lượng từng dòng qua CORRECT, không hoàn tự động, không hoàn thẻ/cọc bằng tiền mặt ở luồng này. Hóa đơn hỗn hợp có ledger bán gói chỉ sửa nội dung hoặc VOID; thay giá cần phân bổ chênh lệch theo dòng, chưa hỗ trợ. BR-OPEN-008 về định giá đổi quyền lợi vẫn OPEN; không suy chính sách tiền từ sửa gói.
+
+
 ## Giao diện xử lý hóa đơn nhập sai
 
-CONFIRMED theo yêu cầu giao diện: gom sửa nội dung, sửa ngày, thay tư vấn và vô
-hiệu hóa vào một điểm vào trong chi tiết hóa đơn; giữ luồng hủy chưa thanh toán.
-Không mở rộng quyền hoặc bỏ guard của bất kỳ action nào. Gói đã có lượt dùng
-không được sửa nội dung trực tiếp; sửa ngày và thay tư vấn là luồng riêng, không
-đổi giá, số buổi, TreatmentUse hay chữ ký. Chưa có chính sách điều chỉnh nội dung
-gói đã dùng; không tự tạo chứng từ hoặc đảo tiền để thay thế luồng còn thiếu.
-
-PROPOSED kỹ thuật: dùng projection lý do chỉ đọc để giải thích chặn đã biết. Mỗi
-action vẫn kiểm quyền/phiên bản/ngày/ledger và tham chiếu trong transaction khi
-xác nhận; UI không coi projection là giấy phép ghi.
+CONFIRMED theo yêu cầu mới nhất: một form Sửa hóa đơn gồm ngày/nội dung/tổng; một luồng Vô hiệu hóa hóa đơn cho chưa thu/đã thu. Thay tư vấn giữ riêng theo V1. Gói đang dùng sửa bằng updateCustomerTreatment tại hai điểm vào, không sửa/xóa TreatmentUse/chữ ký. Các mô tả trước về nút sửa ngày/hủy riêng và chưa có sửa gói đã dùng được thay bằng BR-INV-ADJ-001/BR-TRT-EDIT-001. Backend vẫn kiểm lại quyền, spa, phiên bản và transaction/audit khi xác nhận.
 
 ## BR-INV-REPLACE-001 — Thay tư vấn qua chứng từ thay thế — 02/11/2026
 
@@ -880,3 +895,15 @@ PROPOSED kỹ thuật: serviceInvoice.items[] và invoice.additionalServices[] c
 CONFIRMED: mỗi dòng thực hiện ngay phải được chọn KTV hợp lệ; cùng dịch vụ 2–3 lần được dùng cùng hoặc khác KTV, không gộp dòng/hoa hồng. Thiếu bất kỳ dòng nào chặn toàn thao tác, thông báo số dòng và tên. Giá 0 không miễn yêu cầu này. Người tạo/người ghi nhận không phải KTV dự phòng. Thay mô tả KTV tùy chọn của các luồng ghi dịch vụ/buổi và mặc định nhân viên phiên ở BR ký buổi trước đây. Không yêu cầu KTV khi bán gói để dùng sau, bán sản phẩm, hoặc tạo hóa đơn dịch vụ chưa thực hiện.
 
 PROPOSED kỹ thuật: serviceInvoice.items và invoice.additionalServices khi ghi buổi phải có performerId mỗi lượt; invoice.treatments phải chọn performerId từng lượt, không bù từ invoice.staffId. invoice đơn không có buổi và không staffId vẫn tạo chứng từ trước làm, chưa performedAt/ledger thực hiện; nếu chọn staffId tường minh thì xác nhận thực hiện như hiện có. Payload legacy một treatmentId dùng staffId đã chọn cho đúng một buổi. use yêu cầu staffId tường minh (hoặc từng sessions[]/staffId chung được chọn); không lấy actor.id. Lịch đã được giao KTV giữ nguồn phân công đó khi xác nhận hoàn thành. Backend kiểm active/role/cùng spa và quyền chọn người khác, transaction tuần tự, idempotency/audit; thiếu KTV rollback toàn giỏ. Không thay dữ liệu lịch sử thiếu KTV, quy tắc hoa hồng hoặc thu tiền cấp hóa đơn.
+
+
+## BR-TRT-EDIT-001 — OWNER sửa gói khách — 06/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: OWNER thấy và thực hiện Sửa gói trong hồ sơ khách; kể cả gói đã dùng/hóa đơn đã trả đủ. Bắt đối chiếu trước/sau và lý do. Chỉ thay quyền lợi hiện hành cho buổi chưa dùng; giữ nguyên buổi đã làm, ngày, KTV, chữ ký, chứng từ, khoản thu và hoa hồng lịch sử. Không thu/hoàn tiền/xóa bản gốc. Tổng mới >= đã dùng; còn lại = tổng mới − đã dùng. Audit trước/sau, người sửa, thời điểm, lý do cùng transaction/idempotency. Ngoại lệ này thay hạn chế cũ trong đúng luồng sửa gói riêng; không đổi updateInvoice hay quyền STAFF/cashier. BR-OPEN-008 về định giá đổi dịch vụ vẫn OPEN.
+
+PROPOSED kỹ thuật đã triển khai: giữ loại SESSIONS/TIME, mỗi Treatment một serviceId. Kiểm phiên bản updatedAt, active OWNER, spa/khách của mọi tham chiếu; chặn gói/chứng từ CANCELLED. Dịch vụ mới phải active, cho giữ dịch vụ cũ đã ngừng. Đã dùng = max(TreatmentUse count, usedSessions, totalSessions − remaining) cho gói buổi thường. TIME/chuyển sổ chỉ max(count, usedSessions), không suy ra sử dụng trước chuyển đổi. Tổng mới của gói chuyển sổ tính từ lúc chuyển sổ; giữ openingRemaining nguồn, usedSessions và số thứ tự buổi. Gói buổi hết dư thành COMPLETED, thêm dư mở ACTIVE; PAUSED giữ bảo lưu kể cả dư 0, mở lại vẫn thao tác riêng. TIME giữ trạng thái/bộ đếm, bắt số tháng và ngày đầu/cuối hợp lệ; ngày cuối nhập rõ ràng, không tự cộng ngày khi đổi tháng. Ngày hai đầu tính bao gồm theo rule hiện hành. Không sửa lịch hẹn đã đặt; lần dùng tiếp theo đọc Treatment hiện hành. Transaction Control tuần tự rollback cả gói/audit/idempotency; không cần mở sổ vì không ghi tài chính.
+
+Bổ sung PROPOSED kỹ thuật: hai giao diện preview nạp số TreatmentUse thật và dùng cùng treatmentEditRights với backend; payload expectedUseCount được kiểm tra lại trong transaction, thay đổi sau preview trả 409. Khi ghi buổi, quyền lợi hữu hạn không vượt tổng trừ lượt dùng lịch sử dù counter remaining cũ còn dương. Gói sau VOID chỉ tiếp tục đặt lịch/thu ngân/ghi buổi nếu retainedAfterVoid=true và quyền lợi vẫn còn.
+
+
+Bổ sung 06/11/2026 (CONFIRMED theo yêu cầu người dùng): trang Gói của khách thêm mục Sửa gói trong menu Thao tác từng dòng, chỉ OWNER. Giữ điểm vào trong hồ sơ khách; cả hai dùng chung TreatmentEdit và action updateCustomerTreatment, cùng đối chiếu/lý do/audit trước sau. Sau lưu tải lại danh sách; không thêm điều kiện chặn gói đã dùng/đã thu đủ hoặc thay đổi quy tắc tài chính. PROPOSED kỹ thuật: điểm vào danh sách mở dialog ngoài menu để menu đóng không làm mất form. Không đổi schema/API/quyền backend.

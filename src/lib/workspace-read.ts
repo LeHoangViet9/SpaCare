@@ -172,11 +172,20 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
     { invoiceId: { $in: invoices.map(i => i._id) } },
   ] }] }).lean();
   const customerRefs = [...appointments, ...invoices, ...deposits, ...treatments, ...listed('cash'), ...listed('uses')].map(r => r.customerId).filter(Boolean);
-  const [packageInvoices, customers] = await Promise.all([
+  const [packageInvoices, cancelledPackageInvoices, customers] = await Promise.all([
     Invoice.find({ $and: [filters.invoices, { _id: { $in: treatments.map(t => t.invoiceId) } }] }).select('_id serviceId dueDate total paid').lean(),
+    Invoice.find({ ...scope, status: 'CANCELLED', _id: { $in: treatments.map(t => t.invoiceId) } }).select('_id').lean(),
     Customer.find({ $and: [access.customers, { _id: { $in: [...customerRefs, ...listed('customers').map(c => c._id), ...auditIds('customerId'), ...(query.customer ? [query.customer] : [])] } }] }).lean(),
   ]);
-  const packages = treatments.map(t => { const bill = packageInvoices.find(i => String(i._id) === String(t.invoiceId)); return { ...t, serviceId: t.serviceId || bill?.serviceId, paymentDueDate: bill?.dueDate, paymentOverdue: !!bill?.dueDate && bill.dueDate < today && bill.paid < bill.total }; });
+  const treatmentPageIds = collection === 'treatments' ? listed('treatments').map(t => t._id) : [];
+  const recordedUses = treatmentPageIds.length ? await TreatmentUse.aggregate([
+    { $match: { spaId: new mongoose.Types.ObjectId(user.spaId), treatmentId: { $in: treatmentPageIds } } },
+    { $group: { _id: '$treatmentId', count: { $sum: 1 } } },
+  ]) : [];
+  const recordedUseCounts = new Map(recordedUses.map(row => [String(row._id), row.count]));
+  const editableTreatmentIds = new Set(treatmentPageIds.map(String));
+  const cancelledPackageInvoiceSet = new Set(cancelledPackageInvoices.map(i => String(i._id)));
+  const packages = treatments.map(t => { const bill = packageInvoices.find(i => String(i._id) === String(t.invoiceId)); return { ...t, sourceInvoiceCancelled: cancelledPackageInvoiceSet.has(String(t.invoiceId)), ...(editableTreatmentIds.has(String(t._id)) ? { recordedUseCount: recordedUseCounts.get(String(t._id)) || 0 } : {}), serviceId: t.serviceId || bill?.serviceId, paymentDueDate: bill?.dueDate, paymentOverdue: !!bill?.dueDate && bill.paid < bill.total }; });
   if (pages.invoices) pages.invoices.rows = listed('invoices').map(i => ({ ...i, status: i.status === 'CANCELLED' ? 'CANCELLED' : invoiceState(i.total, i.paid), canAllocate: user.role === 'OWNER' || assignableIds.has(String(i._id)) }));
   if (pages.treatments) pages.treatments.rows = listed('treatments').map(t => packages.find(p => String(p._id) === String(t._id)) || t);
   const spaObjectId = new mongoose.Types.ObjectId(user.spaId);

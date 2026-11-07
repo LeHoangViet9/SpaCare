@@ -1,10 +1,24 @@
 // Date strings are local spa days (Asia/Ho_Chi_Minh), inclusive at both ends.
-type Plan = { openingBalance?: boolean; openingRemaining?: number; packageType?: string; remaining?: number; totalSessions?: number; usedSessions?: number; startsOn?: string; expiresOn?: string; status?: string; durationMonths?: number };
+type Plan = { openingBalance?: boolean; openingRemaining?: number; packageType?: string; remaining?: number; totalSessions?: number; usedSessions?: number; startsOn?: string; expiresOn?: string; status?: string; durationMonths?: number; retainedAfterVoid?: boolean; sourceInvoiceCancelled?: boolean };
 export const treatmentDay = (at = new Date()) => at.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
 export const timedPackage = (p: Plan) => p.packageType === 'TIME';
 export const useToken = (p: Plan) => timedPackage(p) ? (p.usedSessions || 0) : (p.remaining || 0);
+export function treatmentUsed(p: Plan, recorded = 0) {
+  return Math.max(recorded, p.usedSessions || 0, p.packageType === 'TIME' || p.openingBalance ? 0 : (p.totalSessions || 0) - (p.remaining || 0));
+}
+export function treatmentUseRemaining(p: Plan, recorded = 0) {
+  if (timedPackage(p)) return Number.POSITIVE_INFINITY;
+  const stored = Math.max(0, p.remaining || 0);
+  const knownEntitlement = p.totalSessions !== undefined
+    ? Math.max(0, p.totalSessions - treatmentUsed(p, recorded))
+    : p.openingBalance && p.openingRemaining !== undefined
+      ? Math.max(0, p.openingRemaining - treatmentUsed(p, recorded))
+      : stored;
+  return Math.min(stored, knownEntitlement);
+}
 export function treatmentAvailable(p: Plan, day = treatmentDay()) {
-  return p.status === 'ACTIVE' && (!p.startsOn || p.startsOn <= day) && (!p.expiresOn || p.expiresOn >= day)
+  return p.status === 'ACTIVE' && (!p.sourceInvoiceCancelled || p.retainedAfterVoid === true)
+    && (!p.startsOn || p.startsOn <= day) && (!p.expiresOn || p.expiresOn >= day)
     && (timedPackage(p) ? !!p.startsOn && !!p.expiresOn : (p.remaining || 0) > 0);
 }
 export function packageLabel(p: Plan) {

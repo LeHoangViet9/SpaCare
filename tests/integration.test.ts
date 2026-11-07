@@ -1,3 +1,4 @@
+import {invoiceAdjustmentIntegration} from './invoice-adjustment-integration';
 import { cashFlowIntegration } from './cash-flow-integration';
 import {invoiceReplacementIntegration,invoiceReplacementP2Integration} from './invoice-replacement-integration';
 import { readReport } from '../src/lib/report-read';
@@ -50,6 +51,91 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const employee: Actor = { ...actor, id: String(staff._id), role: 'STAFF', cashier: false };
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
+    await t.test('owner edits used paid customer plans atomically without changing original history', async () => {
+      const isolated = await Spa.create({name:'Customer plan edit integration'}); extraSpaIds.push(isolated._id);
+      const spaId = isolated._id;
+      const owner = await User.create({spaId,name:'Plan owner',role:'OWNER',active:true,passwordHash:hashPassword(randomUUID())});
+      const staff = await User.create({spaId,name:'Plan technician',role:'STAFF',active:true,passwordHash:hashPassword(randomUUID())});
+      await Control.create({spaId});
+      const actor: Actor = {id:String(owner._id),spaId:String(spaId),name:owner.name,role:'OWNER',cashier:false};
+      const employee: Actor = {...actor,id:String(staff._id),role:'STAFF'};
+      const call = (action:string,data:unknown,key=randomUUID()) => operate(actor,action,data,key);
+      await call('openDay',{day:spaDay(),opening:0});
+      const customer = await Customer.create({spaId,name:'Edit plan customer',phone:'0900000062'});
+      const service = await Service.create({spaId,name:'Old entitlement',price:100000,active:true});
+      const replacement = await Service.create({spaId,name:'New entitlement',price:200000,active:true});
+      const bill = await Invoice.create({spaId,customerId:customer._id,serviceId:service._id,kind:'PACKAGE',description:'Original purchase',total:100000,paid:100000,status:'PAID'});
+      const plan = await Treatment.create({spaId,customerId:customer._id,invoiceId:bill._id,serviceId:service._id,name:'Original plan',totalSessions:5,remaining:3,status:'ACTIVE'});
+      const use = await TreatmentUse.create({spaId,treatmentId:plan._id,actorId:staff._id,staffId:staff._id,performedAt:new Date(),sessionNumber:1,signature:signed,snapshot:'immutable original snapshot',digest:'original'});
+      const cash = await CashEntry.create({spaId,customerId:customer._id,actorId:owner._id,amount:100000,direction:'IN',method:'CASH',kind:'PAYMENT',day:spaDay()});
+      const receipt = await Payment.create({spaId,invoiceId:bill._id,receiptId:cash._id,amount:100000});
+      const history = async () => JSON.stringify({invoice:await Invoice.findById(bill._id).lean(),payment:await Payment.findById(receipt._id).lean(),cash:await CashEntry.findById(cash._id).lean(),use:await TreatmentUse.findById(use._id).select('+signature').lean()});
+      const before = await history();
+      const payload = {id:String(plan._id),expectedUpdatedAt:plan.updatedAt.toISOString(),expectedUseCount:1,name:'Adjusted plan',serviceId:String(replacement._id),totalSessions:8,notes:'Remaining rights adjusted',reason:'Owner agreement'};
+      await assert.rejects(operate(employee,'updateCustomerTreatment',payload,randomUUID()),(e:any)=>e.status===403);
+      const cashier = await User.create({spaId,name:'Edit cashier',role:'STAFF',cashier:true,active:true,passwordHash:hashPassword(randomUUID())});
+      await assert.rejects(operate({...employee,id:String(cashier._id),cashier:true},'updateCustomerTreatment',payload,randomUUID()),(e:any)=>e.status===403);
+      const key=randomUUID(), result=await call('updateCustomerTreatment',payload,key);
+      assert.deepEqual(await call('updateCustomerTreatment',payload,key),result);
+      assert.equal(await history(),before);
+      const updated=(await Treatment.findById(plan._id))!;
+      assert.equal(updated.remaining,6);assert.equal(String(updated.serviceId),String(replacement._id));
+      const audit=await Audit.findOne({spaId,action:'updateCustomerTreatment',targetId:plan._id});
+      assert.equal(audit!.details.before.remaining,3);assert.equal(audit!.details.after.remaining,6);
+      assert.equal(audit!.details.reason,payload.reason);assert.equal(String(audit!.actorId),actor.id);
+      await assert.rejects(call('updateCustomerTreatment',payload),(e:any)=>e.status===409);
+      await assert.rejects(call('updateCustomerTreatment',{...payload,expectedUpdatedAt:updated.updatedAt.toISOString(),totalSessions:1}),(e:any)=>e.status===409);
+      const foreignSpa=new mongoose.Types.ObjectId();extraSpaIds.push(foreignSpa);
+      const foreign=await Service.create({spaId:foreignSpa,name:'Foreign',price:1,active:true});
+      await assert.rejects(call('updateCustomerTreatment',{...payload,expectedUpdatedAt:updated.updatedAt.toISOString(),serviceId:String(foreign._id)}),(e:any)=>e.status===404);
+      const foreignPlan=await Treatment.create({spaId:foreignSpa,customerId:customer._id,invoiceId:bill._id,name:'Foreign plan',totalSessions:1,remaining:1});
+      await assert.rejects(call('updateCustomerTreatment',{...payload,id:String(foreignPlan._id),expectedUpdatedAt:foreignPlan.updatedAt.toISOString()}),(e:any)=>e.status===404);
+      const rollbackPayload={...payload,expectedUpdatedAt:updated.updatedAt.toISOString(),name:'Must roll back'}, failedKey=randomUUID();
+      const saved=JSON.stringify(updated.toObject());
+      const original=Audit.create;
+      const injected=t.mock.method(Audit,'create',(async(...args:any[])=>{
+        if(args[0]?.[0]?.action==='updateCustomerTreatment')throw Error('TREATMENT_AUDIT_FAILURE');
+        return (original as any).apply(Audit,args);
+      }) as any);
+      try { await assert.rejects(call('updateCustomerTreatment',rollbackPayload,failedKey),/TREATMENT_AUDIT_FAILURE/); }
+      finally { injected.mock.restore(); }
+      assert.equal(JSON.stringify((await Treatment.findById(plan._id))!.toObject()),saved);
+      assert.equal(await Idempotency.countDocuments({spaId,key:failedKey}),0);
+      assert.equal(await history(),before);
+      await call('updateCustomerTreatment',rollbackPayload,failedKey);
+      const profile=await readCustomerHistory(actor,String(customer._id),'treatments',1);
+      assert.equal(profile.canEditTreatments,true);assert.equal(profile.rows[0].recordedUseCount,1);assert.equal(profile.rows[0].adjustments.length,2);
+      const next=await call('use',{treatmentId:String(plan._id),staffId:String(staff._id),remainingBefore:6});
+      const nextUse=await TreatmentUse.findById(next.id);
+      assert.equal(nextUse!.sessionNumber,3);
+      assert.equal(JSON.parse(nextUse!.snapshot!).name,'Must roll back');
+      assert.equal(await history(),before);
+    });
+    await t.test('treatment edit preview count matches historical uses when Treatment counters are stale',async()=>{
+      const isolated=await Spa.create({name:'Treatment use count integration'});extraSpaIds.push(isolated._id);
+      const spaId=isolated._id,scope={spaId};
+      const owner=await User.create({...scope,name:'Use count owner',role:'OWNER',active:true,passwordHash:hashPassword(randomUUID())});
+      const staff=await User.create({...scope,name:'Use count technician',role:'STAFF',active:true,passwordHash:hashPassword(randomUUID())});
+      await Control.create(scope);
+      const a:Actor={id:String(owner._id),spaId:String(spaId),name:owner.name,role:'OWNER',cashier:false};
+      const call=(action:string,data:unknown,key=randomUUID())=>operate(a,action,data,key);
+      await call('openDay',{day:spaDay(),opening:0});
+      const customer=await Customer.create({...scope,name:'Use count customer',phone:'0900000063'});
+      const service=await Service.create({...scope,name:'Use count service',price:100000,active:true});
+      const bill=await Invoice.create({...scope,customerId:customer._id,serviceId:service._id,kind:'PACKAGE',description:'Use count purchase',total:500000,paid:0,status:'OPEN'});
+      const plan=await Treatment.create({...scope,customerId:customer._id,invoiceId:bill._id,serviceId:service._id,name:'Stale package counter',totalSessions:5,remaining:4,status:'ACTIVE'});
+      for(let sessionNumber=1;sessionNumber<=3;sessionNumber++)await TreatmentUse.create({...scope,treatmentId:plan._id,actorId:staff._id,staffId:staff._id,performedAt:new Date(),sessionNumber,snapshot:`Historical use ${sessionNumber}`,digest:`history-${sessionNumber}`});
+      const profile=await readCustomerHistory(a,String(customer._id),'treatments',1);
+      assert.equal(profile.rows[0].remaining,4);
+      assert.equal(profile.rows[0].recordedUseCount,3);
+      const stale={id:String(plan._id),expectedUpdatedAt:plan.updatedAt.toISOString(),expectedUseCount:2,name:plan.name,serviceId:String(service._id),totalSessions:8,notes:'',reason:'Correct preview'};
+      await assert.rejects(call('updateCustomerTreatment',stale),(error:any)=>error.status===409);
+      const result=await call('updateCustomerTreatment',{...stale,expectedUseCount:3});
+      assert.equal((await Treatment.findById(plan._id))!.remaining,5);
+      assert.equal((await Audit.findOne({spaId,action:'updateCustomerTreatment',targetId:plan._id}))!.details.after.remaining,5);
+      assert.equal(result.id,String(plan._id));
+    });
+    await t.test('financial correction and void preserve real payments, used rights and settled payroll snapshots',test=>invoiceAdjustmentIntegration(extraSpaIds,test));
     await t.test('repeated service occurrences keep separate identities/commissions and invoice-level payments',async()=>{
       const spa=await Spa.create({name:'Repeated service integration'});extraSpaIds.push(spa._id);
       const scope={spaId:spa._id};
@@ -258,18 +344,20 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const closed=await Day.findById(day._id);assert.equal(closed!.expected,400);assert.equal(closed!.difference,-10);
     });
     await t.test('cash summary: synthetic 3880000, refund, filters, history and closing',()=>cashFlowIntegration(extraSpaIds));
-    await t.test('owner removes a paid mistaken invoice with cash correction; invoice date is optional',async()=>{
-      const bill=await call('serviceInvoice',{customerId:customer.id,staffId:String(staff._id),items:[{serviceId:service.id,total:100000,performerId:String(staff._id)}],issuedOn:'2026-10-01'});
-      const before=await Invoice.findById(bill.id);assert.equal(spaDay(before!.createdAt),'2026-10-01');assert.ok(before!.recordedAt);
+    await t.test('paid mistaken invoice uses an adjustment and retains actual receipts',async()=>{
+      const bill=await call('serviceInvoice',{customerId:customer.id,items:[{serviceId:service.id,total:100000,performerId:String(staff._id)}],issuedOn:'2026-10-01'});
       await call('payment',{invoiceId:bill.id,amount:100000,method:'CASH',receivedConfirmation:true});
-      const fresh=await Invoice.findById(bill.id);
-      const payload={id:bill.id,expectedUpdatedAt:fresh!.updatedAt.toISOString(),reason:'Nhập sai hóa đơn',confirmDelete:true};
-      await assert.rejects(operate(employee,'deleteInvoice',payload,randomUUID()),/Chỉ chủ spa/);
-      const key=randomUUID();await call('deleteInvoice',payload,key);await call('deleteInvoice',payload,key);
-      const retained=await Invoice.findById(bill.id);assert.equal(retained!.status,'CANCELLED');assert.equal(retained!.total,0);assert.equal(retained!.cancelledTotal,100000);
-      const payment=await Payment.findOne({spaId,invoiceId:bill.id});assert.equal(payment!.reversed,true);
-      assert.equal(await CashEntry.countDocuments({spaId,kind:'REVERSAL',originalId:payment!.receiptId}),1);
-      assert.equal(await InvoiceLineCommission.countDocuments({spaId,invoiceId:bill.id}),0);
+      const fresh=(await Invoice.findById(bill.id))!;
+      const legacy={id:bill.id,expectedUpdatedAt:fresh.updatedAt.toISOString(),reason:'Nhập sai hóa đơn',confirmDelete:true};
+      await assert.rejects(call('deleteInvoice',legacy),(e:any)=>e.status===409);
+      const input={id:bill.id,expectedUpdatedAt:fresh.updatedAt.toISOString(),mode:'VOID',description:fresh.description,total:0,reason:'Nhập sai hóa đơn'};
+      const preview=await call('previewInvoiceAdjustment',input);
+      const payload={...input,confirmed:true,expectedPreview:preview.previewToken};
+      await assert.rejects(operate(employee,'applyInvoiceAdjustment',payload,randomUUID()),/Chỉ chủ spa/);
+      const key=randomUUID();await call('applyInvoiceAdjustment',payload,key);await call('applyInvoiceAdjustment',payload,key);
+      const retained=(await Invoice.findById(bill.id))!;assert.equal(retained.status,'CANCELLED');assert.equal(retained.adjustmentCredit,100000);
+      const payment=(await Payment.findOne({spaId,invoiceId:bill.id}))!;assert.equal(payment.reversed,false);
+      assert.equal(await CashEntry.countDocuments({spaId,kind:'REVERSAL',originalId:payment.receiptId}),0);
     });
     await t.test('voiding product invoices is single-shot across retries, new keys and concurrent requests',async()=>{
       const makeSale=async()=>{
@@ -355,6 +443,15 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         assert.ok(beforeTotals>0,`${scenario.kind} fixture must have earned commission`);
         assert.ok(beforeRows[ledgerByKind[scenario.kind]].length>0,`${scenario.kind} ledger fixture exists`);
         if(scenario.kind==='InvoiceLineCommission')assert.equal(beforeRows.invoiceLineCommission.length,2);
+        if(invoice.paid){
+          const input={id:String(invoice._id),expectedUpdatedAt:invoice.updatedAt.toISOString(),mode:'VOID',description:invoice.description,total:0,reason:`Void ${scenario.kind}`,entitlementHandling:'KEEP',giftHandling:'KEEP',stockHandling:'KEEP_OUT'};
+          const preview=await call('previewInvoiceAdjustment',input);
+          await call('applyInvoiceAdjustment',{...input,confirmed:true,expectedPreview:preview.previewToken});
+          const afterRows=await ledgerRows(scenario.invoice);
+          for(const name of ledgerNames)for(const original of beforeRows[name])assert.deepEqual(afterRows[name].find((row:any)=>String(row._id)===String(original._id)),original);
+          assert.equal((await Invoice.findById(invoice._id))!.adjustmentCredit,invoice.paid);
+          continue;
+        }
         const key=randomUUID();
         const payload={id:String(invoice._id),expectedUpdatedAt:invoice.updatedAt.toISOString(),reason:`Void ${scenario.kind}`,confirmDelete:true};
         const first=await call('deleteInvoice',payload,key);

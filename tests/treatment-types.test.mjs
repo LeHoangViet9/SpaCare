@@ -26,4 +26,6 @@ test('time packages have no session quota, honor inclusive validity and still ve
   assert.match(packageLabel(p), /Không giới hạn/);
   assert.equal(treatmentAvailable({status:'ACTIVE',remaining:1},'2026-10-23'),true);
   assert.equal(treatmentAvailable({status:'ACTIVE',remaining:0},'2026-10-23'),false);
+  assert.equal(treatmentAvailable({status:'ACTIVE',remaining:1,sourceInvoiceCancelled:true},'2026-10-23'),false);
+  assert.equal(treatmentAvailable({status:'ACTIVE',remaining:1,sourceInvoiceCancelled:true,retainedAfterVoid:true},'2026-10-23'),true);
 });

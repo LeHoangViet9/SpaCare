@@ -1,22 +1,16 @@
 const {test,expect}=require('@playwright/test');
 
 for(const scenario of ['unpaid','paid','cancelled','busy','staff'])test(`list actions stay compact and preserve availability (${scenario})`,async({page},testInfo)=>{
- const errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto('/?list=1&scenario='+scenario);
- const toggle=page.locator('.row-action-menu > summary'),buttons=page.locator('.row-action-options button');
- if(scenario==='staff'){await expect(toggle).toHaveCount(0);await expect(page.getByText('Đã thu đủ',{exact:true})).toBeVisible();return;}
- await expect(toggle).toContainText('Thao tác');await expect(buttons.first()).toBeHidden();
- await toggle.click();expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
- await expect(page.locator('.row-action-options small, .row-action-options p, .row-action-options details')).toHaveCount(0);
- const cancel=page.getByRole('button',{name:'Hủy hóa đơn — giữ lịch sử',exact:true}),voidButton=page.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true});
- if(scenario==='unpaid'){
-  await expect(cancel).toBeEnabled();await expect(page.getByRole('button',{name:'Thanh toán',exact:true})).toBeVisible();
-  const actions=[['Sửa hóa đơn','updateInvoice'],['Hủy hóa đơn — giữ lịch sử','cancelInvoice'],['Vô hiệu hóa hóa đơn nhập nhầm','deleteInvoice'],['Thanh toán','payment']];
-  for(const [label,action] of actions){if(!await toggle.evaluate(element=>element.parentElement.open))await toggle.click();await page.getByRole('button',{name:label,exact:true}).click();expect(await toggle.evaluate(element=>element.parentElement.open)).toBe(false);expect((await page.evaluate(()=>window.__replacementCalls)).at(-1).opened).toBe(action);}
-  expect((await page.evaluate(()=>window.__replacementCalls)).filter(call=>call.opened==='payment')).toEqual([{opened:'payment',id:'aaaaaaaaaaaaaaaaaaaaaaaa'}]);await toggle.click();
- }else if(scenario==='busy'){for(const button of await buttons.all())await expect(button).toBeDisabled();}
- else{await expect(cancel).toBeDisabled();await expect(voidButton).toBeEnabled();if(scenario==='cancelled')await expect(page.getByRole('button',{name:'Sửa hóa đơn',exact:true})).toHaveCount(0);}
- if(scenario!=='unpaid')expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('/?list=1&scenario='+scenario);
+ await expect(page.locator('.row-action-menu')).toHaveCount(0);
+ const edit=page.getByRole('button',{name:'Sửa hóa đơn',exact:true}),voidButton=page.getByRole('button',{name:'Vô hiệu hóa hóa đơn',exact:true});
+ if(scenario==='staff'){await expect(edit).toHaveCount(0);await expect(voidButton).toHaveCount(0);return;}
+ await expect(edit).toHaveAttribute('title','Sửa hóa đơn');await expect(voidButton).toHaveAttribute('title','Vô hiệu hóa hóa đơn');
+ if(['busy','cancelled'].includes(scenario)){await expect(edit).toBeDisabled();await expect(voidButton).toBeDisabled();}
+ else{await expect(edit).toBeEnabled();await expect(voidButton).toBeEnabled();await edit.click();await voidButton.click();}
+ if(scenario==='unpaid'){await page.getByRole('button',{name:'Thanh toán',exact:true}).click();}
+ else await expect(page.getByRole('button',{name:'Thanh toán',exact:true})).toHaveCount(0);
+ const calls=await page.evaluate(()=>window.__replacementCalls);expect(calls.every(call=>call.opened)).toBe(true);
  expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`outputs/invoice-list-actions-${scenario}-${testInfo.project.name}.png`,fullPage:true});
 });
@@ -51,49 +45,16 @@ for(const display of ['signed','unsigned','empty','sessions'])test(`invoice keep
  await page.screenshot({path:`outputs/invoice-layout-${display}-${testInfo.project.name}.png`,fullPage:true});
 });
 
-for(const scenario of ['unused','used','pending','paid','closed','staff'])test(`handling menu explains restrictions and sends no unexpected writes (${scenario})`,async({page},testInfo)=>{
- const errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto('/?detail=1&scenario='+scenario);
- const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'});
- await expect(dialog.getByText('Xử lý hóa đơn',{exact:true})).toBeVisible();
- await expect(dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true})).toBeHidden();
- expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
- await dialog.getByText('Xử lý hóa đơn',{exact:true}).click();
- const editing=dialog.getByRole('region',{name:'Chỉnh sửa',exact:true}),correction=dialog.getByRole('region',{name:'Xử lý hóa đơn sai',exact:true});
- await expect(editing.getByRole('button',{name:'Sửa ngày hóa đơn',exact:true})).toBeVisible();await expect(editing.getByRole('button',{name:'Thay người tư vấn bán gói',exact:true})).toBeVisible();
- await expect(correction.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true})).toBeVisible();await expect(correction.getByRole('button',{name:'Hủy hóa đơn chưa thanh toán',exact:true})).toBeVisible();
- const edit=dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true}),date=dialog.getByRole('button',{name:'Sửa ngày hóa đơn',exact:true}),voidButton=dialog.getByRole('button',{name:'Vô hiệu hóa hóa đơn nhập nhầm',exact:true});
- if(scenario==='unused'){
-  await expect(edit).toBeEnabled();await expect(voidButton).toBeEnabled();await edit.click();await voidButton.click();
- }else{
-  await expect(edit).toBeDisabled();
-  if(scenario==='used'){
-   await expect(dialog.getByText('Gói đã có buổi sử dụng; cần giữ nguyên lịch sử thực hiện.',{exact:true})).toHaveCount(1);
-   await expect(voidButton).toBeDisabled();
-   const shared=dialog.locator('.invoice-handling-shared').filter({hasText:'Gói đã có buổi sử dụng'});
-   await expect(shared).toContainText('Áp dụng: Sửa nội dung, Hủy, Vô hiệu hóa.');
-   const reasonId=await edit.getAttribute('aria-describedby');
-   expect(await voidButton.getAttribute('aria-describedby')).toBe(reasonId);
-   expect(await dialog.getByRole('button',{name:'Hủy hóa đơn chưa thanh toán',exact:true}).getAttribute('aria-describedby')).toBe(reasonId);
-  }
-  if(scenario==='pending'){
-   await expect(dialog.getByText('Liệu trình đã có lịch hẹn; cần xử lý liên kết trước.',{exact:true})).toHaveCount(1);
-   await expect(dialog.getByText('Gói còn lịch đang đặt hoặc hoãn; cần xử lý lịch trước khi vô hiệu hóa.',{exact:true})).toHaveCount(1);
-   await expect(voidButton).toBeDisabled();
-   expect(await voidButton.getAttribute('aria-describedby')).not.toBe(await edit.getAttribute('aria-describedby'));
-  }
-  if(scenario==='paid'){await expect(dialog.getByText(/Hóa đơn đã có thanh toán, cọc\/thẻ/)).toHaveCount(1);await expect(voidButton).toBeEnabled();}
-  if(scenario==='closed'){await expect(date).toBeDisabled();await expect(dialog.getByText(/Ngày lập hóa đơn đã chốt sổ/).first()).toBeVisible();}
-  if(scenario==='staff')await expect(voidButton).toBeDisabled();
- }
- await expect(dialog.getByText(/Hệ thống kiểm tra lại hoa hồng/)).toHaveCount(0);
- const descriptions=await dialog.locator('.invoice-handling-row > div > small').allTextContents();
- expect(descriptions).toHaveLength(5);
- expect(descriptions.every(text=>text.length<=90 && (text.match(/[.!?]/g)||[]).length<=1)).toBe(true);
- if(!['closed','staff'].includes(scenario)){await expect(date).toBeEnabled();await date.click();}
- const calls=await page.evaluate(()=>window.__replacementCalls);
- expect(calls.every(call=>call.opened)).toBe(true);
- expect(calls.map(call=>call.opened)).toEqual(scenario==='unused'?['updateInvoice','deleteInvoice','correctInvoiceDate']:['closed','staff'].includes(scenario)?[]:['correctInvoiceDate']);
+for(const scenario of ['unused','used','pending','paid','closed','staff'])test(`handling menu keeps unified correction and void flows (${scenario})`,async({page},testInfo)=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('/?detail=1&scenario='+scenario);
+ const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'});await dialog.getByText('Xử lý hóa đơn',{exact:true}).click();
+ const edit=dialog.getByRole('button',{name:'Sửa hóa đơn',exact:true}),voidButton=dialog.getByRole('button',{name:'Vô hiệu hóa hóa đơn',exact:true});
+ await expect(dialog.getByRole('button',{name:'Sửa ngày hóa đơn',exact:true})).toHaveCount(0);
+ await expect(dialog.getByRole('button',{name:'Hủy hóa đơn chưa thanh toán',exact:true})).toHaveCount(0);
+ await expect(dialog.getByRole('button',{name:'Thay người tư vấn bán gói',exact:true})).toBeVisible();
+ if(scenario==='staff'){await expect(edit).toBeDisabled();await expect(voidButton).toBeDisabled();}
+ else{await expect(edit).toBeEnabled();await expect(voidButton).toBeEnabled();await edit.click();await voidButton.click();}
+ expect((await page.evaluate(()=>window.__replacementCalls)).map(call=>call.opened)).toEqual(scenario==='staff'?[]:['openCorrection','openVoid']);
  expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`outputs/invoice-handling-${scenario}-${testInfo.project.name}.png`,fullPage:true});
 });
@@ -176,4 +137,31 @@ test('legacy source without code remains readable and links to current document'
  await expect(source).toHaveText(legacyCode+' · Đã thay thế');await source.click();
  await page.locator('details').getByRole('link',{name:'HD000002',exact:true}).click();
  await expect(page).toHaveURL(/#current-invoice-document$/);
+});
+
+for(const scenario of ['simple','stock','packages','gifts','mixed'])test(`adjustment dialog shows only relevant void choices (${scenario})`,async({page},testInfo)=>{
+ await page.goto('/?adjust=1&case='+scenario);
+ const dialog=page.getByRole('dialog',{name:'Vô hiệu hóa hóa đơn',exact:true});
+ await expect(dialog).toContainText('Khách fixture');await expect(dialog).toContainText('Còn nợ');
+ const flags={stock:scenario==='stock'||scenario==='mixed',packages:scenario==='packages'||scenario==='mixed',gifts:scenario==='gifts'||scenario==='mixed'};
+ for(const [flag,label,value]of [['stock','Hàng đã bán','RETURN'],['packages','Gói đã bán','KEEP'],['gifts','Quà tặng','REVOKE_UNUSED']]){
+   const field=dialog.getByRole('combobox',{name:label,exact:true});await expect(field).toHaveCount(flags[flag]?1:0);if(flags[flag])await field.selectOption(value);
+ }
+ const confirm=dialog.getByRole('button',{name:'Vô hiệu hóa hóa đơn',exact:true});await confirm.click();expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ await dialog.getByLabel('Lý do',{exact:true}).fill('Chủ spa xác nhận sai chứng từ');
+ await page.screenshot({path:`outputs/invoice-void-${scenario}-${testInfo.project.name}.png`,fullPage:true});
+ await confirm.click();await expect(dialog.getByRole('region',{name:'Đối chiếu điều chỉnh hóa đơn'})).toBeVisible();
+ const calls=await page.evaluate(()=>window.__replacementCalls);expect(calls).toHaveLength(1);expect(calls[0].action).toBe('previewInvoiceAdjustment');
+ for(const [flag,key]of [['stock','stockHandling'],['packages','entitlementHandling'],['gifts','giftHandling']])expect(Object.hasOwn(calls[0].data,key)).toBe(flags[flag]);
+ await confirm.click();await expect(page.getByText('Đã lưu điều chỉnh fixture',{exact:true})).toBeVisible();
+ expect((await page.evaluate(()=>window.__replacementCalls)).map(call=>call.action)).toEqual(['previewInvoiceAdjustment','applyInvoiceAdjustment']);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test('adjustment dialog saves date with content and preserves receipt dates',async({page})=>{
+ await page.goto('/?adjust=1&mode=CORRECT');const dialog=page.getByRole('dialog',{name:'Sửa hóa đơn',exact:true});
+ await dialog.getByLabel('Ngày hóa đơn',{exact:true}).fill('2026-11-01');await dialog.getByLabel('Nội dung hóa đơn',{exact:true}).fill('Nội dung đã sửa');await dialog.getByLabel('Lý do',{exact:true}).fill('Sửa sai ngày lập');
+ await dialog.getByRole('button',{name:'Xem trước thay đổi',exact:true}).click();await expect(dialog.getByRole('region',{name:'Đối chiếu điều chỉnh hóa đơn'})).toContainText('1/11/2026');
+ await dialog.getByRole('button',{name:'Xác nhận lưu hóa đơn',exact:true}).click();await expect(page.getByText('Đã lưu điều chỉnh fixture',{exact:true})).toBeVisible();
+ const calls=await page.evaluate(()=>window.__replacementCalls);expect(calls.map(call=>call.action)).toEqual(['previewInvoiceAdjustment','applyInvoiceAdjustment']);
+ expect(calls[1].data.issuedOn).toBe('2026-11-01');expect(calls[1].data.description).toBe('Nội dung đã sửa');expect(calls[1].data).not.toHaveProperty('adjustPaymentDates');
 });

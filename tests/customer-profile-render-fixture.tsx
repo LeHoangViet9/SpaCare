@@ -30,3 +30,14 @@ payload!.kind = 'invoices';
 payload!.rows = [{ _id: 'b'.repeat(24), description: 'Chăm sóc da', total: 100000, createdAt: '2026-11-05T03:00:00Z' }];
 payload!.total = 1;
 assert.match(render(), /Chăm sóc da/);
+
+historyKind = 'treatments';
+payload!.kind = 'treatments';
+payload!.rows = [{_id:'b'.repeat(24), name:'Gói đã dùng', totalSessions:10,remaining:3,status:'ACTIVE',updatedAt:'2026-11-06T00:00:00.000Z', adjustments:[{_id:'c'.repeat(24),createdAt:'2026-11-06T00:00:00Z',actorName:'Chủ spa',reason:'Khách đổi quyền lợi',before:{name:'Gói cũ'},after:{name:'Gói đã dùng'}}]}];
+payload!.canEditTreatments = false;
+assert.ok(!render().includes('>Sửa gói</button>'));
+assert.match(render(),/Khách đổi quyền lợi/);
+payload!.canEditTreatments = true;
+payload!.editableServices = [];
+assert.ok(render().includes('>Sửa gói</button>'));
+assert.match(render(),/Gói cũ/);

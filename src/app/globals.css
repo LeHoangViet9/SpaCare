@@ -1415,6 +1415,19 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .gift-row { display: flex; gap: 8px; align-items: end; min-width: 0; }
 .gift-row label { flex: 1; min-width: 0; }
 .invoice-history { display: grid; gap: 8px; margin: 16px 0; }
+.treatment-edit form, .treatment-edit fieldset { display: grid; gap: 12px; min-width: 0; }
+.invoice-adjustment-dialog form, .invoice-adjustment-dialog fieldset, .invoice-adjustment-refund { display: grid; gap: 12px; min-width: 0; }
+.invoice-adjustment-dialog label, .invoice-adjustment-refund label { display: grid; gap: 6px; min-width: 0; }
+.invoice-adjustment-dialog input:not([type="checkbox"]), .invoice-adjustment-dialog select, .invoice-adjustment-dialog textarea { width: 100%; min-width: 0; }
+.invoice-adjustment-dialog table { width: 100%; table-layout: fixed; }
+.invoice-adjustment-dialog th, .invoice-adjustment-dialog td { overflow-wrap: anywhere; white-space: normal; }
+.invoice-action-buttons button { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+.treatment-edit fieldset { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.treatment-edit label { display: grid; gap: 6px; min-width: 0; }
+.treatment-edit input, .treatment-edit select, .treatment-edit textarea { width: 100%; min-width: 0; }
+.treatment-comparison { max-width: 100%; overflow-x: auto; }
+.treatment-comparison table { width: 100%; table-layout: fixed; }
+.treatment-comparison th, .treatment-comparison td { white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
 .invoice-history button { display: grid; gap: 6px; text-align: left; padding: 12px; white-space: normal; }
 .invoice-history span { font-size: 13px; }
 
