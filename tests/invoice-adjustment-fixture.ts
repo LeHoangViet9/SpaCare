@@ -84,7 +84,7 @@ const deposit=add(Deposit,{customerId:customer,amount:300000,balance:0});add(All
 const card=add(CashCard,{customerId:customer,amount:200000,balance:0,origin:'PURCHASE'});add(CashCardUse,{invoiceId:mixed._id,cardId:card._id,amount:200000});
 req=await commit(payload(mixed,'VOID',0));await call('applyInvoiceAdjustment',req.data);
 assert.equal(state.Deposit.find(r=>r._id===deposit._id).balance,300000);assert.equal(state.CashCard.find(r=>r._id===card._id).balance,200000);
-assert.equal(current(mixed).adjustmentCredit,0);assert.equal(state.CashEntry.filter(r=>r.kind==='REFUND').length,1);
+assert.equal(current(mixed).adjustmentCredit||0,0);assert.equal(state.CashEntry.filter(r=>r.kind==='REFUND').length,1);
 const inventory=sale(),product=add(Product,{name:'Product',sku:'SKU',unit:'chai',stock:3});add(StockMovement,{invoiceId:inventory.bill._id,productId:product._id,direction:'OUT',quantity:2});
 const plan=add(Treatment,{invoiceId:inventory.bill._id,customerId:customer,serviceId:service,totalSessions:10,remaining:7,status:'ACTIVE'});
 req=await commit({...payload(inventory.bill,'VOID',0),stockHandling:'RETURN',entitlementHandling:'CANCEL_REMAINING'});

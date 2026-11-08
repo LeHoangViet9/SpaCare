@@ -1,5 +1,43 @@
 # SpaCare — Business Requirements
 
+## KTV trong đúng form Sửa hóa đơn — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: OWNER được thấy KTV đang gán và chọn KTV mới cho dòng dịch vụ lẻ độc lập đủ nguồn đối soát, kể cả đã thực hiện/có hoa hồng. Hiển thị trong form Sửa hóa đơn đang dùng; lý do bắt buộc, preview KTV cũ → mới, lưu lịch sử và bút toán hoa hồng liên kết. Bảo vệ lương đã chốt, cập nhật trạng thái nháp cần tính lại theo cơ chế lương hiện có. Không đổi chữ ký, performedAt, khoản thu hoặc ngày thu. Dòng thuộc gói chưa đủ nguồn vẫn khóa. Ngoại lệ này ưu tiên hơn mô tả “mọi dòng đã thực hiện chỉ xem” ở mục trước; không mở quyền sửa tiền hay bỏ dòng đã làm.
+
+Phạm vi local: kiểm tra đường Workspace danh sách/chi tiết → GET invoice?edit=1 → form → preview/apply. HD000021 trong kiểm thử là dữ liệu tổng hợp mang mã và tên dịch vụ do người dùng mô tả, không đọc hay sửa hóa đơn khách thật. Không deploy/commit/merge.
+
+## Sửa hóa đơn gọn theo nội dung gốc — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: bỏ mục chọn/sửa Khách hàng; giữ nguyên khách và không gửi customerId từ form sửa. Chỉ hiện Dịch vụ/Sản phẩm/Gói thực sự có trong hóa đơn đang mở, kể cả hóa đơn nhiều loại; không có tiêu đề/trường/nút thêm cho loại vắng mặt và không cho thêm chéo loại. Có thể bỏ/thêm dòng thay thế trong các loại ban đầu của lần mở sửa, giữ dữ liệu điền sẵn. Dòng dịch vụ đã thực hiện/gói đã dùng hiển thị ngắn ở chế độ chỉ xem. Yêu cầu này thay bố cục toàn bộ form tạo và quyền đổi khách trong phần Sửa toàn bộ nội dung cũ; giữ các quy tắc tiền/kho/quyền lợi/hoa hồng/lịch sử khác.
+
+## Hủy hóa đơn và đảo khoản thu nhập nhầm — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: OWNER hủy hóa đơn nhập nhầm và đảo các khoản thu được xác nhận nhập nhầm ngay trong một thao tác/transaction. Hóa đơn CANCELLED, total/paid/công nợ bằng 0; giữ dòng thu gốc và tạo REVERSAL liên kết, lịch sử người/thời điểm/lý do. Hộp xác nhận liệt kê khoản và tổng tiền sẽ đảo; không mặc định mọi khoản thu đều sai. Tiền đã nhận thật không tự biến mất: giữ nguồn và dùng hoàn tiền thực tế/chuyển nguồn theo quy trình phù hợp. Không tự tạo hoàn tiền, cọc hay thao tác chuyển nguồn mới.
+
+Hóa đơn đã hủy còn phiếu sai được xử lý ngay tại chi tiết, không mở lại hóa đơn. Lỗi phải rollback cả hủy/đảo và các cập nhật liên quan; retry không ghi trùng. Yêu cầu này thay giới hạn cũ bắt đảo sai sót tách khỏi VOID hoặc khóa mọi xử lý trên hóa đơn CANCELLED; reverseCash thông thường và các guard khác không được mở rộng ngầm. Chỉ code/kiểm thử local, không sửa dữ liệu thật/deploy/commit/merge.
+
+## Sửa toàn bộ nội dung hóa đơn — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: OWNER sửa nội dung hóa đơn hiện có trong form điền sẵn, thêm/bỏ/thay dòng chưa bị ràng buộc, xem nội dung và tổng tiền trước/sau; lý do bắt buộc, giữ lịch sử gốc và chỉ ghi phần thay đổi. Yêu cầu này thay giới hạn chỉ sửa ngày/tổng của các mục điều chỉnh cũ bên dưới. Không thay đổi quyền thu ngân, không tạo hóa đơn mới để sửa sai nội dung và không coi sửa nội dung là nhận tiền.
+
+Danh sách đối chiếu từ form tạo/model: khách, ngày hóa đơn, nội dung, hạn thanh toán, dịch vụ/giá thực tế/KTV, sản phẩm/số lượng/đơn giá, mẫu gói/giá/quyền lợi/ngày bắt đầu, người tư vấn khách và người tư vấn bán gói, đợt khuyến mãi. Hiện không có trường giảm giá riêng hay schema chính sách giảm giá: không tự bổ sung chính sách; tổng điều chỉnh khác tổng dòng được hiển thị rõ. Thanh toán mới dùng Thanh toán; khoản thu sửa sai dùng cơ chế sửa từng giao dịch đã có. Buổi, người nhận, chữ ký, quà và thẻ đã cấp là lịch sử/nguồn vận hành được trình bày giữ nguyên, không phát hành lại qua form sửa nội dung.
+
+CONFIRMED: không mất buổi đã dùng, dịch vụ đã thực hiện, nguồn tiền, tồn kho hoặc lương chốt. Các hạn chế kỹ thuật bảo thủ và quy trình còn thiếu được ghi PROPOSED trong BR-INV-CONTENT-001. Chỉ local, không sửa dữ liệu thật/deploy/commit/merge.
+
+OPEN về dữ liệu KTV: Thu ngân có điều khiển chọn nhiều KTV nhưng cashierActions hiện chỉ gửi phần tử đầu; model dòng chỉ lưu performerId. Form sửa điền đúng một KTV đã lưu, không thể phục hồi những người chưa được lưu. Chưa bổ sung model nhiều KTV hay quy tắc chia hoa hồng mới trong thay đổi này.
+
+## Ngày thực nhận khi lập hóa đơn hồi tố — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: ngày hóa đơn và ngày tiền thực nhận là hai thông tin riêng. Khi tạo hóa đơn có thu tiền, mỗi khoản có Ngày thực nhận, mặc định theo Ngày hóa đơn trên form và cho chọn ngày khác. CashEntry.day lấy ngày thực nhận ngay lúc tạo. Chưa thu không tạo Payment/CashEntry hoặc doanh thu. Mỗi khoản thu/phương thức/lần thu giữ ngày riêng. Ngày thu đã chốt phải chặn, không ghi đè snapshot hoặc đổi sang hôm nay. Sửa ngày hóa đơn sau này không đổi khoản thu đã có.
+
+Yêu cầu này thay giới hạn kỹ thuật trước đây receipt luôn ghi ngày hiện tại, trong đúng luồng thu tiền hóa đơn (kể cả phần thu thêm khi dùng thẻ). Không backdate cọc, mua thẻ, hoàn tiền hoặc chi lương theo ngày hóa đơn. Chỉ code/kiểm thử local; không sửa dữ liệu khách thật, deploy, commit hoặc merge.
+
+## Sửa gói theo danh mục gói đang bán — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: Sửa gói bỏ ô Tên gói riêng; trường chọn là Gói dịch vụ, dùng cùng nguồn/điều kiện/quyền truy cập danh mục với bán gói. Không đưa dịch vụ lẻ/sản phẩm vào danh sách và không dò tên để phân loại. Chọn gói cập nhật tên hiển thị và quyền lợi tương ứng; không giữ tên cũ ở tiêu đề hoặc cột sau của xem trước. Bỏ hoàn toàn đoạn hướng dẫn dài ngay dưới tiêu đề. Giữ lịch sử buổi, chữ ký, hóa đơn và tiền; gói không phù hợp quyền lợi đã dùng bị chặn, quy tắc xác nhận giảm tổng dưới số đã dùng hiện có vẫn giữ.
+
+Model đã có PackageTemplate riêng, không cần thêm phân loại hoặc migration. Tên/dịch vụ mới phải gắn mẫu gói có thật. Gói lịch sử chưa liên kết danh mục không bị tự đoán mẫu: có thể giữ nguyên danh tính để sửa quyền lợi; đổi gói phải chọn danh mục hợp lệ. Không sửa dữ liệu thật, deploy, commit hoặc merge.
+
 ## Điều chỉnh số tiền đã thanh toán — 08/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: OWNER được sửa tăng/giảm số tiền và ngày thực nhận của từng khoản thu trực tiếp đã nhập sai trong form Sửa hóa đơn. Tổng hóa đơn, số đã thanh toán và còn nợ hiển thị riêng; xem trước số cũ/mới và lý do bắt buộc. Đây là đính chính giao dịch có sẵn, không phải nhận thêm tiền hôm nay. Giữ liên kết giao dịch gốc, người/thời điểm/lý do và lịch sử đầy đủ; gửi lại không ghi trùng. Tính lại trạng thái và công nợ từ nguồn hợp lệ. Chỉ sửa tổng không tự tăng số đã thanh toán.

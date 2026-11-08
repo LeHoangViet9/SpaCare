@@ -1,5 +1,51 @@
 # API nội bộ
 
+## Hợp đồng tải form sửa có KTV — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-TECH-UI-001 CONFIRMED: loadInvoiceAdjustment dùng GET /api/invoices/:id?edit=1, kiểm ID hóa đơn và cấu trúc editContext (client/source/locks/catalogs). Workspace không mở form CORRECT khi phản hồi thiếu context; dialog nhận DTO cũ sẽ tải lại cùng endpoint trước khi dựng form, lỗi phải hiển thị và chưa có nút lưu. Không chế context/KTV từ dữ liệu tổng tiền. VOID giữ luồng hiện có, không buộc context nội dung.
+
+Đính chính KTV vẫn gửi content.serviceItems với sourceIndex/key/serviceId/total gốc và performerId mới, reason/expectedUpdatedAt/expectedPreview/confirmed/Idempotency-Key hiện có. Không gửi ngày hay receiptCorrections trong chế độ correctionOnly. Backend giữ owner/spa/nguồn/commission/payroll guard; không đổi chữ ký/thời điểm/khoản thu. Preview và lịch sử GET invoice thêm reconciliation.content.serviceCorrections (có performerName trước/sau) để hiển thị rõ. Không thêm action cấp quyền hoặc bỏ guard khi API chưa có nguồn.
+
+## Thu hẹp content theo hóa đơn đang sửa — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-EDIT-SCOPE-001 CONFIRMED: CORRECT content không cho đổi customerId; client mới bỏ hoàn toàn field này. Giữ schema optional để client cũ gửi cùng ID là no-op; ID khác trả 409, kể cả khách cùng spa hoặc hóa đơn chưa thu. serviceItems/productItems/packageItems chỉ được thay/thêm/bỏ trong loại có dòng canonical ban đầu. Thêm loại vắng mặt hoặc participantIds mới khi không có gói trả 409 trước khi ghi. Mảng rỗng vắng mặt không đổi vẫn no-op; loại có thể bỏ hết nếu hóa đơn còn nội dung khác hợp lệ theo guard cũ. Không đổi payload VOID/thu tiền, quyền OWNER, preview hash/transaction/idempotency/audit hoặc schema tiền/kho/quyền lợi.
+
+## VOID kèm đảo khoản thu nhập nhầm — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-VOID-RECEIPTS-001 CONFIRMED: previewInvoiceAdjustment/applyInvoiceAdjustment thêm mistakenPaymentIds?: ObjectId[1..100] không trùng và mistakenReceiptsConfirmed?: boolean, chỉ mode VOID. Nếu confirmed=true khi apply có khoản được chọn thì bắt mistakenReceiptsConfirmed=true. Không gửi ID tương đương chỉ xác nhận mà không chọn nguồn. Payload CORRECT không nhận các trường này; VOID vẫn không nhận content/issuedOn/paid/receiptCorrections.
+
+Không gửi mistakenPaymentIds giữ VOID cũ: bỏ nghĩa vụ, giữ tiền trực tiếp chờ xử lý; không tự đảo nguồn. Gửi danh sách thì backend tìm nguồn cùng invoice/spa/khách, đối soát trước hủy và trừ chính xác số nguồn được chọn khỏi funding. Preview trả reconciliation.mistakenReceipts {rows,books,total}; after.total/paid=0, after.adjustmentCredit phản ánh phần tiền trực tiếp còn lại. cashImpact.incoming/outgoing=0 vì REVERSAL không phải giao dịch nhận/hoàn tiền thật; directReceived trừ nguồn bị đảo. Apply ghi nguồn reversed + CashEntry REVERSAL và InvoiceAdjustment/Audit trong cùng transaction với hủy/kho/quyền lợi/hoa hồng. Idempotency-Key/expectedUpdatedAt/expectedPreview và xác nhận hiện có giữ nguyên.
+
+CANCELLED chỉ nhận mode VOID có danh sách khoản sai còn hiệu lực; không nhận stockHandling/entitlementHandling/giftHandling để tránh xử lý lại. Không mở lại invoice, giữ thông tin lần hủy ban đầu. Nguồn legacy chưa có credit chỉ được tái đối soát trong phạm vi hẹp ghi tại BUSINESS_RULES; không suy từ cancelledTotal. GET invoice trả các payments chưa đảo để xử lý tiếp và adjustments[].reconciliation.createdReceiptReversals để tra cứu; canAdjustInvoice chỉ OWNER. Nguồn dùng chung/đã đảo/ngoài invoice, hoàn tiền/thay tư vấn, ngày thiếu/không OPEN hoặc preview cũ trả lỗi không ghi dở dang. Không hỗ trợ sửa snapshot CLOSED; cần đối soát/mở lại sổ theo quy trình hiện có.
+
+## Sửa nội dung trong previewInvoiceAdjustment/applyInvoiceAdjustment — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-CONTENT-001 CONFIRMED: CORRECT thêm content? (strict patch). Giữ các field id/expectedUpdatedAt/total/issuedOn/reason/confirmed/expectedPreview và idempotency hiện có. VOID không nhận content. Trường top-level nội dung cũ vẫn bị từ chối; không mở updateInvoice cũ để vượt đối soát.
+
+content nhận customerId?, description?, dueDate?: ngày hoặc null, promotion?, consultantId?: ID hoặc null, participantIds?: ID[]; serviceItems?: [{key,sourceIndex?,serviceId,total,performerId?}], productItems?: [{key,sourceIndex?,productId,quantity,unitPrice}], packageItems?: [{key,sourceIndex?,templateId?,total,promotion?,totalSessions?,durationMonths?,startsOn?,expiresOn?}]. Số tiền nguyên 0–10^12, quantity dương, tối đa 30 dòng mỗi loại; references cùng spa, người hưởng/KTV mới active. participantIds rỗng chỉ được giữ nguyên nguồn rỗng, không xóa người hưởng đã có. Không nhận treatmentSessions/signature/paid/lineAllocations trong content. Ngày hết hạn không trước ngày bắt đầu.
+
+GET /api/invoices/:id?edit=1 chỉ OWNER nhận editContext: client điền sẵn, source snapshot, catalogs cùng spa và locks theo trường/dòng; truy vấn thường/STAFF không nhận context này. Danh mục gói dùng bộ lọc bán gói hiện hành, không lọc tên. editContext dùng để tạo patch chỉ field đổi, không tin locks client khi lưu.
+
+Preview thêm changedFields, noChanges và reconciliation.content (trước/sau có tên hiển thị, lineTotal/totalAdjustment, bù kho/quyền lợi). Apply cùng phiên bản/hash/idempotency và transaction; dependency thay đổi trả 409 yêu cầu xem lại, không ghi dở dang. No-op trả {id,noChanges:true,message}, không tạo ledger/chứng từ/audit nghiệp vụ hoặc đổi updatedAt. Thiếu nguồn/lịch sử có ràng buộc trả 409 kèm lý do ngắn. Thanh toán mới giữ action payment/splitPayment; sửa khoản thu hiện có vẫn là receiptCorrections độc lập, không tự phát sinh khi content đổi.
+
+completeInvoiceService giữ schema/quyền cũ {id,staffId}; hỗ trợ nhiều serviceItems chưa thực hiện sau sửa, không yêu cầu serviceId tổng hợp khi từng dòng có nguồn. Giữ KTV/commission snapshot từng dòng, staffId làm fallback; xác nhận và ghi ledger trong cùng transaction, không tạo tiền. Nếu từng là nguồn gói, backend đếm TreatmentUse và kiểm quyền lợi CANCELLED/chưa dùng trước khi cho thực hiện dòng thay thế. Gói có buổi hoặc còn hiệu lực, hóa đơn phiên sử dụng gói/lịch hẹn vẫn bị chặn.
+
+## Ngày thực nhận và thanh toán khi tạo hóa đơn — 08/11/2026
+
+PROPOSED kỹ thuật theo nghiệp vụ CONFIRMED: payment thêm receivedOn?: YYYY-MM-DD (ngày lịch thực); splitPayment nhận trường này riêng trong mỗi phần tử payments. Không gửi vẫn ghi hôm nay cho client cũ. Ngày không hợp lệ/tương lai bị từ chối; sổ ngày nhận cùng spa phải OPEN, thiếu/đã chốt trả lỗi, không ghi sang ngày khác. Không nhận CashEntry.day trực tiếp từ client.
+
+invoice/serviceInvoice/sellPackage/sellProduct/productInvoice/checkout thêm payments?: [{amount,method,receivedOn,receivedConfirmation:true,note?,transferReference?}]. Khi có danh sách, receivedOn bắt buộc từng khoản; 1–2 khoản dương, phương thức không trùng, tổng không vượt công nợ. Không gửi payments khi chưa thu (không tạo phiếu thu 0). Một transaction cho hóa đơn, thu, audit, kho/quyền lợi và idempotency. Retry cùng khóa trả kết quả cũ, không cộng trùng. Kết quả có paymentIds khi tạo cùng khoản thu.
+
+Checkout chỉ nhận payments cấp ngoài, không nhận payments trong từng action con; chỉ tự thu khi kết quả có một hóa đơn chung. Giỏ nhiều hóa đơn trả 409 để người dùng thanh toán riêng, không tự chia tiền. cashCard inline và redeemCashCard thêm receivedOn? cho additionalAmount thực thu; không đổi ngày nguồn thẻ hoặc tạo CashEntry cho phần trừ thẻ. Không tự chuyển ngày khoản thu đã tồn tại khi sửa issuedOn.
+
+## updateCustomerTreatment chọn mẫu gói — 08/11/2026
+
+PROPOSED kỹ thuật theo nghiệp vụ CONFIRMED: input thêm templateId? (ObjectId). name/serviceId vẫn bắt buộc để đối chiếu preview nhưng phải trùng mẫu PackageTemplate đang bán có Service active/cùng spa; server không tin tên nhập tay. Sai mẫu/đã ngừng bán/tên hoặc dịch vụ lệch trả 409, tham chiếu ngoài spa trả 404. Không gửi templateId chỉ được giữ nguyên name/serviceId lịch sử và sửa quyền lợi, để tương thích dữ liệu/client cũ; không được đổi tên/dịch vụ tùy ý qua payload cũ.
+
+Chặn đổi SESSIONS/TIME, đổi dịch vụ của gói đã dùng, chọn mẫu mới không đủ quota so với lịch sử; không bỏ expectedUpdatedAt/expectedUseCount/confirmUsedFloor, OWNER, transaction/idempotency/audit. Chọn mẫu cập nhật Treatment.templateId/name/serviceId; invoice, tiền, buổi, chữ ký giữ nguyên.
+
+GET lịch sử khách kind=treatments chỉ OWNER nhận editablePackageTemplates từ PackageTemplate cùng spa qua bộ lọc bán gói, bên cạnh editableServices. STAFF/cashier không nhận danh mục sửa hoặc quyền sửa mới. Workspace giữ nguồn PackageTemplate hiện có; hai điểm vào Sửa gói dùng chung helper danh mục với CommercialFields và cashierCatalog, không lọc theo tên.
+
 ## Điều chỉnh từng khoản thu trong Sửa hóa đơn — 08/11/2026
 
 PROPOSED kỹ thuật theo yêu cầu CONFIRMED: previewInvoiceAdjustment/applyInvoiceAdjustment bổ sung paid?: số nguyên VNĐ >=0 và receiptCorrections?: [{paymentId,amount,day}]. Mỗi phần tử strict; 1–100 ID không trùng, amount 0–10^12, day là ngày lịch thực không tương lai. Chỉ CORRECT nhận các field này. paid chỉ kiểm khớp nguồn sau sửa, không ghi trực tiếp; gửi paid khác mà không có nguồn sửa tương ứng bị từ chối. Thiếu receiptCorrections giữ hành vi chỉ sửa tổng/ngày cũ. Không nhận actorId/spaId/receiptId/phương thức mới từ client.

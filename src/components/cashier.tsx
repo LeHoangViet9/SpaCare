@@ -12,6 +12,7 @@ import MoneyInput from './money-input';
 import ValidatedForm from './validated-form';
 import SaleParticipants from './sale-participants';
 import InvoiceCardPayment from './invoice-card-payment';
+import CreationPayments from './creation-payments';
 import {TreatmentConfirmations} from './treatment-selection';
 type Row=Record<string,any>;
 const money=formatCurrency;
@@ -123,9 +124,10 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      const cardValue=fd.get('cashCard');
      const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate:'',signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
      const date=issuedOn?{issuedOn}:{};
-     if(appointment)onSubmit('checkout',{customerId:customer._id,appointmentId:appointment.appointment._id,actions,...date});
-     else if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date});
-     else onSubmit('checkout',{customerId:customer._id,actions,...date});
+     const rawPayments=fd.get('payments'),payments=rawPayments?{payments:JSON.parse(String(rawPayments))}:{};
+     if(appointment)onSubmit('checkout',{customerId:customer._id,appointmentId:appointment.appointment._id,actions,...date,...payments});
+     else if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date,...payments});
+     else onSubmit('checkout',{customerId:customer._id,actions,...date,...payments});
    }catch(e){setError((e as Error).message);}
  }
  return <ValidatedForm onSubmit={submit} className="cashier">
@@ -178,12 +180,13 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    }}/>
    {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy} showPreview={false}/></>}
    {sessionItems.length>0 && !sessionItems.some(item=>item.recipientName?.trim()) && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
-   {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard}/></section>}
+   {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard} defaultReceivedOn={issuedOn||data.today}/></section>}
    {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ hoặc thanh toán số còn nợ.</p>}
    </fieldset>
    <div className="cashier-total"><span>Tổng giỏ</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
    <label>Ngày hóa đơn (để trống: hôm nay)<input type="date" max={data.today} value={issuedOn} disabled={busy} onChange={e=>setIssuedOn(e.target.value)}/></label>
+   {basketCount>0&&appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={amount} disabled={busy}/>}
    {error && <p className="negative" role="alert">{error}</p>}
    <button type="submit" className="primary cashier-save" disabled={busy || !customer || !basketCount || !!appointment?.invoice || (!!appointment && !['CONFIRMED','COMPLETED'].includes(appointment.appointment.status))}>{busy?'Đang lưu…':appointment?'Hoàn thành lịch & lưu hóa đơn':'Lưu toàn bộ giỏ'}</button>
    <small>Tiền chưa thu có thể thanh toán trên từng hóa đơn sau khi lưu. Gói đã mua không thu lại tiền buổi.</small>

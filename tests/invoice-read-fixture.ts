@@ -26,7 +26,7 @@ mock.method(Audit, 'find', () => query([]));
 mock.method(Appointment, 'find', () => query([{ _id: 'appointment', staffId: actorId, status: 'COMPLETED', treatmentId: 'treatment' }]));
 const owner: Actor = { id: actorId, spaId, name: 'Owner', role: 'OWNER', cashier: true };
 for(const model of [Payment,CashCard,Commission,InvoiceLineCommission,SaleCommission,SharedSaleCommission])mock.method(model,'find',()=>query([]));
-for(const model of [StockMovement,TreatmentUse,Appointment,Allocation,CashCardUse,SaleCommission,SharedSaleCommission])mock.method(model,'exists',async(filter:any)=>{assert.equal(filter.spaId,spaId);return null;});
+for(const model of [StockMovement,TreatmentUse,Appointment,Allocation,CashCardUse,Commission,InvoiceLineCommission,SaleCommission,SharedSaleCommission])mock.method(model,'exists',async(filter:any)=>{assert.equal(filter.spaId,spaId);return null;});
 mock.method(Day,'findOne',()=>query(null));
 const result = await readInvoice(owner, id, 99);
 assert.equal(result.signaturePage, 2);

@@ -8,6 +8,9 @@ import {dayBounds, ensure, invoiceState, paymentEvidence, spaDay} from './rules'
 import {stockBalance} from './product-rules';
 import {monthBounds} from './payroll-rules';
 import {sharedCommissionDeltas} from './sale-commission';
+import {prepareInvoiceContent,applyInvoiceContent} from './invoice-content';
+import {contentEqual} from './invoice-content-rules';
+import {prepareMistakenReceipts,applyMistakenReceipts} from './invoice-void-receipts';
 
 type Input=z.infer<typeof invoiceAdjustmentInput>;
 const copy=(row:any)=>row.toObject();
@@ -22,13 +25,17 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     ensure(row,'Không tìm thấy tham chiếu trong spa này.',404);return row;
   };
   const invoice=await get(Invoice,d.id);
-  ensure(invoice.status!=='CANCELLED','Hóa đơn đã vô hiệu hóa, chỉ được tra cứu.',409);
+  const wasCancelled=invoice.status==='CANCELLED';
+  ensure(!wasCancelled||(d.mode==='VOID'&&!!d.mistakenPaymentIds?.length),'Hóa đơn đã hủy: chỉ xử lý khoản thu nhập nhầm còn lại.',409);
+  if(wasCancelled)ensure(d.stockHandling===undefined&&d.entitlementHandling===undefined&&d.giftHandling===undefined,'Hóa đơn đã hủy: không xử lý lại kho, gói hoặc quà.',409);
   ensure(invoice.updatedAt.toISOString()===d.expectedUpdatedAt,'Hóa đơn đã thay đổi. Tải lại và đối chiếu lại.',409);
   await get(Customer,invoice.customerId);
   if(invoice.financialRevision)ensure(await InvoiceAdjustment.exists({...scope,_id:invoice.lastAdjustmentId,invoiceId:invoice._id,customerId:invoice.customerId}).session(session),'Chuỗi chứng từ điều chỉnh không thuộc hóa đơn/khách hiện tại.',409);
   for(const serviceId of new Set([invoice.serviceId,...(invoice.packageItems||[]).map((line:any)=>line.serviceId)].filter(Boolean).map(String)))await get(Service,serviceId);
   ensure(!invoice.openingBalance,'Chứng từ chuyển số dư chưa có đủ nguồn tiền gốc để điều chỉnh tài chính.',409);
   const before=copy(invoice),newTotal=d.mode==='VOID'?0:d.total;
+  const content=d.content?await prepareInvoiceContent(actor.spaId,invoice,d.content,newTotal,session,d.issuedOn||spaDay(invoice.createdAt)):undefined;
+  if(content?.serviceCorrections.length)ensure(d.mode==='CORRECT'&&d.total===invoice.total&&!d.paid&&!d.receiptCorrections&&(!d.issuedOn||d.issuedOn===spaDay(invoice.createdAt)),'Đính chính dịch vụ/KTV không thay đổi tổng tiền, khoản thu hoặc ngày hóa đơn.',409);
   ensure(d.mode==='VOID'||invoice.kind!=='GIFT'||newTotal===invoice.total,'Hóa đơn quà tặng luôn giữ giá gốc; không được điều chỉnh tổng tiền.',409);
   const oldDay=spaDay(invoice.createdAt),dateChanged=!!d.issuedOn&&d.issuedOn!==oldDay;
   if(d.issuedOn){
@@ -98,7 +105,11 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   const depositBalance=allocations.reduce((n,r)=>n+available(r),0),cardBalance=cardUses.reduce((n,r)=>n+available(r),0);
   const sourceTotal=sum(payments,'amount')+depositBalance+cardBalance-(invoice.refunded||0);
   const funded=invoice.paid+(invoice.adjustmentCredit||0)-(invoice.financialRevision?0:(invoice.refunded||0));
-  ensure(sourceTotal===funded,'Tổng cọc/thẻ/khoản thu trừ hoàn tiền không khớp hóa đơn; cần đối soát nguồn trước. Không thể suy ra số tiền hoặc ngày thực thu từ tổng tiền hóa đơn.',409);
+  // Legacy cancellation may have cleared paid without retaining the still-linked direct sources.
+  // Reconstruct only from verified Payment/CashEntry, never from the cancelled invoice total.
+  const legacyCancelledSources=wasCancelled&&!invoice.financialRevision&&invoice.total===0&&invoice.paid===0&&!invoice.adjustmentCredit&&!invoice.refunded&&!depositBalance&&!cardBalance;
+  ensure(sourceTotal===funded||legacyCancelledSources,'Tổng cọc/thẻ/khoản thu trừ hoàn tiền không khớp hóa đơn; cần đối soát nguồn trước. Không thể suy ra số tiền hoặc ngày thực thu từ tổng tiền hóa đơn.',409);
+  const mistaken=d.mistakenPaymentIds?.length?await prepareMistakenReceipts(actor.spaId,invoice,d.mistakenPaymentIds,payments,receipts,session):undefined;
   const receiptChanges=[];
   for(const correction of d.receiptCorrections||[]){
     const payment=payments.find(row=>String(row._id)===correction.paymentId);
@@ -120,14 +131,17 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   const correctedFunding=sourceTotal+receiptDelta;
   if(receiptChanges.length)ensure(correctedFunding>=0&&correctedFunding<=newTotal,'Số tiền đã thanh toán vượt tổng hóa đơn hoặc không hợp lệ. Luồng thu tiền hiện có chặn vượt công nợ; không tự chuyển tiền thừa thành cọc, tiền giữ hộ hoặc khoản thu ngoài sổ.',409);
   let balance:ReturnType<typeof adjustmentBalance>;
-  try{balance=receiptChanges.length
+  try{balance=mistaken
+    ?adjustmentBalance(sourceTotal-mistaken.total,0,0,true,newTotal,depositBalance,cardBalance)
+    :receiptChanges.length
     ?adjustmentBalance(correctedFunding,0,0,true,newTotal,depositBalance,cardBalance)
     :adjustmentBalance(invoice.paid,invoice.adjustmentCredit||0,invoice.refunded||0,!!invoice.financialRevision,newTotal,depositBalance,cardBalance);}
   catch(e){ensure(false,(e as Error).message,409);}
   if(d.paid!==undefined)ensure(d.paid===balance!.paid,'Số tiền đã thanh toán phải khớp các khoản thu/cọc/thẻ hợp lệ sau điều chỉnh. Không nhập tổng để tạo khoản thu mới.',409);
-  const movements=await StockMovement.find({...scope,$or:[{invoiceId:invoice._id},{checkoutInvoiceId:invoice._id}],direction:'OUT'}).session(session);
+  const invoiceMovements=await StockMovement.find({...scope,$or:[{invoiceId:invoice._id},{checkoutInvoiceId:invoice._id}]}).session(session);
+  const movements=invoiceMovements.filter(m=>m.direction==='OUT');
   const products=[];for(const movement of movements)products.push(await get(Product,movement.productId));
-  if(d.mode==='VOID'){
+  if(d.mode==='VOID'&&!wasCancelled){
     ensure(d.stockHandling!=='RETURN'||!(invoice.productId||invoice.productItems?.length)||movements.length>0,'Không có phiếu xuất gốc để nhập bù kho; cần đối soát kho trước.',409);
     ensure(!movements.length || !!d.stockHandling,'Chọn giữ xuất kho hoặc xác nhận đã nhận lại hàng vào kho.');
     ensure(!(plans.some(p=>String(p.invoiceId)===String(invoice._id))||invoice.packageItems?.length) || !!d.entitlementHandling,'Chọn giữ quyền lợi hoặc dừng phần quyền lợi còn lại.');
@@ -154,11 +168,11 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     ensure(!mixedPackageInvoice,'Hóa đơn hỗn hợp có gói cần đối soát phân bổ hoa hồng trước khi sửa khoản thu.',409);
     ensure(!purePackageInvoice||!(invoice.packageItems||[]).some((line:any)=>line.sellerId&&String(line.sellerId)!==String(invoice.sellerId)),'Các dòng gói có tư vấn khác nhau cần đối soát hoa hồng trước khi sửa khoản thu.',409);
   }
-  if(d.mode==='VOID'&&(packageEvidence||invoice.kind==='PACKAGE'))ensure(!!d.entitlementHandling,'Chọn giữ quyền lợi hoặc dừng phần quyền lợi còn lại.');
+  if(d.mode==='VOID'&&!wasCancelled&&(packageEvidence||invoice.kind==='PACKAGE'))ensure(!!d.entitlementHandling,'Chọn giữ quyền lợi hoặc dừng phần quyền lợi còn lại.');
   // Fixed performed-service commission changes only on void. Sale commission follows
   // the existing 5% received-money rule and cumulative equal-share rounding.
   const salePool=[...saleGroups.values()].reduce((n,g)=>n+g.amount,0);
-  ensure(d.mode==='VOID'||!mixedPackageInvoice||newTotal===invoice.total,'Hóa đơn hỗn hợp có gói chưa hỗ trợ phân bổ chênh lệch giá theo dòng; chỉ sửa nội dung hoặc vô hiệu hóa.',409);
+  ensure(d.mode==='VOID'||!mixedPackageInvoice||newTotal===invoice.total||!!content&&!payments.length&&!allocations.length&&!cardUses.length&&!ledgers.length,'Hóa đơn hỗn hợp có gói chưa hỗ trợ phân bổ chênh lệch giá theo dòng; chỉ sửa nội dung hoặc vô hiệu hóa.',409);
   ensure(d.mode==='VOID'||newTotal===invoice.total||!purePackageInvoice||!(invoice.packageItems||[]).some((line:any)=>line.sellerId&&String(line.sellerId)!==String(invoice.sellerId)), 'Các dòng gói có tư vấn khác nhau cần phân bổ chênh lệch theo dòng; chỉ sửa nội dung hoặc vô hiệu hóa.',409);
   ensure([...saleGroups.values()].every(g=>g.amount>=0),'Hoa hồng bán gói đã âm; cần đối soát.',409);
   const targetSale=d.mode==='VOID'?0:purePackageInvoice&&[1,2].includes(invoice.saleCommissionVersion)?Math.floor(balance!.paid/20):salePool;
@@ -175,7 +189,7 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     }
     ensure([...saleGroups.values()].every(g=>!g.amount||desiredSale.has(String(g.staffId))),'Ledger có người hưởng khác với chứng từ hiện hành; cần đối soát.',409);
   }
-  const commissionChanges:any[]=[];
+  const commissionChanges:any[]=[...(content?.serviceCommissionChanges||[])];
   for(const g of serviceGroups.values())if(d.mode==='VOID'&&g.amount)commissionChanges.push({...g,category:'SERVICE',delta:-g.amount});
   const saleParts=[...saleGroups.values()].sort((a,b)=>String(a.staffId).localeCompare(String(b.staffId))).map(g=>({...g,target:d.mode==='VOID'?0:desiredSale.size?(desiredSale.get(String(g.staffId))||0):g.amount}));
   for(const g of saleParts)if(g.target!==g.amount)commissionChanges.push({...g,category:'PACKAGE_SALE',delta:g.target-g.amount});
@@ -183,7 +197,7 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   // Compensations enter the first unclosed month; never alter APPROVED/PAID snapshots.
   const commissionMonths:Record<string,string>={};
   for(const change of commissionChanges){
-    let month=spaDay(now).slice(0,7);
+    let month=change.commissionMonth||spaDay(now).slice(0,7);
     for(let i=0;i<120;i++){
       if(!await Payroll.exists({...scope,staffId:change.staffId,month,status:{$in:['APPROVED','PAID']}}).session(session))break;
       const end=monthBounds(month).end;month=spaDay(end).slice(0,7);
@@ -191,22 +205,31 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     ensure(!await Payroll.exists({...scope,staffId:change.staffId,month,status:{$in:['APPROVED','PAID']}}).session(session),'Không tìm thấy kỳ lương mở cho điều chỉnh.',409);
     commissionMonths[String(change.staffId)]=month;
   }
+  const {context:contentContext,serviceCommissionChanges:_,...contentReview}=content||{};
   const reconciliation={
-    cashImpact:{incoming:0,outgoing:0,directReceived:sum(payments,'amount')+receiptDelta},
+    ...(content?{content:{...contentReview,dependencyToken:createHash('sha256').update(JSON.stringify(contentContext)).digest('hex')}}:{}),
+    cashImpact:{incoming:0,outgoing:0,directReceived:sum(payments,'amount')+receiptDelta-(mistaken?.total||0)},
+    ...(mistaken?{mistakenReceipts:mistaken}:{}),
     receiptChanges,
     payments:payments.map(copy),receipts:receipts.map(copy),allocations:allocations.map(copy),cardUses:cardUses.map(copy),
     deposits:deposits.map(copy),cards:cards.map(copy),plans:plans.map(copy),gifts:gifts.map(copy),giftCards:giftCards.map(copy),
-    movements:movements.map(copy),products:products.map(copy),ledgers:ledgers.map(({kind,row})=>({kind,...copy(row)})),giftFunding,
+    movements:invoiceMovements.map(copy),products:products.map(copy),ledgers:ledgers.map(({kind,row})=>({kind,...copy(row)})),giftFunding,
     balance:balance!,commissionChanges,commissionMonths,
     stockHandling:d.stockHandling,entitlementHandling:d.entitlementHandling,giftHandling:d.giftHandling,
   };
-  const after={...before,description:invoice.description,total:newTotal,paid:balance!.paid,adjustmentCredit:balance!.credit,
+  const after={...before,...(content?.patch||{}),total:newTotal,paid:balance!.paid,adjustmentCredit:balance!.credit,
     status:d.mode==='VOID'?'CANCELLED':invoiceState(newTotal,balance!.paid),...(correctedDate?{createdAt:correctedDate.toISOString(),recordedAt:invoice.recordedAt||invoice.createdAt}:{})};
   const previewToken=createHash('sha256').update(JSON.stringify({before,after,reconciliation})).digest('hex');
-  const preview={before,after,reconciliation,previewToken,delta:newTotal-invoice.total};
+  const changedFields=[...(content?.changedFields||[]),...(dateChanged?['createdAt']:[]),...(newTotal!==invoice.total?['total']:[]),...(balance!.paid!==invoice.paid?['paid']:[]),...(balance!.credit!==(invoice.adjustmentCredit||0)?['adjustmentCredit']:[]),...(receiptChanges.length?['receipts']:[]),...(mistaken?['reversedReceipts']:[])];
+  const noChanges=d.mode==='CORRECT'&&changedFields.length===0&&!balance!.depositReturn&&!balance!.cardReturn&&commissionChanges.length===0;
+  const preview={before,after,reconciliation,previewToken,delta:newTotal-invoice.total,changedFields:[...new Set(changedFields)],noChanges};
   if(!commit)return preview;
   ensure(d.confirmed && d.expectedPreview===previewToken,'Cần xem trước và xác nhận lại đối soát mới nhất.',409);
+  if(mistaken)ensure(d.mistakenReceiptsConfirmed===true,'Cần xác nhận các khoản được chọn là nhập nhầm, không phải tiền đã nhận thật.',409);
+  if(noChanges)return {id:String(invoice._id),noChanges:true,message:'Không có thay đổi.'};
   const adjustmentId=new mongoose.Types.ObjectId();
+  const createdReceiptReversals=mistaken?await applyMistakenReceipts(actor,mistaken,payments,receipts,adjustmentId,d.reason,session):[];
+  if(content)await applyInvoiceContent(actor,invoice,content,session,{reason:d.reason,adjustmentId});
   for(const day of new Set(receiptChanges.flatMap(change=>[change.before.day,change.after.day]))){
     const book=await Day.findOneAndUpdate({...scope,day,status:'OPEN'},{$inc:{revision:1}},{session,returnDocument:'after'});
     ensure(book,'Sổ ngày '+day+' không còn mở. Tải lại để đối soát; không sửa snapshot đã chốt.',409);
@@ -233,7 +256,7 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   const createdCommissions=[];
   for(const change of commissionChanges){
     const month=commissionMonths[String(change.staffId)],earnedAt=month===spaDay(now).slice(0,7)?now:monthBounds(month).start;
-    const values={...scope,staffId:change.staffId,staffName:change.staffName,serviceId:change.serviceId,serviceName:invoice.description,customerId:invoice.customerId,invoiceId:invoice._id,amount:change.delta,earnedAt,sourceType:'INVOICE_ADJUSTMENT',sourceId:adjustmentId};
+    const values={...scope,staffId:change.staffId,staffName:change.staffName,serviceId:change.serviceId||invoice.serviceId,serviceName:change.serviceName||invoice.description,customerId:invoice.customerId,invoiceId:invoice._id,amount:change.delta,earnedAt,sourceType:'INVOICE_ADJUSTMENT',sourceId:adjustmentId};
     const lineId=new mongoose.Types.ObjectId();
     const row=change.category==='PACKAGE_SALE'
       ? (await SharedSaleCommission.create([{...values,shareCount:saleParts.length}],{session}))[0]
@@ -241,7 +264,7 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     createdCommissions.push(row._id);
     await Payroll.updateMany({...scope,staffId:change.staffId,status:'DRAFT'},{$set:{needsRecalculation:true}},{session});
   }
-  if(d.mode==='VOID'){
+  if(d.mode==='VOID'&&!wasCancelled){
     for(const plan of plans){
       const gift=String(plan.invoiceId)!==String(invoice._id);
       if(gift ? d.giftHandling==='REVOKE_UNUSED' : d.entitlementHandling==='CANCEL_REMAINING')plan.status='CANCELLED';
@@ -252,7 +275,15 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
       for(const card of giftCards){card.balance=0;await card.save({session});}
       for(const gift of gifts){gift.cancelledTotal=gift.total;gift.total=0;gift.paid=0;gift.status='CANCELLED';gift.cancelledAt=now;gift.cancelledBy=actor.id;gift.cancelReason=d.reason;await gift.save({session});}
     }
-    if(d.stockHandling==='RETURN')for(const movement of movements){
+    if(d.stockHandling==='RETURN'&&invoiceMovements.some(m=>m.direction==='IN')){
+      const outstanding=new Map<string,number>();
+      for(const movement of invoiceMovements){const id=String(movement.productId);outstanding.set(id,(outstanding.get(id)||0)+(movement.direction==='OUT'?movement.quantity:-movement.quantity));}
+      for(const [id,quantity]of outstanding){
+        ensure(quantity>=0,'Kho của hóa đơn không khớp; cần đối soát trước khi trả hàng.',409);if(!quantity)continue;
+        const product=await get(Product,id),stockBefore=product.stock;product.stock=stockBalance(product.stock,'IN',quantity);await product.save({session});
+        await StockMovement.create([{...scope,productId:product._id,productName:product.name,sku:product.sku,unit:product.unit,actorId:actor.id,actorName:actor.name,checkoutInvoiceId:invoice._id,direction:'IN',kind:'MANUAL',quantity,before:stockBefore,after:product.stock,reason:d.reason}],{session});
+      }
+    }else if(d.stockHandling==='RETURN')for(const movement of movements){
       ensure(!await StockMovement.exists({...scope,reversalOf:movement._id}).session(session),'Phiếu kho đã được bù trước đó.',409);
       const product=await get(Product,movement.productId),stockBefore=product.stock;
       product.stock=stockBalance(product.stock,'IN',movement.quantity);await product.save({session});
@@ -260,21 +291,22 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     }
     invoice.cancelledTotal=invoice.total;invoice.cancelledAt=now;invoice.cancelledBy=actor.id;invoice.cancelReason=d.reason;
   }
-  const financialChange=d.mode==='VOID'||newTotal!==invoice.total||receiptChanges.length>0;
-  Object.assign(invoice,{description:after.description,total:after.total,paid:after.paid,status:after.status,adjustmentCredit:after.adjustmentCredit,
-    ...(financialChange?{financialRevision:(invoice.financialRevision||0)+1}:{}),
-    lastAdjustmentId:adjustmentId,cardPaid:Math.max(0,(invoice.cardPaid||0)-balance!.cardReturn)});
-  if(saleGroups.size||invoice.saleCommissionAccrued!==undefined)invoice.saleCommissionAccrued=targetSale;
+  const financialChange=d.mode==='VOID'||newTotal!==before.total||receiptChanges.length>0;
+  const values={total:after.total,paid:after.paid,status:after.status,adjustmentCredit:after.adjustmentCredit,
+    ...(financialChange?{financialRevision:(invoice.financialRevision||0)+1}:{}),lastAdjustmentId:adjustmentId,
+    ...(balance!.cardReturn?{cardPaid:Math.max(0,(invoice.cardPaid||0)-balance!.cardReturn)}:{})};
+  for(const [field,value]of Object.entries(values))if(!contentEqual(invoice[field],value)&&!(field==='adjustmentCredit'&&!value&&invoice[field]===undefined))invoice[field]=value;
+  if((saleGroups.size||invoice.saleCommissionAccrued!==undefined)&&invoice.saleCommissionAccrued!==targetSale)invoice.saleCommissionAccrued=targetSale;
   await invoice.save({session});
   // createdAt is immutable under Mongoose timestamps; update only the invoice's
   // displayed issue date explicitly. Never move receipt day or commission earnedAt.
   if(correctedDate)await Invoice.updateOne({...scope,_id:invoice._id},{$set:{createdAt:correctedDate,recordedAt:invoice.recordedAt||invoice.createdAt}},{session,timestamps:false,overwriteImmutable:true});
   const savedAfter={...copy(invoice),...(correctedDate?{createdAt:correctedDate,recordedAt:invoice.recordedAt||invoice.createdAt}:{})};
   await InvoiceAdjustment.create([{...scope,_id:adjustmentId,invoiceId:invoice._id,customerId:invoice.customerId,actorId:actor.id,mode:d.mode,reason:d.reason,
-    before,after:savedAfter,delta:preview.delta,reconciliation:{...reconciliation,createdCommissions},previousAdjustmentId:before.lastAdjustmentId}],{session});
+    before,after:savedAfter,delta:preview.delta,reconciliation:{...reconciliation,changedFields:preview.changedFields,createdCommissions,createdReceiptReversals},previousAdjustmentId:before.lastAdjustmentId}],{session});
   await Audit.create([{...scope,actorId:actor.id,action:d.mode==='VOID'?'voidInvoice':'correctInvoice',targetId:invoice._id,
-    details:{invoiceId:String(invoice._id),adjustmentId,reason:d.reason,before,after:savedAfter,delta:preview.delta,reconciliation:{...reconciliation,createdCommissions}}}],{session});
-  return {id:String(invoice._id),adjustmentId:String(adjustmentId),message:'Đã lưu chứng từ điều chỉnh, giữ khoản thu và lịch sử gốc.'};
+    details:{invoiceId:String(invoice._id),adjustmentId,reason:d.reason,mistakenReceiptsConfirmed:mistaken?true:undefined,before,after:savedAfter,delta:preview.delta,changedFields:preview.changedFields,reconciliation:{...reconciliation,createdCommissions,createdReceiptReversals}}}],{session});
+  return {id:String(invoice._id),adjustmentId:String(adjustmentId),message:mistaken?'Đã hủy/đối soát hóa đơn và đảo khoản thu nhập nhầm; giữ lịch sử gốc.':'Đã lưu chứng từ điều chỉnh, giữ khoản thu và lịch sử gốc.'};
 }
 
 export async function refundInvoiceAdjustment(actor:Actor,d:z.infer<typeof invoiceAdjustmentRefundInput>,session:ClientSession,receipt:(values:Record<string,unknown>)=>Promise<any>) {

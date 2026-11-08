@@ -1,4 +1,7 @@
 import {invoiceAdjustmentIntegration} from './invoice-adjustment-integration';
+import {invoiceContentIntegration} from './invoice-content-integration';
+import {invoiceVoidReceiptsIntegration} from './invoice-void-receipts-integration';
+import {receiptCreationIntegration} from './receipt-creation-integration';
 import { cashFlowIntegration } from './cash-flow-integration';
 import {invoiceReplacementIntegration,invoiceReplacementP2Integration} from './invoice-replacement-integration';
 import { readReport } from '../src/lib/report-read';
@@ -33,6 +36,12 @@ import { GET as productImageGET } from '../src/app/api/product-images/[id]/route
 import { Notification, ActivityNotification } from '../src/lib/models';
 import { assertConnectedServerIdentity, assertIntegrationEnvironment, inspectIntegrationSchema } from './integration-safety';
 
+async function scopedTransactionSnapshot(spaId:mongoose.Types.ObjectId){
+  const rows:Record<string,unknown>={};
+  for(const model of allModels)if(model.schema.path('spaId'))rows[model.modelName]=await model.find({spaId}).sort({_id:1}).lean();
+  return rows;
+}
+
 test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và chốt ngày', async t => {
   // Fail closed before the MongoDB driver is allowed to create a connection.
   const target = assertIntegrationEnvironment(process.env);
@@ -51,6 +60,9 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const employee: Actor = { ...actor, id: String(staff._id), role: 'STAFF', cashier: false };
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
+    await t.test('new invoices record receipts on explicit actual days',test=>receiptCreationIntegration(extraSpaIds,test));
+    await t.test('invoice content editing retains dated receipts and updates stock atomically',()=>invoiceContentIntegration(extraSpaIds));
+    await t.test('invoice cancellation reverses explicit mistakes atomically and supports late cleanup',()=>invoiceVoidReceiptsIntegration(extraSpaIds));
     await t.test('owner edits used paid customer plans atomically without changing original history', async () => {
       const isolated = await Spa.create({name:'Customer plan edit integration'}); extraSpaIds.push(isolated._id);
       const spaId = isolated._id;
@@ -71,7 +83,11 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const receipt = await Payment.create({spaId,invoiceId:bill._id,receiptId:cash._id,amount:100000});
       const history = async () => JSON.stringify({invoice:await Invoice.findById(bill._id).lean(),payment:await Payment.findById(receipt._id).lean(),cash:await CashEntry.findById(cash._id).lean(),use:await TreatmentUse.findById(use._id).select('+signature').lean()});
       const before = await history();
-      const payload = {id:String(plan._id),expectedUpdatedAt:plan.updatedAt.toISOString(),expectedUseCount:1,name:'Adjusted plan',serviceId:String(replacement._id),totalSessions:8,notes:'Remaining rights adjusted',reason:'Owner agreement'};
+      const chosen=await PackageTemplate.create({spaId,name:'Adjusted plan',serviceId:service._id,totalSessions:8,price:200000,active:true});
+      const incompatible=await PackageTemplate.create({spaId,name:'Different service package',serviceId:replacement._id,totalSessions:8,price:200000,active:true});
+      const payload = {id:String(plan._id),expectedUpdatedAt:plan.updatedAt.toISOString(),expectedUseCount:1,name:chosen.name,serviceId:String(service._id),templateId:String(chosen._id),totalSessions:8,notes:'Remaining rights adjusted',reason:'Owner agreement'};
+      await assert.rejects(call('updateCustomerTreatment',{...payload,name:incompatible.name,serviceId:String(replacement._id),templateId:String(incompatible._id)}),(e:any)=>e.status===409);
+      await assert.rejects(call('updateCustomerTreatment',{...payload,name:'Free-form tampering'}),(e:any)=>e.status===409);
       await assert.rejects(operate(employee,'updateCustomerTreatment',payload,randomUUID()),(e:any)=>e.status===403);
       const cashier = await User.create({spaId,name:'Edit cashier',role:'STAFF',cashier:true,active:true,passwordHash:hashPassword(randomUUID())});
       await assert.rejects(operate({...employee,id:String(cashier._id),cashier:true},'updateCustomerTreatment',payload,randomUUID()),(e:any)=>e.status===403);
@@ -79,7 +95,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.deepEqual(await call('updateCustomerTreatment',payload,key),result);
       assert.equal(await history(),before);
       const updated=(await Treatment.findById(plan._id))!;
-      assert.equal(updated.remaining,6);assert.equal(String(updated.serviceId),String(replacement._id));
+      assert.equal(updated.remaining,6);assert.equal(String(updated.serviceId),String(service._id));assert.equal(String(updated.templateId),String(chosen._id));
       const audit=await Audit.findOne({spaId,action:'updateCustomerTreatment',targetId:plan._id});
       assert.equal(audit!.details.before.remaining,3);assert.equal(audit!.details.after.remaining,6);
       assert.equal(audit!.details.reason,payload.reason);assert.equal(String(audit!.actorId),actor.id);
@@ -90,7 +106,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await assert.rejects(call('updateCustomerTreatment',{...payload,expectedUpdatedAt:updated.updatedAt.toISOString(),serviceId:String(foreign._id)}),(e:any)=>e.status===404);
       const foreignPlan=await Treatment.create({spaId:foreignSpa,customerId:customer._id,invoiceId:bill._id,name:'Foreign plan',totalSessions:1,remaining:1});
       await assert.rejects(call('updateCustomerTreatment',{...payload,id:String(foreignPlan._id),expectedUpdatedAt:foreignPlan.updatedAt.toISOString()}),(e:any)=>e.status===404);
-      const rollbackPayload={...payload,expectedUpdatedAt:updated.updatedAt.toISOString(),name:'Must roll back'}, failedKey=randomUUID();
+      const rollbackPayload={...payload,expectedUpdatedAt:updated.updatedAt.toISOString(),notes:'Must roll back'}, failedKey=randomUUID();
       const saved=JSON.stringify(updated.toObject());
       const original=Audit.create;
       const injected=t.mock.method(Audit,'create',(async(...args:any[])=>{
@@ -105,10 +121,12 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       await call('updateCustomerTreatment',rollbackPayload,failedKey);
       const profile=await readCustomerHistory(actor,String(customer._id),'treatments',1);
       assert.equal(profile.canEditTreatments,true);assert.equal(profile.rows[0].recordedUseCount,1);assert.equal(profile.rows[0].adjustments.length,2);
+      assert.ok(profile.editablePackageTemplates.some(row=>String(row._id)===String(chosen._id)));
+      assert.equal((await readCustomerHistory({...employee,id:String(cashier._id),cashier:true},String(customer._id),'treatments',1)).editablePackageTemplates.length,0);
       const next=await call('use',{treatmentId:String(plan._id),staffId:String(staff._id),remainingBefore:6});
       const nextUse=await TreatmentUse.findById(next.id);
       assert.equal(nextUse!.sessionNumber,3);
-      assert.equal(JSON.parse(nextUse!.snapshot!).name,'Must roll back');
+      assert.equal(JSON.parse(nextUse!.snapshot!).name,chosen.name);
       assert.equal(await history(),before);
     });
     await t.test('treatment edit preview count matches historical uses when Treatment counters are stale',async()=>{
@@ -2313,18 +2331,63 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     await call('closeDay', { day: spaDay(), counted: 450000 });
     await assert.rejects(call('openDay', { day: spaDay(), opening: 0 }), (error: any) => error.status === 409);
     await assert.rejects(call('cash', { direction: 'IN', amount: 1000, method: 'CASH', note: 'Sau chốt' }));
-    await t.test('sổ đã chốt: lỗi đảo tiền rollback cả invoice/payment dù đã xử lý chúng trước touchDay', async () => {
+    await t.test('sổ đã chốt: đảo tiền bị từ chối và giữ nguyên sổ, invoice, payment, lịch sử', async () => {
       const originalPayment = (await Payment.findById(closedPayment.id))!;
       const receiptId = String(originalPayment.receiptId);
       const before = await snapshot();
+      const documentsBefore=await scopedTransactionSnapshot(spaId!);
       const key = randomUUID();
-      await assert.rejects(call('reverseCash', { id: receiptId, reason: 'Day is closed' }, key), status(400));
+      await assert.rejects(call('reverseCash', { id: receiptId, reason: 'Day is closed' }, key), (error:any)=>error.status===409&&/Hãy mở sổ hôm nay/.test(error.message));
       assert.deepEqual(await snapshot(), before);
+      assert.deepEqual(await scopedTransactionSnapshot(spaId!),documentsBefore);
       assert.equal((await Invoice.findById(closedBill.id))!.paid, 100000);
       assert.equal((await Payment.findById(closedPayment.id))!.reversed, false);
       assert.equal((await CashEntry.findById(receiptId))!.reversed, false);
       assert.equal(await Idempotency.countDocuments({ spaId, key }), 0);
       assert.equal((await Day.findOne({ spaId, day: spaDay() }))!.status, 'CLOSED');
+    });
+    await t.test('sổ mở: lỗi tạo bút toán đảo sau cập nhật invoice/payment rollback toàn bộ và retry không trùng',async()=>{
+      const isolated=await Spa.create({name:'Receipt reversal rollback '+randomUUID()});extraSpaIds.push(isolated._id);
+      const scope={spaId:isolated._id};
+      const owner=await User.create({...scope,name:'Reversal owner',role:'OWNER',active:true,passwordHash:hashPassword(randomUUID())});
+      const who:Actor={id:String(owner._id),spaId:String(isolated._id),name:owner.name,role:'OWNER',cashier:false};
+      const callOp=(action:string,data:unknown,key=randomUUID())=>operate(who,action,data,key);
+      await Control.create(scope);await callOp('openDay',{day:spaDay(),opening:0});
+      const guest=await Customer.create({...scope,name:'Reversal rollback customer'});
+      const svc=await Service.create({...scope,name:'Reversal rollback service',price:300000,commission:0,active:true});
+      const bill=await callOp('invoice',{customerId:String(guest._id),serviceId:String(svc._id),total:300000});
+      const collected=await callOp('payment',{invoiceId:bill.id,amount:100000,method:'CASH',receivedConfirmation:true});
+      const payment=(await Payment.findById(collected.id))!,receiptId=String(payment.receiptId);
+      const book=(await Day.findOne({...scope,day:spaDay()}))!;
+      const before=await scopedTransactionSnapshot(isolated._id),key=randomUUID(),data={id:receiptId,reason:'Injected reversal rollback'};
+      const originalCreate=CashEntry.create;let inspected=false;
+      try{
+        (CashEntry as any).create=async(...args:any[])=>{
+          if(args[0]?.some((row:any)=>row.kind==='REVERSAL'&&String(row.spaId)===who.spaId&&String(row.originalId)===receiptId)){
+            const session=args[1]?.session;assert.ok(session?.inTransaction());
+            // Prove the error is injected after real transactional writes, not at a guard.
+            const stagedInvoice=(await Invoice.findById(bill.id).session(session))!;
+            assert.equal(stagedInvoice.paid,0);assert.equal(stagedInvoice.status,'OPEN');
+            assert.equal((await Payment.findById(payment._id).session(session))!.reversed,true);
+            assert.equal((await CashEntry.findById(receiptId).session(session))!.reversed,false);
+            const stagedBook=(await Day.findById(book._id).session(session))!;
+            assert.equal(stagedBook.status,'OPEN');assert.equal(stagedBook.revision,book.revision+1);
+            inspected=true;throw Error('INJECTED_REVERSAL_AFTER_UPDATES');
+          }
+          return (originalCreate as any).apply(CashEntry,args);
+        };
+        await assert.rejects(callOp('reverseCash',data,key),/INJECTED_REVERSAL_AFTER_UPDATES/);
+      }finally{CashEntry.create=originalCreate;}
+      assert.equal(inspected,true);
+      assert.deepEqual(await scopedTransactionSnapshot(isolated._id),before);
+      assert.equal(await Idempotency.countDocuments({...scope,key}),0);
+      assert.equal(await CashEntry.countDocuments({...scope,originalId:payment.receiptId}),0);
+      const result=await callOp('reverseCash',data,key);assert.deepEqual(await callOp('reverseCash',data,key),result);
+      assert.equal(await CashEntry.countDocuments({...scope,originalId:payment.receiptId}),1);
+      assert.equal((await Invoice.findById(bill.id))!.paid,0);
+      assert.equal((await Payment.findById(payment._id))!.reversed,true);
+      assert.equal((await CashEntry.findById(receiptId))!.reversed,true);
+      assert.equal((await Day.findById(book._id))!.revision,book.revision+1);
     });
     await t.test('package sales, refunds, leave approval and attendance share transactional payroll', async () => {
       const spa = await Spa.create({name:'Update regression '+randomUUID()});extraSpaIds.push(spa._id);

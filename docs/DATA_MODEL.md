@@ -1,5 +1,41 @@
 # SpaCare — Data Model
 
+## Tên KTV trong lịch sử đính chính — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-TECH-UI-001 CONFIRMED: không đổi schema/index/migration. reconciliation.content.serviceCorrections[].before/after bổ sung performerName snapshot cạnh performerId có sẵn để hiển thị cũ → mới rõ ràng. InvoiceAdjustment/Audit vẫn lưu các field nguồn, actor, lý do, thời điểm và liên kết commission originalLedgerIds/adjustmentId như trước. Không ghi lại TreatmentUse.signature/performedAt hay Payment/CashEntry khi đính chính KTV độc lập. editContext chỉ phục vụ UI điền sẵn; backend vẫn đối soát lại nguồn và payroll trong transaction.
+
+## Phạm vi nội dung form sửa — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-EDIT-SCOPE-001 CONFIRMED: không đổi schema/index/migration. editContext.client.customerId còn là dữ liệu nguồn bất biến/khả năng tương thích; patch mới luôn bỏ customerId. Backend không có nhánh gán khách mới từ content. Danh sách phần sửa lấy từ serviceItems/productItems/packageItems canonical gốc, gồm cách đọc một dòng legacy đã có; treatmentSessions và gói thiếu giá vẫn là lịch sử chỉ xem, không được suy thành gói mới để bán. Snapshot/audit/ledger và việc tính tổng, công nợ, trạng thái giữ cơ chế hiện có.
+
+## Liên kết đảo khoản thu khi hủy — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-VOID-RECEIPTS-001 CONFIRMED, không đổi schema/index/migration. Payment.reversed và CashEntry.reversed đánh dấu nguồn; giữ amount/day/createdAt/receiptId gốc. CashEntry mới kind REVERSAL, direction OUT, originalId = nguồn PAYMENT, cùng amount/method/customerId/spa, actorId từ phiên, day ngày thao tác và note chứa mã InvoiceAdjustment/lý do. Unique {spaId,originalId} hiện có chống ghi trùng; liên kết invoice qua Payment.receiptId và history điều chỉnh.
+
+InvoiceAdjustment mode VOID được dùng cả cho hủy lần đầu và hoàn tất đảo ở invoice đã CANCELLED. previousAdjustmentId nối chuỗi; before/after và actorId/reason/createdAt giữ bằng chứng. reconciliation.mistakenReceipts có rows/paymentId/receiptId/amount/method/originalDay/reversalDay, total, books snapshot OPEN đã đối chiếu; createdReceiptReversals thêm reversalId thực tế. changedFields gồm reversedReceipts. Audit.details.mistakenReceiptsConfirmed ghi xác nhận, reconciliation lưu liên kết. Invoice CANCELLED vẫn total/paid=0; giảm adjustmentCredit theo nguồn thực bị đảo. cancelledAt/cancelledTotal/cancelReason ban đầu không ghi đè khi xử lý tiếp.
+
+Day.revision tăng ở ngày gốc/ngày thao tác; snapshot CLOSED không đổi. Hủy có tiền thật nhưng không chọn nguồn nhập nhầm giữ Payment/CashEntry nguyên trạng và tiền chờ xử lý theo cơ chế đã có. Không tạo Deposit, CashCard hoặc REFUND để che phần lệch.
+
+## Snapshot điều chỉnh nội dung hóa đơn — 08/11/2026
+
+PROPOSED kỹ thuật thực hiện BR-INV-CONTENT-001 CONFIRMED; không thêm collection/index/schema hay migration. Invoice giữ nội dung hiện hành; InvoiceAdjustment.before/after giữ chứng từ đầy đủ trước/sau, previousAdjustmentId nối chuỗi, actorId/reason/createdAt ghi người/lý do/thời điểm. lastAdjustmentId dùng cả chỉnh metadata không thay financialRevision; read history kiểm cả hai. financialRevision chỉ tăng cho vô hiệu hóa, đổi tổng hoặc sửa khoản thu như trước, không tăng chỉ vì sửa mô tả/cấu trúc cùng tổng.
+
+reconciliation.changedFields ghi field thực sự khác. reconciliation.content có patch, before/after dữ liệu form, displayBefore/displayAfter (tên khách/KTV và snapshot dòng), lineTotal/totalAdjustment, stockChanges/planChanges và dependencyToken. Không lưu toàn bộ danh mục/người dùng/payroll vào bản chỉnh nội dung; hash bảo vệ dependency qua preview/apply. Trước/sau đầy đủ và đối soát nguồn tiền hiện có giữ nguyên. Nội dung không đổi không ghi InvoiceAdjustment/Audit nghiệp vụ; Idempotency/Control vẫn do operate quản lý.
+
+Dòng thêm có lineId ổn định theo invoice/phiên bản/key request; sourceIndex xác định dòng gốc trong phiên bản được khóa, không cho trỏ sang hóa đơn khác. Treatment thay/bỏ giữ ID và lịch sử, bỏ dùng status CANCELLED; TreatmentUse/chữ ký không ghi lại. StockMovement bù dùng checkoutInvoiceId, actor, before/after/quantity và reason chứa mã chứng từ điều chỉnh để lần nguồn; các phiếu cũ giữ nguyên. paid theo dòng, phân bổ lịch sử và payroll chốt không được bỏ qua bằng payload.
+
+## Ngày thực nhận ban đầu của Payment — 08/11/2026
+
+PROPOSED kỹ thuật, không schema/index/migration: receivedOn là input nghiệp vụ, được lưu vào CashEntry.day của khoản PAYMENT mới. Payment.receiptId liên kết đúng khoản thu; Payment.createdAt/CashEntry.createdAt giữ thời điểm ghi dữ liệu, không bị thay bằng ngày hồi tố. Không lưu receivedOn vào Invoice hoặc dùng Invoice.createdAt để sửa CashEntry sau này.
+
+payments? ở payload tạo hóa đơn chỉ là lệnh thu nguyên tử, không lưu vào schema Invoice. Tạo trước chứng từ rồi ghi từng Payment/CashEntry/audit tuần tự trong cùng transaction; lỗi bất kỳ rollback tất cả. Audit payment có receivedOn; audit splitPayment nối paymentIds, idempotency ngoài cùng giữ một lần ghi. Day.revision tăng đúng ngày thu được kiểm OPEN; snapshot CLOSED giữ nguyên. Các báo cáo/tổng quan/sổ/chốt đã dùng CashEntry.day nên phản ánh đúng ngày ngay sau tạo, không cần điều chỉnh sau.
+
+## Danh mục nguồn của Sửa gói — 08/11/2026
+
+PROPOSED kỹ thuật theo yêu cầu CONFIRMED mới nhất: tái dùng PackageTemplate và optional Treatment.templateId sẵn có, không thêm schema/index/phân loại/migration. Danh mục hợp lệ là mẫu active có Service liên kết active cùng spa. Service/Product không phải lựa chọn thay thế cho PackageTemplate.
+
+Khi chọn gói, name/serviceId lấy từ mẫu ở backend, templateId trỏ mẫu hiện hành; totalSessions/durationMonths là quyền lợi hiện hành được đối chiếu với số đã dùng. Đây là cập nhật quyền lợi, không sửa snapshot mua trong Invoice.packageItems hoặc lịch sử TreatmentUse. Audit before/after giữ cả templateId, tên/dịch vụ/quyền lợi trước sau. Phần mô tả trước đây templateId luôn bất biến được thay bằng quy tắc chọn mẫu tường minh này. Legacy không liên kết mẫu giữ nguyên dữ liệu khi không chọn mẫu mới, không backfill theo tên.
+
 ## Projection khoản thu và lịch sử đính chính — 08/11/2026
 
 PROPOSED kỹ thuật theo BR-INV-RECEIPT-001, không thêm schema/index: Payment.amount và CashEntry.amount/day là projection hiện hành sau xác nhận đính chính. Giữ nguyên _id, receiptId, invoiceId, createdAt và phương thức. InvoiceAdjustment.reconciliation giữ payments/receipts trước sửa, bổ sung receiptChanges[] = {paymentId,receiptId,method,before:{amount,day},after:{amount,day}}. Cùng dữ liệu nằm ở Audit.details.reconciliation; actorId/createdAt/reason, invoiceId và previousAdjustmentId giữ chuỗi đối chiếu đầy đủ. Không cập nhật/xóa chứng từ điều chỉnh cũ.

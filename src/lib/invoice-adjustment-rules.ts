@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {invoiceContentInput} from './invoice-content-rules.ts';
 
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const amount = z.number().int().min(0).max(1_000_000_000_000);
@@ -8,15 +9,20 @@ export const invoiceAdjustmentInput = z.object({
   mode:z.enum(['CORRECT','VOID']), total:amount,
   reason:z.string().trim().min(1).max(2000),
   issuedOn:issueDay.optional(),
+  content:invoiceContentInput.optional(),
   paid:amount.optional(),
   receiptCorrections:z.array(z.object({paymentId:id,amount,day:issueDay}).strict()).min(1).max(100)
     .refine(rows=>new Set(rows.map(row=>row.paymentId)).size===rows.length,'Không điều chỉnh trùng khoản thu.').optional(),
+  mistakenPaymentIds:z.array(id).min(1).max(100).refine(ids=>new Set(ids).size===ids.length,'Không đảo trùng khoản thu.').optional(),
+  mistakenReceiptsConfirmed:z.boolean().optional(),
   stockHandling:z.enum(['KEEP_OUT','RETURN']).optional(),
   entitlementHandling:z.enum(['KEEP','CANCEL_REMAINING']).optional(),
   giftHandling:z.enum(['KEEP','REVOKE_UNUSED']).optional(),
   confirmed:z.boolean().default(false),
   expectedPreview:z.string().regex(/^[a-f0-9]{64}$/).optional(),
-}).strict().refine(d=>d.mode==='CORRECT'||(d.issuedOn===undefined&&d.paid===undefined&&d.receiptCorrections===undefined),'Không sửa ngày hoặc khoản thu khi vô hiệu hóa hóa đơn.');
+}).strict().refine(d=>d.mode==='CORRECT'||(d.issuedOn===undefined&&d.content===undefined&&d.paid===undefined&&d.receiptCorrections===undefined),'Không sửa ngày, nội dung hoặc khoản thu khi vô hiệu hóa hóa đơn.')
+  .refine(d=>d.mode==='VOID'||(d.mistakenPaymentIds===undefined&&d.mistakenReceiptsConfirmed===undefined),'Chỉ đảo khoản thu nhập nhầm trong thao tác hủy hóa đơn.')
+  .refine(d=>!d.mistakenReceiptsConfirmed||!!d.mistakenPaymentIds?.length,'Chọn khoản thu nhập nhầm cần đảo.');
 export const invoiceAdjustmentRefundInput = z.object({
   id, expectedUpdatedAt:z.string().datetime({offset:true}), amount:amount.refine(n=>n>0),
   method:z.enum(['CASH','BANK_TRANSFER']), reason:z.string().trim().min(1).max(2000),
