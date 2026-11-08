@@ -1482,6 +1482,27 @@ body:has(.modal-backdrop) { overflow: hidden; }
 .view-switch { margin: 16px 0; }
 .detail-modal { width: min(760px, calc(100vw - 32px)); padding: 24px; }
 .detail-modal > .section-head { margin: -24px -24px 20px; padding: 20px 24px; }
+.invoice-adjustment-dialog { display: flex; flex-direction: column; min-width: 0; max-height: min(90dvh, 900px); overflow: hidden; }
+.invoice-adjustment-dialog > .invoice-adjustment-header { position: static; flex: none; margin: -24px -24px 0; padding: 16px 24px; }
+.invoice-adjustment-dialog .invoice-adjustment-form { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 0; overflow: hidden; padding: 0; }
+.invoice-adjustment-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 16px 0 12px; }
+.invoice-adjustment-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.invoice-adjustment-dialog .invoice-adjustment-actions { position: static; flex: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--line); background: #fff; }
+.invoice-adjustment-original-description { min-width: 0; margin-bottom: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.invoice-adjustment-original-description p { margin: 6px 0 0; white-space: pre-wrap; }
+.invoice-adjustment-scroll > p { margin: 0 0 8px; }
+.invoice-adjustment-dialog .invoice-adjustment-original-description { margin-bottom: 10px; padding: 8px 10px; }
+.invoice-adjustment-dialog fieldset { gap: 10px; }
+.invoice-adjustment-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; }
+.invoice-receipt-fields { display: grid; gap: 8px; min-width: 0; }
+.invoice-adjustment-balances { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .9rem; }
+.invoice-receipt-group { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.invoice-receipt-group > p { margin: 0 0 8px; font-size: .85rem; line-height: 1.45; overflow-wrap: anywhere; }
+.invoice-adjustment-dialog small[role="alert"] { color: #b42318; font-size: .85rem; }
+.invoice-adjustment-scroll > p[role="alert"] { color: #b42318; font-size: .9rem; }
+@media (max-width: 359px) {
+  .invoice-adjustment-fields { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
 .profile-tabs { margin-bottom: 18px; }
 .profile-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
 .profile-summary > div { display: grid; gap: 8px; background: var(--paper); border-radius: 10px; padding: 12px; }
@@ -1511,6 +1532,9 @@ body:has(.modal-backdrop) { overflow: hidden; }
   .filter-controls input, .filter-controls select { min-height: 44px; font-size: 14px; padding: 9px; }
   .detail-modal { width: 100%; padding: 16px; }
   .detail-modal > .section-head { margin: -16px -16px 16px; padding: 16px; }
+  .invoice-adjustment-dialog { max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px))); border-radius: 18px 18px 0 0; }
+  .invoice-adjustment-dialog > .invoice-adjustment-header { margin: -16px -16px 0; padding: 14px 16px; }
+  .invoice-adjustment-dialog .invoice-adjustment-actions { padding-bottom: env(safe-area-inset-bottom, 0px); }
   .profile-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .profile-summary strong { font-size: 18px; }
   .profile-tabs { gap: 6px; }

@@ -416,7 +416,7 @@ export default function Workspace() {
       const response=await fetch('/api/invoices/'+invoice._id,{cache:'no-store'});
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Không tải được thông tin hóa đơn.');
-      setInvoiceAdjustment({mode,invoice:{...result.invoice,adjustmentContext:result.adjustmentContext,customerName:result.customer?.name,customerPhone:result.customer?.phone}});
+      setInvoiceAdjustment({mode,invoice:{...result.invoice,payments:result.payments,adjustmentContext:result.adjustmentContext,customerName:result.customer?.name,customerPhone:result.customer?.phone}});
     }catch(error){setError((error as Error).message);}finally{setBusy(false);}
   }
   const editInvoice = (invoice:Row,_plan:Row|null) => {void openInvoiceAdjustment(invoice,'CORRECT');};

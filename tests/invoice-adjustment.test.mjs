@@ -12,12 +12,16 @@ test('correction returns stored value first, discloses direct credit and never i
   assert.throws(()=>adjustmentBalance(1,0,2,false,0,0,0));
 });
 test('correction and real-refund inputs reject silent privileges, negative amounts and missing evidence',()=>{
-  const base={id:'a'.repeat(24),expectedUpdatedAt:'2026-11-06T00:00:00Z',mode:'CORRECT',description:'Corrected',total:1,reason:'Owner correction'};
+  const base={id:'a'.repeat(24),expectedUpdatedAt:'2026-11-06T00:00:00Z',mode:'CORRECT',total:1,reason:'Owner correction'};
   assert.equal(invoiceAdjustmentInput.safeParse(base).success,true);
   assert.equal(invoiceAdjustmentInput.safeParse({...base,issuedOn:'2026-11-06'}).success,true);
   for(const issuedOn of ['2026-02-30','2026-13-01','not-a-day'])assert.equal(invoiceAdjustmentInput.safeParse({...base,issuedOn}).success,false);
   assert.equal(invoiceAdjustmentInput.safeParse({...base,mode:'VOID',issuedOn:'2026-11-06'}).success,false);
-  for(const extra of [{reason:' '},{total:-1},{total:1.5},{actorId:'b'.repeat(24)},{spaId:'b'.repeat(24)}])assert.equal(invoiceAdjustmentInput.safeParse({...base,...extra}).success,false);
+  const corrected={paymentId:'b'.repeat(24),amount:300000,day:'2026-11-07'};
+  assert.equal(invoiceAdjustmentInput.safeParse({...base,paid:300000,receiptCorrections:[corrected]}).success,true);
+  for(const receiptCorrections of [[],[corrected,corrected],[{...corrected,amount:-1}],[{...corrected,day:'2026-02-30'}],[{...corrected,spaId:'c'.repeat(24)}]])assert.equal(invoiceAdjustmentInput.safeParse({...base,receiptCorrections}).success,false);
+  assert.equal(invoiceAdjustmentInput.safeParse({...base,mode:'VOID',receiptCorrections:[corrected]}).success,false);
+  for(const extra of [{reason:' '},{total:-1},{total:1.5},{actorId:'b'.repeat(24)},{spaId:'b'.repeat(24)},{adjustPaymentDates:true},{description:'Tampered'},{serviceItems:[]},{packageItems:[]},{treatmentSessions:[]},{performerId:'b'.repeat(24)}])assert.equal(invoiceAdjustmentInput.safeParse({...base,...extra}).success,false);
   const refund={id:base.id,expectedUpdatedAt:base.expectedUpdatedAt,amount:1,method:'CASH',reason:'Actual refund',receivedConfirmation:true};
   assert.equal(invoiceAdjustmentRefundInput.safeParse(refund).success,true);
   assert.equal(invoiceAdjustmentRefundInput.safeParse({...refund,receivedConfirmation:false}).success,false);

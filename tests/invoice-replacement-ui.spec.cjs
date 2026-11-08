@@ -157,11 +157,95 @@ for(const scenario of ['simple','stock','packages','gifts','mixed'])test(`adjust
  expect((await page.evaluate(()=>window.__replacementCalls)).map(call=>call.action)).toEqual(['previewInvoiceAdjustment','applyInvoiceAdjustment']);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
-test('adjustment dialog saves date with content and preserves receipt dates',async({page})=>{
+test('adjustment dialog edits date and total only while preserving original content',async({page})=>{
  await page.goto('/?adjust=1&mode=CORRECT');const dialog=page.getByRole('dialog',{name:'Sửa hóa đơn',exact:true});
- await dialog.getByLabel('Ngày hóa đơn',{exact:true}).fill('2026-11-01');await dialog.getByLabel('Nội dung hóa đơn',{exact:true}).fill('Nội dung đã sửa');await dialog.getByLabel('Lý do',{exact:true}).fill('Sửa sai ngày lập');
- await dialog.getByRole('button',{name:'Xem trước thay đổi',exact:true}).click();await expect(dialog.getByRole('region',{name:'Đối chiếu điều chỉnh hóa đơn'})).toContainText('1/11/2026');
+ await expect(dialog.getByLabel('Nội dung hóa đơn gốc')).toContainText('Gói minh họa');
+ await expect(dialog.getByRole('textbox',{name:'Nội dung hóa đơn'})).toHaveCount(0);
+ await dialog.getByLabel('Ngày hóa đơn',{exact:true}).fill('2026-11-01');await dialog.getByLabel('Tổng tiền sau sửa (VNĐ)',{exact:true}).fill('1600000');await dialog.getByLabel('Lý do',{exact:true}).fill('Sửa sai ngày và tổng tiền');
+ await dialog.getByRole('button',{name:'Xem trước thay đổi',exact:true}).click();const preview=dialog.getByRole('region',{name:'Đối chiếu điều chỉnh hóa đơn'});
+ await expect(preview).toContainText('1/11/2026');await expect(dialog.getByLabel('Nội dung hóa đơn gốc')).toContainText('Gói minh họa');await expect(preview).toContainText('1.600.000 đ');
  await dialog.getByRole('button',{name:'Xác nhận lưu hóa đơn',exact:true}).click();await expect(page.getByText('Đã lưu điều chỉnh fixture',{exact:true})).toBeVisible();
  const calls=await page.evaluate(()=>window.__replacementCalls);expect(calls.map(call=>call.action)).toEqual(['previewInvoiceAdjustment','applyInvoiceAdjustment']);
- expect(calls[1].data.issuedOn).toBe('2026-11-01');expect(calls[1].data.description).toBe('Nội dung đã sửa');expect(calls[1].data).not.toHaveProperty('adjustPaymentDates');
+ expect(calls[1].data.issuedOn).toBe('2026-11-01');expect(calls[1].data.total).toBe(1600000);expect(calls[1].data).not.toHaveProperty('description');expect(calls[1].data).not.toHaveProperty('serviceItems');expect(calls[1].data).not.toHaveProperty('performerId');expect(calls[1].data).not.toHaveProperty('adjustPaymentDates');
+});
+
+for(const scenario of ['receipt-single','receipt-many'])test(`receipt correction form submits original payment links and actual receipt days (${scenario})`,async({page})=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto('/?adjust=1&mode=CORRECT&case='+scenario);
+ const dialog=page.getByRole('dialog',{name:'Sửa hóa đơn',exact:true}),paid=dialog.getByLabel('Số tiền đã thanh toán (VNĐ)',{exact:true});
+ if(scenario==='receipt-single'){
+  await expect(paid).toBeEditable();await paid.fill('300000');
+  await dialog.getByLabel('Ngày thực nhận khoản thu 1',{exact:true}).fill('2026-11-06');
+ }else{
+  await expect(paid).toHaveAttribute('readonly','');
+  await dialog.getByLabel('Số tiền khoản thu 1 (VNĐ)',{exact:true}).fill('100000');
+  await dialog.getByLabel('Số tiền khoản thu 2 (VNĐ)',{exact:true}).fill('200000');
+  await dialog.getByLabel('Ngày thực nhận khoản thu 2',{exact:true}).fill('2026-11-07');
+ }
+ await expect(paid).toHaveValue('300000');
+ await dialog.getByLabel('Lý do',{exact:true}).fill('Đối chiếu lại khoản thu thực tế đã nhập sai');
+ await dialog.getByRole('button',{name:'Xem trước thay đổi',exact:true}).click();
+ const review=dialog.getByRole('region',{name:'Đối chiếu khoản thu thực tế'});await expect(review).toContainText('Khoản thu điều chỉnh');
+ await dialog.getByRole('button',{name:'Xác nhận lưu hóa đơn',exact:true}).click();await expect(page.getByText('Đã lưu điều chỉnh fixture',{exact:true})).toBeVisible();
+ const calls=await page.evaluate(()=>window.__replacementCalls);expect(calls.map(call=>call.action)).toEqual(['previewInvoiceAdjustment','applyInvoiceAdjustment']);
+ expect(calls[1].data.paid).toBe(300000);expect(calls[1].data.total).toBe(300000);
+ expect(calls[1].data.receiptCorrections).toEqual(scenario==='receipt-single'?[{paymentId:'b'.repeat(24),amount:300000,day:'2026-11-06'}]:[{paymentId:'b'.repeat(24),amount:100000,day:'2026-11-07'},{paymentId:'c'.repeat(24),amount:200000,day:'2026-11-07'}]);
+ expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('correction modal keeps one initial top-aligned scroll area and fixed title/actions',async({page})=>{
+ await page.setViewportSize({width:page.viewportSize().width,height:520});
+ await page.goto('/?adjust=1&mode=CORRECT&case=packages');
+ const dialog=page.getByRole('dialog',{name:'Sửa hóa đơn',exact:true}),scroller=dialog.getByTestId('invoice-adjustment-scroll');
+ const header=dialog.locator('.invoice-adjustment-header'),actions=dialog.locator('.invoice-adjustment-actions');
+ await expect(scroller).toBeVisible();await expect(header).toBeVisible();await expect(actions.getByRole('button',{name:'Quay lại',exact:true})).toBeVisible();await expect(actions.getByRole('button',{name:'Xem trước thay đổi',exact:true})).toBeVisible();
+ expect(await scroller.evaluate(el=>el.scrollTop)).toBe(0);
+ expect(await dialog.evaluate(el=>el.scrollHeight===el.clientHeight)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ const initial=await Promise.all([header.boundingBox(),actions.boundingBox()]);
+ await scroller.evaluate(el=>el.scrollTop=el.scrollHeight);
+ await expect.poll(()=>scroller.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+ const after=await Promise.all([header.boundingBox(),actions.boundingBox()]);
+ expect(after[0].y).toBe(initial[0].y);expect(after[1].y).toBe(initial[1].y);
+ await expect(actions.getByRole('button',{name:'Quay lại',exact:true})).toBeInViewport();
+ await expect(actions.getByRole('button',{name:'Xem trước thay đổi',exact:true})).toBeInViewport();
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
+
+test('compact correction groups show only relevant amount warnings',async({page},testInfo)=>{
+ await page.goto('/?adjust=1&mode=CORRECT&case=receipt-many');
+ const dialog=page.getByRole('dialog',{name:'Sửa hóa đơn',exact:true});
+ const first=dialog.getByRole('group',{name:'Khoản thu 1',exact:true}),second=dialog.getByRole('group',{name:'Khoản thu 2',exact:true});
+ await expect(first).toContainText('Khoản thu 1 · Tiền mặt · Gốc 30.000 đ · 07/11/2026');
+ await expect(second).toContainText('Khoản thu 2 · Chuyển khoản · Gốc 20.000 đ · 06/11/2026');
+ for(const text of ['Chỉ sửa tổng hóa đơn không tạo khoản thu','Ngày thu cũ và mới phải có sổ','Không dùng Thanh toán hôm nay','tổng hóa đơn − số tiền đã thanh toán'])await expect(dialog).not.toContainText(text);
+ await expect(dialog.getByRole('alert')).toHaveCount(0);
+ const amount=second.getByLabel('Số tiền khoản thu 2 (VNĐ)',{exact:true});await amount.fill('-1');
+ await expect(second.getByRole('alert')).toHaveText('Số tiền không hợp lệ.');await expect(amount).toHaveAttribute('aria-describedby','receipt-amount-error-1');
+ await amount.fill('400000');
+ const paid=dialog.getByLabel('Số tiền đã thanh toán (VNĐ)',{exact:true});await expect(paid).toHaveAttribute('aria-describedby','invoice-paid-error');
+ await expect(dialog.locator('#invoice-paid-error')).toHaveText('Số đã thanh toán vượt tổng hóa đơn.');
+ await amount.fill('20000');await expect(dialog.getByRole('alert')).toHaveCount(0);
+ await expect(dialog).toContainText('Còn nợ:');expect(await page.evaluate(()=>window.__replacementCalls)).toEqual([]);
+ const columns=await first.locator('.invoice-adjustment-fields').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);
+ expect(columns).toBe(2);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`outputs/invoice-correction-compact-${testInfo.project.name}.png`,fullPage:true});
+ if(testInfo.project.name==='mobile'){
+  await page.setViewportSize({width:320,height:844});
+  expect(await first.locator('.invoice-adjustment-fields').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(1);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ }
+});
+
+test('compact correction keeps closed-book errors short without changing the form',async({page},testInfo)=>{
+ await page.goto('/?adjust=1&mode=CORRECT&case=receipt-single&scenario=closed');
+ const dialog=page.getByRole('dialog',{name:'Sửa hóa đơn',exact:true}),paid=dialog.getByLabel('Số tiền đã thanh toán (VNĐ)',{exact:true});
+ await paid.fill('300000');await dialog.getByLabel('Lý do',{exact:true}).fill('Đối chiếu khoản thu');
+ await dialog.getByRole('button',{name:'Xem trước thay đổi',exact:true}).click();
+ await expect(dialog.getByRole('alert')).toHaveText('Không thể chỉnh khoản thu: sổ ngày 07/11/2026 chưa mở hoặc đã chốt.');
+ await expect(dialog.getByRole('alert')).toBeInViewport({ratio:1});
+ await expect(paid).toHaveValue('300000');await expect(dialog.getByLabel('Ngày thực nhận khoản thu 1',{exact:true})).toHaveValue('2026-11-07');
+ expect((await page.evaluate(()=>window.__replacementCalls)).map(call=>call.action)).toEqual(['previewInvoiceAdjustment']);
+ await page.screenshot({path:`outputs/invoice-correction-closed-${testInfo.project.name}.png`,fullPage:true});
 });

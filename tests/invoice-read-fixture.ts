@@ -86,14 +86,14 @@ mock.method(Payment, 'find', (filter: any) => {
 });
 mock.method(CashEntry, 'find', (filter: any) => {
   assert.deepEqual(filter, { spaId, _id: { $in: ['r1', 'r2', 'missing'] }, kind: 'PAYMENT', direction: 'IN', reversed: false });
-  return query([{ _id: 'r1', method: 'BANK_TRANSFER' }, { _id: 'r2', method: 'CASH' }]);
+  return query([{ _id: 'r1', method: 'BANK_TRANSFER',day:'2026-11-06' }, { _id: 'r2', method: 'CASH',day:'2026-11-07' }]);
 });
 const detail = await readInvoice(owner, id);
 assert.deepEqual(detail.invoice.serviceItems?.map((item: any) => item.performerName), ['Thư', 'Quỳnh', null]);
 assert.deepEqual(detail.payments, [
-  { _id: 'p1', amount: 500000, method: 'BANK_TRANSFER' },
-  { _id: 'p2', amount: 1000000, method: 'CASH' },
-  { _id: 'p3', amount: 100, method: null },
+  { _id: 'p1', amount: 500000, method: 'BANK_TRANSFER',receiptId:'r1',day:'2026-11-06' },
+  { _id: 'p2', amount: 1000000, method: 'CASH',receiptId:'r2',day:'2026-11-07' },
+  { _id: 'p3', amount: 100, method: null,receiptId:'missing',day:null },
 ]);
 assert.equal(detail.invoice.total, 1500000);
 assert.equal(detail.invoice.paid, 1500000);

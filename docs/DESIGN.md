@@ -1,10 +1,24 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Sửa khoản thu nhập sai — 08/11/2026
+
+CONFIRMED nghiệp vụ mới ưu tiên hơn mô tả chỉ sửa tổng/ngày bên dưới. Luồng: Workspace tải InvoiceDetail/payments (receiptId,day), truyền vào InvoiceAdjustmentDialog. Một khoản: nhập Số tiền đã thanh toán; nhiều khoản: nhập từng số/ngày và tổng chỉ đọc. Hiển thị tổng hóa đơn, số đã thanh toán, còn nợ tự tính, số cũ/mới và lý do. Không có nguồn: không nhập tổng để tạo giao dịch giả. Preview thể hiện từng khoản trước/sau, lịch sử chi tiết hóa đơn lưu cùng liên kết nguồn.
+
+PROPOSED kỹ thuật: applyInvoiceAdjustment xác minh nguồn và sổ OPEN ở cả ngày cũ/mới, tính balance từ nguồn sau sửa, kiểm paid do client gửi, rồi lưu projection Payment/CashEntry tuần tự cùng InvoiceAdjustment/Audit/Control/idempotency trong transaction. Không gọi receipt để ghi chênh lệch vào hôm nay. Không đổi phương thức, ID hoặc createdAt gốc; before giữ nguồn đầy đủ. Tăng financialRevision và Day.revision, giữ guard đảo lịch sử và bù hoa hồng hiện có. Nguồn đã đảo/ngoài hóa đơn/dùng chung/lệch, ngày thiếu/đã chốt, hoàn tiền/thay tư vấn/phân bổ dòng lịch sử bị chặn. Sửa khoản thu vượt tổng bị chặn theo quy tắc thu vượt nợ; không tạo cọc/credit tự động.
+
+Báo cáo/tổng quan/sổ/chốt dùng CashEntry.day/amount hiện hành, không cộng chứng từ điều chỉnh. CLOSED không bị sửa; thiếu cơ chế bù riêng khi vẫn CLOSED là phần còn OPEN tại BR-OPEN-005. Kiểm thử local dựng nguồn trực tiếp đã nhập sai, sửa tăng/giảm/0/nhiều khoản/ngày, tiền thừa, retry, audit rollback, nguồn đã đảo, chốt sau preview và đối chiếu báo cáo/công nợ/chốt sổ. Không sửa dữ liệu thật hoặc tự chạy migration.
+
+## Bất biến ngày ghi nhận thực thu — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: ngày hóa đơn và ngày thu tiền là hai thông tin tách biệt. Sửa ngày hóa đơn trong dialog không tạo receipt, không chuyển ngày giao dịch và không làm thay đổi “Thực thu hôm nay”. Dashboard, sổ thu chi, báo cáo dòng tiền và chốt sổ đọc cùng `CashEntry.day`; báo cáo hóa đơn theo `Invoice.createdAt` là thống kê chứng từ, không thay thế báo cáo thực thu.
+
+PROPOSED kỹ thuật: ngày đơn thuần lưu lịch sử trước/sau nhưng không đặt `financialRevision`, tránh khóa luồng đảo giao dịch vốn có. Tùy chọn legacy `adjustPaymentDates` là ý định riêng và không được tự suy ra từ ngày hóa đơn hoặc đưa vào dialog hiện hành.
+
 ## Modal thống nhất và chỉ hiện phần liên quan — 06/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED: Sửa hóa đơn gộp ngày/nội dung/tổng, một luồng Vô hiệu hóa cho chưa thu/đã thu; giữ Đảo giao dịch ở sổ tiền và thay tư vấn riêng có giải thích giới hạn V1. Danh sách giữ bút chì/thùng rác tiếng Việt và Thanh toán khi còn nợ. Hai nơi sửa gói vẫn chung TreatmentEdit.
 
-PROPOSED kỹ thuật: Workspace GET invoice mới nhất để lấy khách và adjustmentContext rồi mở dialog. VOID đơn dịch vụ không có input nội dung/giá hoặc lựa chọn kho/gói/quà. Chỉ render từng nhóm có cờ thực từ API; không có lựa chọn “không có hàng/gói/quà” gây hiểu lầm. Footer Quay lại/Vô hiệu hóa hóa đơn; lần đầu preview đầy đủ, sau đó hiển thị ảnh hưởng thực có và lần xác nhận mới apply. Không hiển thị số lượng kỹ thuật của các nhóm trống. CORRECT có input date và bảng ngày cũ/mới; ghi date trong cùng chứng từ, không chuyển ngày thu tiền/ngày làm. Giữ phiên bản/previewToken, transaction tuần tự, rollback, idempotency và audit. Gói chỉ thuộc quà được xử lý theo lựa chọn quà, không mở thêm nhóm gói bán.
+PROPOSED kỹ thuật: Workspace GET invoice mới nhất để lấy khách và adjustmentContext rồi mở dialog. CORRECT chỉ hiển thị nội dung gốc dạng chỉ đọc, input ngày/tổng/lý do; không gửi description hoặc dòng dữ liệu lên API. Backend strict schema từ chối trường ngoài payload và giữ nguyên toàn bộ dòng/performer/quyền lợi. Modal có một vùng cuộn nội dung; tiêu đề và footer thao tác đứng yên. VOID đơn dịch vụ không có input nội dung/giá hoặc lựa chọn kho/gói/quà. Chỉ render từng nhóm có cờ thực từ API; không có lựa chọn “không có hàng/gói/quà” gây hiểu lầm. Footer Quay lại/Vô hiệu hóa hóa đơn; lần đầu preview đầy đủ, sau đó hiển thị ảnh hưởng thực có và lần xác nhận mới apply. Không hiển thị số lượng kỹ thuật của các nhóm trống. CORRECT có bảng ngày/tổng/nội dung gốc trước/sau; ghi date trong cùng chứng từ, không chuyển ngày thu tiền/ngày làm. Giữ phiên bản/previewToken, transaction tuần tự, rollback, idempotency và audit. Gói chỉ thuộc quà được xử lý theo lựa chọn quà, không mở thêm nhóm gói bán.
 
 
 ## Luồng sửa sai/vô hiệu hóa có đối soát — 06/11/2026 (ưu tiên mới nhất)
@@ -640,7 +654,7 @@ Theo yêu cầu mới nhất, bỏ nút Sửa ngày hóa đơn riêng ở danh s
 
 ### Điều chỉnh ngày thu khi nhập hóa đơn muộn (2026-10-26)
 
-CONFIRMED theo yêu cầu chủ spa: trong Sửa hóa đơn, tùy chọn Điều chỉnh cả ngày thu tiền gửi correctInvoiceDate.adjustPaymentDates: true (mặc định false). OWNER đang hoạt động được chuyển CashEntry.day của tất cả khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực về ngày hóa đơn đã chọn, khi thực tế mọi khoản này đã thu ngày đó. Đây là ngoại lệ cho quy tắc trước đó chỉ sửa ngày hóa đơn. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
+CONFIRMED trước đây: `correctInvoiceDate.adjustPaymentDates: true` là ý định tường minh, độc lập để chuyển ngày giao dịch của các khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực khi người dùng xác nhận chúng thực tế được thu vào ngày đó. Không được suy ra từ `issuedOn` hoặc tự gửi trong dialog Sửa hóa đơn hiện tại; dialog không hiển thị/gửi cờ. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
 
 Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không được CLOSED. Backend kiểm tra cùng spa, phiên/quyền, phiên bản hóa đơn, liên kết Payment–CashEntry; chặn khoản đảo/dùng chung và hóa đơn đã hoàn tiền. Ghi tuần tự trong transaction, tăng Day.revision cho các ngày thay đổi, giữ idempotency và Audit.details gồm adjustPaymentDates, receiptChanges (receiptId, paymentId, amount, method, before, after), lý do và ngày hóa đơn trước/sau. Không tạo khoản thu mới; tổng toàn kỳ không đổi, thực thu theo ngày chuyển theo CashEntry.day.
 
