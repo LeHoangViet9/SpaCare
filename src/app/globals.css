@@ -2056,6 +2056,9 @@ label textarea { margin-top: 8px; }
 .payment-method-fields { min-width:0; }
 .payment-method-entry { min-width:0; padding:12px 0; }
 .payment-method-entry + .payment-method-entry { border-top:1px solid var(--line); }
+.creation-payments .payment-method-entry { display:grid; gap:8px; }
+.creation-payments .creation-receipt-confirmation { display:flex; align-items:center; gap:8px; }
+.creation-payments .creation-receipt-confirmation input { width:auto; flex:none; }
 .payment-collection-total strong { white-space:nowrap; }
 .invoice-payment-modal .payment-instructions img { max-width:100%; height:auto; }
 
@@ -2275,3 +2278,16 @@ label textarea { margin-top: 8px; }
   .leave-management .leave-pagination { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
   .leave-pagination button { min-height: 46px; }
 }
+/* Compact correction rows and responsive comparison. */
+.invoice-content-fields { display:grid; gap:12px; min-width:0; }
+.invoice-content-fields h3,.invoice-content-fields p { margin:4px 0; }
+.invoice-content-fields section { min-width:0; }
+.invoice-content-fields .section-head { padding:4px 0; margin:0; gap:8px; }
+.invoice-content-row { padding:12px; margin:8px 0; border:1px solid #ddd; border-radius:10px; display:grid; gap:8px; }
+.invoice-content-row select,.invoice-content-fields input { max-width:100%; min-width:0; }
+.invoice-content-lock { display:block; color:#795714; margin:4px 0; }
+.invoice-content-subtotal { text-align:right; }
+.invoice-content-comparison { display:grid; grid-template-columns:1fr 1fr; gap:12px; overflow-wrap:anywhere; }
+.invoice-content-comparison section { min-width:0; padding:10px; background:#f6f8f7; border-radius:8px; }
+.invoice-content-comparison ul { padding-left:18px; }
+@media (max-width:600px) { .invoice-content-comparison { grid-template-columns:1fr; } }

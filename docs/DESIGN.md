@@ -1,5 +1,59 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Preview nội dung legacy — 08/11/2026
+
+PROPOSED kỹ thuật: `displayBefore` và nền của `displayAfter` dùng `invoiceContentContext.source`, cùng các dòng canonical điền sẵn form (dịch vụ từ `serviceId`, sản phẩm từ nguồn đơn dòng, gói legacy đủ nguồn). Áp dụng `patch` sau nền canonical để mảng rỗng tường minh phía sau vẫn thể hiện việc xóa dòng. Chỉ thay dữ liệu trình bày preview/chứng từ điều chỉnh mới; giữ snapshot thô trước/sau, không chuẩn hóa ngầm dữ liệu đã lưu, không ghi lại lịch sử cũ hoặc đổi tiền, ngày thu, chữ ký, thời điểm thực hiện, quyền và guard hiện có.
+
+## Nối KTV vào form Workspace thực tế — 08/11/2026
+
+Nguyên nhân có thể tái hiện trong code: InvoiceAdjustmentDialog nhận invoice.editContext rỗng thì bỏ InvoiceContentFields, vẫn dựng ngày/tổng/khoản thu/lý do. Vì vậy fixture truyền sẵn context không chứng minh đường mở form thực tế có KTV. Workspace trước đây có edit=1 nhưng không kiểm context trả về.
+
+PROPOSED sửa: shared loadInvoiceAdjustment kiểm response đúng ID/có context đầy đủ; Workspace chỉ mở khi đã nạp. Dialog có thể tự tải nguồn nếu caller còn truyền DTO cũ, hiển thị loading/error/retry thay vì form thiếu nội dung. Tên dialog giữ Sửa hóa đơn cho cả chỉnh thường/đính chính; KTV correctionOnly điền sẵn và bắt chọn, preview/history có dòng KTV cũ → mới. Không đổi backend tính tiền hay cơ chế bù hoa hồng đã có.
+
+Kiểm thử ngoài dialog fixture: mount nguyên production Workspace ở đường /workspace/invoices bằng local transport, browser fetch thật đến readInvoice/operate thật trên model doubles dùng schema Mongoose và rollback. Seed HD000021 dịch vụ Gội đầu dưỡng sinh, thử từ danh sách lẫn chi tiết, kiểm phiếu thu/thời điểm/bút toán nháp; thử gói thiếu liên kết và payroll chốt; thử response bị mất editContext. Không kết nối MongoDB hoặc dữ liệu khách thật trong transport này; integration database chỉ chạy spacare_test qua safety runner khi môi trường sẵn sàng.
+
+## Sửa hóa đơn chỉ hiển thị phần liên quan — 08/11/2026
+
+CONFIRMED: bỏ CustomerPicker và mục Khách hàng trong form sửa; chỉ giữ nhận diện khách bất biến ở thông tin hóa đơn. InvoiceContentFields dùng invoiceContentKinds(context.source), chỉ dựng section/tiêu đề/trường/nút thêm cho loại thực có, không tái dùng toàn form tạo. invoiceContentPatch bỏ customerId và loại vắng ở original, backend kiểm độc lập từ nguồn. Không dựa vào Invoice.kind hay tên danh mục; phần gốc còn tồn tại trong lần sửa khi bỏ dòng cuối để thêm thay thế cùng loại.
+
+PROPOSED UI: dòng bị khóa hiển thị tên, giá/thông tin buổi/KTV và lý do ngắn, không dựng input hay nút bỏ; người tư vấn gói có ràng buộc cũng chỉ xem. Ẩn metadata tùy chọn chưa có nguồn (khuyến mãi/người tư vấn khách), giữ các trường chung cần thiết và dữ liệu cũ. Bỏ bản mô tả gốc lặp lại ở đầu khi có form nội dung điền sẵn, vẫn đối chiếu snapshot trước/sau khi preview; lịch sử cũ vẫn hiển thị khách trước/sau, còn preview mới bỏ dòng khách không đổi. Thu gọn khoảng đệm tiêu đề nhóm; không đổi footer/cơ chế cuộn hay tính tiền.
+
+## Hủy và đảo khoản thu trong một lần — 08/11/2026
+
+CONFIRMED: yêu cầu mới cho phép VOID kèm đảo các nguồn thực sự nhập nhầm; tiền đã nhận thật không tự đảo. Nguyên nhân cũ: VOID giữ nguồn ở adjustmentCredit nhưng reverseCash bị khóa sau financialRevision, còn CANCELLED không có lối xử lý tiếp tại chi tiết.
+
+PROPOSED kỹ thuật: InvoiceAdjustmentDialog liệt kê payments với checkbox mặc định bỏ chọn, phương thức/số tiền/ngày, tổng sẽ đảo. Preview trình bày các khoản đã chọn và tiền còn chờ xử lý; một nút xác nhận Hủy và đảo [số tiền] nhập nhầm gửi ACK rõ ràng. Không có lựa chọn thì hủy theo luồng giữ tiền thật cũ. Mất kết nối/lỗi 5xx sau apply giữ preview và request key để retry; lỗi stale/validation quay về đối soát lại. InvoiceMistakenReceiptResolution chỉ OWNER trên chi tiết CANCELLED có nguồn chưa đảo, mở cùng dialog, không hiện lại lựa chọn kho/gói/quà. Lịch sử hiển thị ID nguồn và bút toán đảo cùng ngày/số tiền.
+
+prepareMistakenReceipts xác minh nguồn và sổ OPEN; applyMistakenReceipts tăng revision, tạo REVERSAL liên kết rồi đánh dấu Payment/CashEntry reversed tuần tự trong transaction adjustInvoice. Cùng transaction còn có hủy, bù nguồn, commission, kho, quyền lợi, audit, idempotency; bất kỳ lỗi nào rollback. Với CANCELLED bỏ qua phần xử lý lại kho/gói/quà, không ghi đè thông tin hủy ban đầu; chỉ đối soát nguồn và phần bù còn thiếu theo ledger net. cashFlowMatch hiện có đã loại nguồn đảo và REVERSAL liên kết, không cộng trừ thêm lần hai theo InvoiceAdjustment. Ngày gốc CLOSED phải chặn, không sửa snapshot hoặc lách sang ngày khác.
+
+## Form Sửa hóa đơn đầy đủ nội dung — 08/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-CONTENT-001 CONFIRMED: workspace mở chi tiết với edit=1 rồi dựng InvoiceContentFields trong InvoiceAdjustmentDialog. Khách/thông tin chung → dịch vụ/sản phẩm/gói → ngày/tổng/nguồn thanh toán → lý do → đối chiếu/xác nhận. Nguồn từ invoice đã lưu, legacy một dòng được chiếu từ reference có sẵn; không suy đoán các gói legacy không có giá từng dòng. Form tạo không có giảm giá riêng; chênh lệch tổng cũ so với tổng dòng được giữ khi sửa dòng và hiện rõ ở preview, không đặt chính sách giảm giá mới.
+
+Dùng lại CustomerPicker, SaleParticipants, danh mục saleablePackageTemplates. Dịch vụ có giá và KTV, sản phẩm có số lượng/đơn giá, gói có mẫu/giá/quyền lợi/ngày/khuyến mãi. Nút bỏ/thêm và từng trường khóa theo backend; giải thích ngắn cạnh nhóm. Các lượt đã xác nhận/người nhận, quà/thẻ/chữ ký là lịch sử giữ nguyên; không cấp buổi/quà/chữ ký mới từ sửa chứng từ. Nhận tiền mới dùng Thanh toán. Giữ phần sửa sai giao dịch đã có và ngày thực nhận độc lập.
+
+invoiceContentPatch chỉ gửi field thực sự khác; đổi dòng cập nhật tổng theo chênh lệch, có thể đối chiếu tổng điều chỉnh riêng. Hai cột trước/sau trên desktop, xếp dọc trên mobile; footer xác nhận cố định và phần thân cuộn. Nội dung hiện hành hiển thị trong chi tiết; không còn mô tả nhầm rằng các dòng hiện hành luôn là snapshot gốc. InvoiceAdjustment chứa snapshot gốc và lịch sử sửa để xem lại.
+
+prepareInvoiceContent kiểm nguồn/locks và lập patch/bù kho/quyền lợi; applyInvoiceContent thực hiện tuần tự trong transaction adjustInvoice hiện có. Preview hash gồm dependencies nguồn/danh mục/quyền lợi/kho/payroll; apply kiểm lại. Mọi cập nhật liên quan hoặc audit lỗi đều rollback. Chưa có cơ chế đổi phân bổ dòng của hóa đơn hỗn hợp có tiền an toàn: chặn thay vì tự suy ra.
+
+Điểm hoàn thành dịch vụ nhận được hóa đơn nhiều dòng sau sửa: readInvoice mở hành động theo serviceItems, completeInvoiceService không cắt về phần tử đầu. KTV/hoa hồng từng dòng lấy snapshot và chỉ ghi ledger sau xác nhận thực hiện. Treatment bị bỏ giữ lịch sử CANCELLED; trước xác nhận dịch vụ thay thế phải kiểm cả quota và TreatmentUse bằng backend. Không thay đổi bộ lọc thẻ tiền/lịch hẹn vốn bảo vệ nguồn gói.
+
+## Thu tiền đúng ngày ngay khi tạo hóa đơn — 08/11/2026
+
+Nguyên nhân: receipt trước đây luôn ghi day=today, trong khi issuedOn chỉ thay Invoice.createdAt. Luồng tạo thông thường chưa có trường ngày khoản thu; thu thêm qua InvoiceCardPayment cũng mặc định hôm nay. Thêm CreationPayments dùng chung cho Cashier/CommercialFields/FormModal: từng phương thức dương có Ngày thực nhận và xác nhận thực nhận. Ngày mặc định theo issuedOn hoặc hôm nay khi bỏ trống; lựa chọn ngày riêng không bị thay khi đổi issuedOn. Không có khoản dương thì bỏ payments khỏi payload. Khi dùng thẻ, dùng form thu thêm hiện có với ngày riêng, không nhập trùng hai form thu.
+
+Backend validate creation payments ngoài cùng, thực thi splitPayment tuần tự sau khi chứng từ đã gộp trong cùng transaction Control hiện có. receipt(values,receivedOn) kiểm đúng sổ nhận qua touchDay; mọi caller khác vẫn mặc định today. Payment/splitPayment thu sau cũng chọn ngày riêng, mặc định hôm nay để tránh tự backdate công nợ lâu ngày. Không đổi khoản thu đã ghi bởi sửa ngày hóa đơn.
+
+Kiểm thử tạo mới thật qua operate với model doubles: hóa đơn hôm trước/thu hôm trước; hóa đơn hôm trước/thu hôm nay; chưa thu; hai phương thức/ngày khác nhau; nhiều lần thu; snapshot CLOSED, ngày thiếu/ngoài spa/tương lai/không hợp lệ, audit failure và retry; checkout và card extra. Đối chiếu report/workspace/công nợ/chốt sổ ngay sau tạo. Bổ sung MongoDB integration riêng spacare_test và kiểm thử trình duyệt Cashier/FormModal desktop/mobile. Không kết nối dữ liệu vận hành hoặc chạy migration/backfill.
+
+## Sửa gói dùng danh mục bán gói — 08/11/2026
+
+Nguồn nguyên nhân: form TreatmentEdit trước đây liệt kê Service và cho nhập name tự do; màn hình bán gói dùng PackageTemplate active có dịch vụ active. Tái dùng helper package-catalog ở CommercialFields, cashierCatalog, TreatmentEdit, customer-history và validation bán/sửa backend. Không thêm phân loại mới hoặc dò chữ trong tên.
+
+Gói dịch vụ thay ô tên/dịch vụ riêng. Chọn mẫu đổi ngay tên trong form, quota/số tháng và cột sau của preview; tiêu đề dialog chỉ Sửa gói. Ngày hiệu lực cá nhân giữ cách nhập hiện có. Không còn đoạn hướng dẫn dài dưới tiêu đề; cảnh báo giảm quota và lỗi thiếu lịch sử vẫn chỉ hiện khi liên quan. Gói legacy có tùy chọn giữ danh tính hiện tại, không dựng mẫu giả hoặc ghi dữ liệu để hiển thị form.
+
+Backend recheck mẫu active/service/spa và đối chiếu name/serviceId, giữ phiên bản và count thật. Gói mới không đủ quyền lợi, khác loại hoặc đổi dịch vụ sau khi đã dùng bị chặn; giảm quota của mẫu hiện tại giữ cơ chế confirmUsedFloor. Audit nối trước/sau cả templateId; không sửa lịch sử buổi/chữ ký/hóa đơn/tiền. Kiểm thử có danh mục tên không chứa chữ gói và dịch vụ/sản phẩm chứa chữ gói, so sánh với dropdown bán, đổi tên/quota và rollback/idempotency/lịch sử.
+
 ## Sửa khoản thu nhập sai — 08/11/2026
 
 CONFIRMED nghiệp vụ mới ưu tiên hơn mô tả chỉ sửa tổng/ngày bên dưới. Luồng: Workspace tải InvoiceDetail/payments (receiptId,day), truyền vào InvoiceAdjustmentDialog. Một khoản: nhập Số tiền đã thanh toán; nhiều khoản: nhập từng số/ngày và tổng chỉ đọc. Hiển thị tổng hóa đơn, số đã thanh toán, còn nợ tự tính, số cũ/mới và lý do. Không có nguồn: không nhập tổng để tạo giao dịch giả. Preview thể hiện từng khoản trước/sau, lịch sử chi tiết hóa đơn lưu cùng liên kết nguồn.

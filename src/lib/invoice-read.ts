@@ -1,11 +1,12 @@
 import { readTreatmentSignature } from './treatment-signature';
-import { InvoiceAdjustment, SaleCommission, SharedSaleCommission, StockMovement } from './models';
+import { Commission, InvoiceAdjustment, SaleCommission, SharedSaleCommission, StockMovement } from './models';
 import { readInvoiceHandling } from './invoice-handling-read';
 import { CashEntry, Payment } from './models';
 import { CashCard } from './models';
-import { Appointment, Audit, Customer, Invoice, Treatment, TreatmentUse, User } from './models';
+import { Appointment, Audit, Customer, Invoice, InvoiceLineCommission, Treatment, TreatmentUse, User } from './models';
 import { ensure, spaDay } from './rules';
 import type { Actor } from './auth';
+import {invoiceContentContext} from './invoice-content';
 
 export async function invoiceScope(user: Actor) {
   const scope = { spaId: user.spaId };
@@ -24,7 +25,7 @@ export async function invoiceScope(user: Actor) {
   return permitted;
 }
 
-export async function readInvoice(user: Actor, id: string, requestedSignaturePage = 1) {
+export async function readInvoice(user: Actor, id: string, requestedSignaturePage = 1,includeEditContext=false) {
   ensure(/^[a-f\d]{24}$/i.test(id), 'ID không hợp lệ.');
   const scope = { spaId: user.spaId };
   const invoice = await Invoice.findOne({ ...await invoiceScope(user), _id: id }).lean();
@@ -74,15 +75,18 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
     !!await SaleCommission.exists({...scope,invoiceId:invoice._id,cancelledAt:{$exists:false}})||
     !!await SharedSaleCommission.exists({...scope,invoiceId:invoice._id,cancelledAt:{$exists:false}})
   );
+  const canCorrectPerformedServices=user.role==='OWNER'&&invoice.status!=='CANCELLED'&&(!invoice.kind||invoice.kind==='SERVICE')
+    &&!!(invoice.performedAt||await InvoiceLineCommission.exists({...scope,invoiceId:invoice._id,cancelledAt:{$exists:false}})||await Commission.exists({...scope,invoiceId:invoice._id,cancelledAt:{$exists:false},category:{$ne:'PACKAGE_SALE'}}));
   const adjustmentContext=user.role==='OWNER'?{
     stock:!!(invoice.productId||invoice.productItems?.length||await StockMovement.exists({...scope,$or:[{invoiceId:invoice._id},{checkoutInvoiceId:invoice._id}],direction:'OUT'})),
     packages:!!(invoice.packageItems?.length||packages.some(p=>String(p.invoiceId)===String(invoice._id))||packageSaleLedger),
     gifts:!!(gifts.length||giftCards.length),
   }:undefined;
-  const adjustments=invoice.financialRevision ? await InvoiceAdjustment.find({...scope,invoiceId:invoice._id}).select('mode actorId reason createdAt before.createdAt before.description before.total before.paid before.adjustmentCredit after.createdAt after.description after.total after.paid after.adjustmentCredit delta receiptId reconciliation.receiptChanges').sort({createdAt:1,_id:1}).lean() : [];
+  const editContext=includeEditContext&&user.role==='OWNER'?await invoiceContentContext(user.spaId,invoice):undefined;
+  const adjustments=invoice.financialRevision||invoice.lastAdjustmentId ? await InvoiceAdjustment.find({...scope,invoiceId:invoice._id}).select('mode actorId reason createdAt before after delta receiptId reconciliation.receiptChanges reconciliation.createdReceiptReversals reconciliation.changedFields reconciliation.content.serviceCorrections reconciliation.content.before reconciliation.content.after reconciliation.content.displayBefore reconciliation.content.displayAfter reconciliation.content.stockChanges reconciliation.content.planChanges').sort({createdAt:1,_id:1}).lean() : [];
   const adjustmentPeople=adjustments.length?await User.find({...scope,_id:{$in:adjustments.map(a=>a.actorId)}}).select('name').lean():[];
-  return { adjustmentContext, canAdjustInvoice:user.role==='OWNER',adjustments:adjustments.map(a=>({...a,actorName:adjustmentPeople.find(p=>String(p._id)===String(a.actorId))?.name||'Chủ spa'})), handling, payments, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, serviceItems, treatmentSessions, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
-    canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),
+  return { editContext,adjustmentContext,canAdjustInvoice:user.role==='OWNER',canCorrectPerformedServices,adjustments:adjustments.map(a=>({...a,actorName:adjustmentPeople.find(p=>String(p._id)===String(a.actorId))?.name||'Chủ spa'})), handling, payments, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, serviceItems, treatmentSessions, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
+    canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && !invoice.treatmentUseId&&!invoice.treatmentSessions?.length&&(invoice.serviceId||invoice.serviceItems?.length) && (!invoice.kind || invoice.kind === 'SERVICE') && packages.every(p=>p.status==='CANCELLED'&&(p.packageType==='TIME'?p.usedSessions===0:Number.isSafeInteger(p.totalSessions)&&Number.isSafeInteger(p.remaining)&&p.totalSessions===p.remaining&&!p.usedSessions))),
     signatures: await Promise.all(signatures.map(async s => ({ id: s._id, signature: await readTreatmentSignature(user,s), sessionNumber: s.sessionNumber,
       packageName: invoice.treatmentSessions?.find((item: {treatmentUseId:unknown;name?:string})=>String(item.treatmentUseId)===String(s._id))?.name || packages.find(p => String(p._id) === String(s.treatmentId))?.name,
       performedAt: s.performedAt }))), signaturePage, signatureTotal,

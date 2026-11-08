@@ -9,6 +9,7 @@ export const customerTreatmentInput = z.object({
   expectedUseCount: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   name: z.string().trim().min(1).max(500),
   serviceId: z.string().regex(/^[a-f\d]{24}$/i),
+  templateId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
   totalSessions: z.number().int().min(1).max(10000).optional(),
   durationMonths: z.number().int().min(1).max(120).optional(),
   startsOn: day.optional(), expiresOn: day.optional(),
@@ -17,7 +18,13 @@ export const customerTreatmentInput = z.object({
   confirmUsedFloor: z.boolean().optional(),
 }).strict().refine(d => !d.startsOn || !d.expiresOn || d.startsOn <= d.expiresOn, 'Ngày hết hạn phải từ ngày bắt đầu.');
 
-type Plan = { packageType?: string; totalSessions?: number; remaining?: number; usedSessions?: number; openingBalance?: boolean; status?: string };
+type Plan = { templateId?:unknown; serviceId?:unknown; packageType?: string; totalSessions?: number; remaining?: number; usedSessions?: number; openingBalance?: boolean; status?: string };
+export function assertTreatmentTemplateCompatible(plan:Plan,template:{_id?:unknown;serviceId?:unknown;packageType?:string;totalSessions?:number},recorded:number){
+  if((template.packageType||'SESSIONS')!==(plan.packageType||'SESSIONS'))throw Error('Không đổi giữa gói theo buổi và gói thời hạn khi sửa gói.');
+  const used=treatmentUsed(plan,recorded);
+  if(used>0&&String(template.serviceId)!==String(plan.serviceId))throw Error('Gói đã có buổi sử dụng; không đổi sang dịch vụ khác để giữ đúng lịch sử.');
+  if(String(template._id)!==String(plan.templateId)&&plan.packageType!=='TIME'&&(!template.totalSessions||template.totalSessions<used))throw Error(`Gói được chọn không đủ quyền lợi cho ${used} buổi đã dùng.`);
+}
 export function treatmentEditRights(p: Plan, d: Pick<z.infer<typeof customerTreatmentInput>, 'totalSessions' | 'durationMonths' | 'startsOn' | 'expiresOn' | 'confirmUsedFloor'>, recorded = 0) {
   if (p.status === 'CANCELLED') throw Error('Không sửa gói đã hủy.');
   const used = treatmentUsed(p, recorded);

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { customerTreatmentInput, treatmentEditRights, treatmentUsed } from '../src/lib/treatment-edit.ts';
+import { customerTreatmentInput, treatmentEditRights, treatmentUsed, assertTreatmentTemplateCompatible } from '../src/lib/treatment-edit.ts';
+import { saleablePackageTemplates } from '../src/lib/package-catalog.ts';
+import { cashierCatalog } from '../src/lib/cashier-catalog.ts';
 import { nextSessionNumber, treatmentUseRemaining } from '../src/lib/treatment-rules.ts';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -47,4 +49,26 @@ test('time plans keep usage and require explicit duration and validity; no type 
   assert.throws(()=>treatmentEditRights(plan,{...d,totalSessions:30}));
   assert.throws(()=>treatmentEditRights(plan,{durationMonths:36}));
   assert.throws(()=>treatmentEditRights({status:'ACTIVE'},{...d,totalSessions:30}));
+});
+
+test('edit and package sale use the same typed catalog, never classify by name',()=>{
+  const services=[{_id:'one',name:'Chăm sóc da',active:true},{_id:'single',name:'Gói dịch vụ lẻ',active:true},{_id:'stopped',active:false}];
+  const packageTemplates=[{_id:'valid',name:'Chăm sóc 10 lần',serviceId:'one',totalSessions:10,active:true},{_id:'off',serviceId:'one',active:false},{_id:'off-service',serviceId:'stopped',active:true},{_id:'orphan',serviceId:'missing',active:true}];
+  const data={services,packageTemplates,products:[{_id:'product',name:'Gói mỹ phẩm',active:true}],treatments:[]};
+  assert.deepEqual(saleablePackageTemplates(packageTemplates,services),cashierCatalog(data,'package','',''));
+  assert.deepEqual(saleablePackageTemplates(packageTemplates,services).map(row=>row._id),['valid']);
+});
+
+test('new catalog selection cannot contradict used service, quota or package type',()=>{
+  const plan={serviceId:'service',templateId:'old',totalSessions:10,remaining:3};
+  assert.doesNotThrow(()=>assertTreatmentTemplateCompatible(plan,{_id:'new',serviceId:'service',totalSessions:12},7));
+  assert.throws(()=>assertTreatmentTemplateCompatible(plan,{_id:'new',serviceId:'service',totalSessions:6},7),/7 buổi/);
+  assert.throws(()=>assertTreatmentTemplateCompatible(plan,{_id:'new',serviceId:'other',totalSessions:12},7),/dịch vụ khác/);
+  assert.throws(()=>assertTreatmentTemplateCompatible(plan,{_id:'new',serviceId:'service',packageType:'TIME'},7),/thời hạn/);
+  assert.doesNotThrow(()=>assertTreatmentTemplateCompatible({...plan,remaining:10},{_id:'new',serviceId:'other',totalSessions:12},0));
+  assert.doesNotThrow(()=>assertTreatmentTemplateCompatible(plan,{_id:'old',serviceId:'service',totalSessions:6},7));
+});
+
+test('catalog package corrections preserve visits, signatures and money, validate source and roll back audit failures (model doubles)',()=>{
+  execFileSync(process.execPath,['--import','tsx',fileURLToPath(new URL('./treatment-package-fixture.ts',import.meta.url))],{stdio:'pipe',timeout:15000});
 });

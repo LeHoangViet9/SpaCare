@@ -24,8 +24,11 @@ editing=plan;
 html=render();
 assert.ok(html.includes('aria-label="Sửa gói của khách"'));
 assert.ok(html.includes('Xem trước thay đổi'), 'List dialog uses the shared edit form');
-assert.ok(html.includes('value="Gói đã sử dụng"'));
-assert.ok(html.includes('Đã dùng: 10 buổi'), 'Preview shows the server-loaded use count');
+assert.ok(html.includes('Gói đã sử dụng'));
+assert.ok(html.includes('Gói dịch vụ'));
+assert.ok(!html.includes('>Tên gói<input'));
+assert.ok(!html.includes('Việc sửa áp dụng cho quyền lợi chưa dùng'));
+assert.ok(!html.includes('Đã dùng: 10 buổi'));
 assert.ok(!html.includes('class="row-action-options"><div class="modal-backdrop"'), 'Dialog must stay outside the closing row menu');
 for(const cashier of [false,true]){
   fixture.user={...fixture.user,role:'STAFF',cashier};

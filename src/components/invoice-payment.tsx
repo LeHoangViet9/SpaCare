@@ -4,6 +4,7 @@ import MoneyInput from './money-input';
 import ValidatedForm from './validated-form';
 import { formatCurrency as money, parseMoney } from '@/lib/currency';
 import { invoiceCode } from '@/lib/invoice-code';
+import {treatmentDay} from '@/lib/treatment-rules';
 
 type Row = Record<string, any>;
 const methods = [['CASH', 'Tiền mặt'], ['BANK_TRANSFER', 'Chuyển khoản / QR']] as const;
@@ -12,6 +13,7 @@ export default function InvoicePayment({ invoice, paymentInfo = {}, busy, error,
 }) {
   const [amounts, setAmounts] = useState({ CASH: '0', BANK_TRANSFER: '0' });
   const [confirmed, setConfirmed] = useState({ CASH: false, BANK_TRANSFER: false });
+  const [receivedOn,setReceivedOn]=useState({CASH:treatmentDay(),BANK_TRANSFER:treatmentDay()});
   const [localError, setLocalError] = useState('');
   const [showTransfer, setShowTransfer] = useState(false);
   const dialog = useRef<HTMLElement>(null);
@@ -25,6 +27,7 @@ export default function InvoicePayment({ invoice, paymentInfo = {}, busy, error,
     if (!canSubmit || busy) return;
     try {
       const payments = positive.map(([method]) => ({ method, amount: parseMoney(amounts[method]), receivedConfirmation: confirmed[method],
+        receivedOn:receivedOn[method],
         note: 'SPACARE ' + invoiceCode(invoice) }));
       onSubmit({ invoiceId: invoice._id, payments });
     } catch (error) { setLocalError((error as Error).message); }
@@ -47,6 +50,7 @@ export default function InvoicePayment({ invoice, paymentInfo = {}, busy, error,
         {methods.map(([method, title]) => <section key={method} className="payment-method-entry">
           <label>{title}<MoneyInput name={method} value={amounts[method]} min={0} max={due} onValueChange={value => { setAmounts(previous => ({ ...previous, [method]: value })); setConfirmed(previous => ({ ...previous, [method]: false })); setLocalError(''); }}/></label>
           {positive.some(([key]) => key === method) && <>
+            <label>Ngày thực nhận · {title}<input type="date" required max={treatmentDay()} value={receivedOn[method]} onChange={event=>{setReceivedOn(old=>({...old,[method]:event.target.value}));setConfirmed(old=>({...old,[method]:false}));}} /></label>
             <label><input type="checkbox" checked={confirmed[method]} onChange={event => setConfirmed(previous => ({ ...previous, [method]: event.target.checked }))}/>{method === 'CASH' ? 'Đã đếm và thực nhận tiền mặt' : 'Đã kiểm tra tài khoản và thực nhận chuyển khoản'}</label>
           </>}
         </section>)}
