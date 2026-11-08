@@ -1,15 +1,29 @@
 # SpaCare — Business Requirements
 
+## Điều chỉnh số tiền đã thanh toán — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: OWNER được sửa tăng/giảm số tiền và ngày thực nhận của từng khoản thu trực tiếp đã nhập sai trong form Sửa hóa đơn. Tổng hóa đơn, số đã thanh toán và còn nợ hiển thị riêng; xem trước số cũ/mới và lý do bắt buộc. Đây là đính chính giao dịch có sẵn, không phải nhận thêm tiền hôm nay. Giữ liên kết giao dịch gốc, người/thời điểm/lý do và lịch sử đầy đủ; gửi lại không ghi trùng. Tính lại trạng thái và công nợ từ nguồn hợp lệ. Chỉ sửa tổng không tự tăng số đã thanh toán.
+
+Yêu cầu này thay giới hạn trước đây không sửa Payment/CashEntry trong CORRECT, chỉ với thao tác điều chỉnh từng khoản thu tường minh. Không sửa trực tiếp snapshot CLOSED; khi chưa có quy trình điều chỉnh ngày đã chốt an toàn phải chặn. Không tự tạo cọc, tiền giữ hộ hoặc khoản thu ngoài sổ khi vượt tổng; đối chiếu quy tắc thu vượt nợ hiện có. BR-OPEN-005 giữ OPEN phần xử lý khoản thu ngày đã chốt mà không mở lại. Chỉ sửa code/kiểm thử local; không đọc/sửa dữ liệu vận hành, deploy, commit hoặc merge.
+
+## Ngày hóa đơn và ngày giao dịch thu tiền — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: ngày hóa đơn và ngày thu tiền là hai thông tin riêng. Chỉ sửa ngày hóa đơn không tạo khoản thu, không đổi ngày `CashEntry.day`, không sửa Payment và không làm tăng thực thu. Khoản thu đã ghi phải giữ nguyên ngày giao dịch thực tế cả khi sửa ngày hóa đơn nhiều lần; chứng từ điều chỉnh giữ lịch sử, không ghi trùng tiền.
+
+Thực thu hôm nay, sổ thu chi, báo cáo dòng tiền và chốt sổ cùng tính từ `CashEntry.day`. Báo cáo “Hóa đơn & doanh số” vẫn lọc hóa đơn theo ngày lập `Invoice.createdAt`; tổng/đã thanh toán ở đó là số liệu hóa đơn theo ngày lập, không phải dòng tiền thực thu. Tùy chọn điều chỉnh ngày giao dịch thu tiền cũ chỉ là ý định riêng, không được suy ra từ hoặc gửi kèm thao tác sửa ngày hóa đơn.
+
+PROPOSED kỹ thuật: thao tác ngày đơn thuần vẫn ghi `InvoiceAdjustment`/audit trước-sau, nhưng không đánh dấu `financialRevision`; nhờ đó không khóa quy trình đảo khoản thu hợp lệ và không làm thay đổi snapshot chốt sổ.
+
 ## Gộp sửa ngày và làm gọn vô hiệu hóa — 06/11/2026 (ưu tiên mới nhất)
 
-CONFIRMED theo yêu cầu người dùng: một form Sửa hóa đơn gồm ngày/nội dung/tổng tiền đang hỗ trợ; một luồng Vô hiệu hóa hóa đơn dùng cho chưa thu và đã thu, không xóa cứng hoặc tự hoàn tiền. Chỉ hiện kho/gói/quà khi có liên quan thực tế. Dịch vụ đơn chỉ hiện hóa đơn/khách, số đã thanh toán/còn nợ, ảnh hưởng, lý do, Quay lại và Vô hiệu hóa hóa đơn; vẫn xem trước/đối soát trước xác nhận. Đảo giao dịch trong sổ tiền vẫn riêng cho khoản thu ghi nhầm/trùng khi hóa đơn đúng, giữ guard hiện có. Đổi tư vấn giữ luồng riêng do giới hạn đối soát hoa hồng V1; không gộp thay tư vấn với sửa ngày/tiền. Hai điểm sửa gói đang dùng và các bất biến lịch sử vẫn giữ.
+CONFIRMED theo yêu cầu người dùng mới nhất 07/11/2026: Sửa hóa đơn chỉ cho thay ngày và tổng tiền theo guard; nội dung gốc chỉ đọc, không sửa nội dung hoặc dòng hàng hóa/dịch vụ, số lượng, người thực hiện hay quyền lợi gói. Giữ lý do và đối chiếu trước/sau. Một luồng Vô hiệu hóa hóa đơn dùng cho chưa thu và đã thu, không xóa cứng hoặc tự hoàn tiền. Chỉ hiện kho/gói/quà khi có liên quan thực tế. Dịch vụ đơn chỉ hiện hóa đơn/khách, số đã thanh toán/còn nợ, ảnh hưởng, lý do, Quay lại và Vô hiệu hóa hóa đơn; vẫn xem trước/đối soát trước xác nhận. Đảo giao dịch trong sổ tiền vẫn riêng cho khoản thu ghi nhầm/trùng khi hóa đơn đúng, giữ guard hiện có. Đổi tư vấn giữ luồng riêng do giới hạn đối soát hoa hồng V1; không gộp thay tư vấn với sửa ngày/tiền. Hai điểm sửa gói đang dùng và các bất biến lịch sử vẫn giữ.
 
 
 ## Sửa sai/vô hiệu hóa đã thanh toán và điều chỉnh quyền lợi — 06/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED theo yêu cầu người dùng: chỉ active OWNER được sửa sai/vô hiệu hóa hóa đơn, kể cả đã trả đủ; giữ chứng từ/khoản thu gốc và tạo chứng từ điều chỉnh liên kết, lý do/người/thời điểm/trước sau. Vô hiệu hóa giữ hóa đơn, ghi đảo nghĩa vụ tài chính, không tự coi là trả tiền cho khách. Đối soát cọc/thẻ, quà, kho và hoa hồng; không sửa snapshot payroll APPROVED/PAID. Gói đang dùng sửa riêng từ hồ sơ khách và Gói của khách, có đối chiếu/lý do; giữ buổi/KTV/chữ ký/tiền gốc. Giảm quyền lợi dưới phần đã dùng phải xác nhận cách xử lý tường minh.
 
-Phạm vi local triển khai: sửa nội dung/tổng tiền bằng chứng từ điều chỉnh riêng, vô hiệu hóa có lựa chọn kho/quyền lợi/quà; hiển thị tiền trực tiếp chờ xử lý và action riêng ghi hoàn thực tế. Chưa sửa từng dòng hàng/dịch vụ, số lượng hoặc tư vấn qua luồng mới; chứng từ chuyển số dư và nguồn thanh toán không khớp bị chặn để đối soát. Giữ luồng sửa gói đã có, không tự thay tiền khi sửa quyền lợi. Chi tiết kỹ thuật PROPOSED và giới hạn tại BR-INV-ADJ-001. Không commit/push/deploy/migration/backfill hoặc sửa dữ liệu thật trong yêu cầu này.
+Phạm vi local triển khai: sửa ngày/tổng tiền bằng chứng từ điều chỉnh riêng, giữ nội dung gốc chỉ đọc; vô hiệu hóa có lựa chọn kho/quyền lợi/quà; hiển thị tiền trực tiếp chờ xử lý và action riêng ghi hoàn thực tế. Chưa sửa từng dòng hàng/dịch vụ, số lượng hoặc tư vấn qua luồng mới; chứng từ chuyển số dư và nguồn thanh toán không khớp bị chặn để đối soát. Giữ luồng sửa gói đã có, không tự thay tiền khi sửa quyền lợi. Chi tiết kỹ thuật PROPOSED và giới hạn tại BR-INV-ADJ-001. Không commit/push/deploy/migration/backfill hoặc sửa dữ liệu thật trong yêu cầu này.
 
 
 ## Thay thế chứng từ sửa tư vấn bán gói — 02/11/2026

@@ -46,8 +46,9 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
   const serviceItems = withPerformerNames(invoice.serviceItems);
   const treatmentSessions = withPerformerNames(invoice.treatmentSessions);
   const recordedPayments = await Payment.find({ ...scope, invoiceId: invoice._id, reversed: false }).select('amount receiptId createdAt').sort({ createdAt: 1, _id: 1 }).lean();
-  const receipts = recordedPayments.length ? await CashEntry.find({ ...scope, _id: { $in: recordedPayments.map(payment => payment.receiptId) }, kind: 'PAYMENT', direction: 'IN', reversed: false }).select('method').lean() : [];
+  const receipts = recordedPayments.length ? await CashEntry.find({ ...scope, _id: { $in: recordedPayments.map(payment => payment.receiptId) }, kind: 'PAYMENT', direction: 'IN', reversed: false }).select('method day amount').lean() : [];
   const payments = recordedPayments.map(payment => ({ _id: payment._id, amount: payment.amount,
+    receiptId:payment.receiptId,day:receipts.find(receipt=>String(receipt._id)===String(payment.receiptId))?.day||null,
     method: receipts.find(receipt => String(receipt._id) === String(payment.receiptId))?.method || null,
   }));
   const signatureFilter = { ...scope, $and: [
@@ -78,7 +79,7 @@ export async function readInvoice(user: Actor, id: string, requestedSignaturePag
     packages:!!(invoice.packageItems?.length||packages.some(p=>String(p.invoiceId)===String(invoice._id))||packageSaleLedger),
     gifts:!!(gifts.length||giftCards.length),
   }:undefined;
-  const adjustments=invoice.financialRevision ? await InvoiceAdjustment.find({...scope,invoiceId:invoice._id}).select('mode actorId reason createdAt before.createdAt before.description before.total before.paid before.adjustmentCredit after.createdAt after.description after.total after.paid after.adjustmentCredit delta receiptId').sort({createdAt:1,_id:1}).lean() : [];
+  const adjustments=invoice.financialRevision ? await InvoiceAdjustment.find({...scope,invoiceId:invoice._id}).select('mode actorId reason createdAt before.createdAt before.description before.total before.paid before.adjustmentCredit after.createdAt after.description after.total after.paid after.adjustmentCredit delta receiptId reconciliation.receiptChanges').sort({createdAt:1,_id:1}).lean() : [];
   const adjustmentPeople=adjustments.length?await User.find({...scope,_id:{$in:adjustments.map(a=>a.actorId)}}).select('name').lean():[];
   return { adjustmentContext, canAdjustInvoice:user.role==='OWNER',adjustments:adjustments.map(a=>({...a,actorName:adjustmentPeople.find(p=>String(p._id)===String(a.actorId))?.name||'Chủ spa'})), handling, payments, giftCards, treatments:packages.filter(p=>String(p.invoiceId)===String(invoice._id)), treatment: packages.find(p=>String(p.invoiceId)===String(invoice._id)) || null, invoice: { ...invoice, serviceItems, treatmentSessions, performerName: performer?.name }, customer, gifts, signature: canSeeSignature ? use?.signature || null : null,
     canCompleteService: !!(invoice.status !== 'CANCELLED' && (user.role === 'OWNER' || user.cashier) && !invoice.performedAt && !invoice.appointmentId && invoice.serviceId && (!invoice.kind || invoice.kind === 'SERVICE') && !packages.length),

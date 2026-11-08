@@ -4,7 +4,7 @@ import {z} from 'zod';
 import type {Actor} from './auth';
 import {Allocation, Audit, CashCard, CashCardUse, CashEntry, Commission, Customer, Day, Deposit, Invoice, InvoiceAdjustment, InvoiceLineCommission, Payment, Payroll, Product, SaleCommission, Service, SharedSaleCommission, StockMovement, Treatment, User} from './models';
 import {adjustmentBalance, invoiceAdjustmentInput, invoiceAdjustmentRefundInput} from './invoice-adjustment-rules';
-import {ensure, invoiceState, paymentEvidence, spaDay} from './rules';
+import {dayBounds, ensure, invoiceState, paymentEvidence, spaDay} from './rules';
 import {stockBalance} from './product-rules';
 import {monthBounds} from './payroll-rules';
 import {sharedCommissionDeltas} from './sale-commission';
@@ -50,6 +50,9 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   for(const payment of payments){
     const receipt=await get(CashEntry,payment.receiptId);
     ensure(!receipt.reversed && receipt.kind==='PAYMENT' && receipt.direction==='IN' && receipt.amount===payment.amount && String(receipt.customerId)===String(invoice.customerId),'Khoản thu gốc không khớp; cần đối soát.',409);
+    // Never infer a missing transaction date from the invoice or today's date.
+    ensure(typeof receipt.day==='string' && /^\d{4}-\d{2}-\d{2}$/.test(receipt.day),'Khoản thu thiếu ngày giao dịch thực tế; cần xác minh trước khi sửa hóa đơn.',409);
+    try{dayBounds(receipt.day);}catch{ensure(false,'Ngày giao dịch khoản thu không hợp lệ; cần xác minh trước khi sửa hóa đơn.',409);}
     ensure(!await Payment.exists({...scope,receiptId:receipt._id,_id:{$ne:payment._id}}).session(session),'Phiếu thu được nhiều khoản thanh toán tham chiếu; cần đối soát.',409);
     ensure(!await CashEntry.exists({...scope,originalId:receipt._id}).session(session),'Phiếu thu đã có chứng từ đảo; cần đối soát.',409);
     receipts.push(receipt);
@@ -95,10 +98,33 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   const depositBalance=allocations.reduce((n,r)=>n+available(r),0),cardBalance=cardUses.reduce((n,r)=>n+available(r),0);
   const sourceTotal=sum(payments,'amount')+depositBalance+cardBalance-(invoice.refunded||0);
   const funded=invoice.paid+(invoice.adjustmentCredit||0)-(invoice.financialRevision?0:(invoice.refunded||0));
-  ensure(sourceTotal===funded,'Tổng cọc/thẻ/khoản thu trừ hoàn tiền không khớp hóa đơn; cần đối soát nguồn trước.',409);
+  ensure(sourceTotal===funded,'Tổng cọc/thẻ/khoản thu trừ hoàn tiền không khớp hóa đơn; cần đối soát nguồn trước. Không thể suy ra số tiền hoặc ngày thực thu từ tổng tiền hóa đơn.',409);
+  const receiptChanges=[];
+  for(const correction of d.receiptCorrections||[]){
+    const payment=payments.find(row=>String(row._id)===correction.paymentId);
+    ensure(payment,'Khoản thanh toán không còn hợp lệ hoặc không thuộc hóa đơn này.',409);
+    const receipt=receipts.find(row=>String(row._id)===String(payment.receiptId))!;
+    if(payment.amount===correction.amount&&receipt.day===correction.day)continue;
+    ensure(!invoice.activeDocumentId,'Chứng từ đã thay tư vấn cần đối soát riêng trước khi sửa khoản thu.',409);
+    ensure(!invoice.refunded,'Hóa đơn đã hoàn tiền cần đối soát riêng trước khi sửa khoản thu gốc.',409);
+    ensure(!payment.lineAllocations?.length,'Khoản thu có phân bổ dòng lịch sử cần đối soát riêng trước khi sửa.',409);
+    ensure(correction.day<=spaDay(),'Ngày thực nhận không được ở tương lai.');
+    for(const day of new Set([receipt.day,correction.day])){
+      ensure(await Day.exists({...scope,day,status:'OPEN'}).session(session),'Sổ ngày '+day+' chưa mở hoặc đã chốt. Chưa có quy trình điều chỉnh khoản thu của ngày đã chốt an toàn; không sửa snapshot. Chủ spa cần đối soát và mở lại sổ theo quy trình hiện có.',409);
+    }
+    receiptChanges.push({paymentId:String(payment._id),receiptId:String(receipt._id),method:receipt.method,
+      before:{amount:payment.amount,day:receipt.day},after:{amount:correction.amount,day:correction.day}});
+  }
+  const receiptDelta=receiptChanges.reduce((total,change)=>total+change.after.amount-change.before.amount,0);
+  // The amount field is a checked projection of existing sources, never a payment command.
+  const correctedFunding=sourceTotal+receiptDelta;
+  if(receiptChanges.length)ensure(correctedFunding>=0&&correctedFunding<=newTotal,'Số tiền đã thanh toán vượt tổng hóa đơn hoặc không hợp lệ. Luồng thu tiền hiện có chặn vượt công nợ; không tự chuyển tiền thừa thành cọc, tiền giữ hộ hoặc khoản thu ngoài sổ.',409);
   let balance:ReturnType<typeof adjustmentBalance>;
-  try{balance=adjustmentBalance(invoice.paid,invoice.adjustmentCredit||0,invoice.refunded||0,!!invoice.financialRevision,newTotal,depositBalance,cardBalance);}
+  try{balance=receiptChanges.length
+    ?adjustmentBalance(correctedFunding,0,0,true,newTotal,depositBalance,cardBalance)
+    :adjustmentBalance(invoice.paid,invoice.adjustmentCredit||0,invoice.refunded||0,!!invoice.financialRevision,newTotal,depositBalance,cardBalance);}
   catch(e){ensure(false,(e as Error).message,409);}
+  if(d.paid!==undefined)ensure(d.paid===balance!.paid,'Số tiền đã thanh toán phải khớp các khoản thu/cọc/thẻ hợp lệ sau điều chỉnh. Không nhập tổng để tạo khoản thu mới.',409);
   const movements=await StockMovement.find({...scope,$or:[{invoiceId:invoice._id},{checkoutInvoiceId:invoice._id}],direction:'OUT'}).session(session);
   const products=[];for(const movement of movements)products.push(await get(Product,movement.productId));
   if(d.mode==='VOID'){
@@ -124,6 +150,10 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
   const otherLineEvidence=!!invoice.serviceItems?.length||!!invoice.treatmentSessions?.length||!!invoice.productItems?.length||serviceGroups.size>0||movements.length>0;
   const mixedPackageInvoice=packageEvidence&&otherLineEvidence;
   const purePackageInvoice=packageEvidence&&!mixedPackageInvoice;
+  if(receiptChanges.length){
+    ensure(!mixedPackageInvoice,'Hóa đơn hỗn hợp có gói cần đối soát phân bổ hoa hồng trước khi sửa khoản thu.',409);
+    ensure(!purePackageInvoice||!(invoice.packageItems||[]).some((line:any)=>line.sellerId&&String(line.sellerId)!==String(invoice.sellerId)),'Các dòng gói có tư vấn khác nhau cần đối soát hoa hồng trước khi sửa khoản thu.',409);
+  }
   if(d.mode==='VOID'&&(packageEvidence||invoice.kind==='PACKAGE'))ensure(!!d.entitlementHandling,'Chọn giữ quyền lợi hoặc dừng phần quyền lợi còn lại.');
   // Fixed performed-service commission changes only on void. Sale commission follows
   // the existing 5% received-money rule and cumulative equal-share rounding.
@@ -162,19 +192,31 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     commissionMonths[String(change.staffId)]=month;
   }
   const reconciliation={
+    cashImpact:{incoming:0,outgoing:0,directReceived:sum(payments,'amount')+receiptDelta},
+    receiptChanges,
     payments:payments.map(copy),receipts:receipts.map(copy),allocations:allocations.map(copy),cardUses:cardUses.map(copy),
     deposits:deposits.map(copy),cards:cards.map(copy),plans:plans.map(copy),gifts:gifts.map(copy),giftCards:giftCards.map(copy),
     movements:movements.map(copy),products:products.map(copy),ledgers:ledgers.map(({kind,row})=>({kind,...copy(row)})),giftFunding,
     balance:balance!,commissionChanges,commissionMonths,
     stockHandling:d.stockHandling,entitlementHandling:d.entitlementHandling,giftHandling:d.giftHandling,
   };
-  const after={...before,description:d.mode==='VOID'?invoice.description:d.description,total:newTotal,paid:balance!.paid,adjustmentCredit:balance!.credit,
+  const after={...before,description:invoice.description,total:newTotal,paid:balance!.paid,adjustmentCredit:balance!.credit,
     status:d.mode==='VOID'?'CANCELLED':invoiceState(newTotal,balance!.paid),...(correctedDate?{createdAt:correctedDate.toISOString(),recordedAt:invoice.recordedAt||invoice.createdAt}:{})};
   const previewToken=createHash('sha256').update(JSON.stringify({before,after,reconciliation})).digest('hex');
   const preview={before,after,reconciliation,previewToken,delta:newTotal-invoice.total};
   if(!commit)return preview;
   ensure(d.confirmed && d.expectedPreview===previewToken,'Cần xem trước và xác nhận lại đối soát mới nhất.',409);
   const adjustmentId=new mongoose.Types.ObjectId();
+  for(const day of new Set(receiptChanges.flatMap(change=>[change.before.day,change.after.day]))){
+    const book=await Day.findOneAndUpdate({...scope,day,status:'OPEN'},{$inc:{revision:1}},{session,returnDocument:'after'});
+    ensure(book,'Sổ ngày '+day+' không còn mở. Tải lại để đối soát; không sửa snapshot đã chốt.',409);
+  }
+  for(const change of receiptChanges){
+    const payment=payments.find(row=>String(row._id)===change.paymentId)!;
+    const receipt=receipts.find(row=>String(row._id)===change.receiptId)!;
+    payment.amount=change.after.amount;receipt.amount=change.after.amount;receipt.day=change.after.day;
+    await payment.save({session});await receipt.save({session});
+  }
   const returnSource=async(rows:any[],sources:any[],amount:number)=>{
     for(let i=0;i<rows.length&&amount>0;i++){
       const row=rows[i],restored=Math.min(amount,available(row));if(!restored)continue;
@@ -218,8 +260,10 @@ export async function adjustInvoice(actor:Actor,d:Input,session:ClientSession,co
     }
     invoice.cancelledTotal=invoice.total;invoice.cancelledAt=now;invoice.cancelledBy=actor.id;invoice.cancelReason=d.reason;
   }
+  const financialChange=d.mode==='VOID'||newTotal!==invoice.total||receiptChanges.length>0;
   Object.assign(invoice,{description:after.description,total:after.total,paid:after.paid,status:after.status,adjustmentCredit:after.adjustmentCredit,
-    financialRevision:(invoice.financialRevision||0)+1,lastAdjustmentId:adjustmentId,cardPaid:Math.max(0,(invoice.cardPaid||0)-balance!.cardReturn)});
+    ...(financialChange?{financialRevision:(invoice.financialRevision||0)+1}:{}),
+    lastAdjustmentId:adjustmentId,cardPaid:Math.max(0,(invoice.cardPaid||0)-balance!.cardReturn)});
   if(saleGroups.size||invoice.saleCommissionAccrued!==undefined)invoice.saleCommissionAccrued=targetSale;
   await invoice.save({session});
   // createdAt is immutable under Mongoose timestamps; update only the invoice's

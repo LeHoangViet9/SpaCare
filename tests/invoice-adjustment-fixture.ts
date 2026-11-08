@@ -39,17 +39,28 @@ add(Control,{revision:0});add(User,{_id:owner,name:'Owner',role:'OWNER',active:t
 add(Customer,{_id:customer,name:'Customer'});add(Service,{_id:service,name:'Service',active:true});add(Day,{day:spaDay(),status:'OPEN'});
 const current=(bill:any)=>state.Invoice.find(r=>r._id===bill._id);
 const call=(action:string,data:any,key=randomUUID())=>operate(actor,action,data,key);
-function sale(){const bill=add(Invoice,{customerId:customer,serviceId:service,kind:'SERVICE',description:'Original',total:1000000,paid:1000000,status:'PAID',refunded:0});const entry=add(CashEntry,{customerId:customer,amount:1000000,method:'CASH',direction:'IN',kind:'PAYMENT',reversed:false});const payment=add(Payment,{invoiceId:bill._id,amount:1000000,receiptId:entry._id,reversed:false});return {bill,entry,payment};}
-const payload=(bill:any,mode='CORRECT',total=600000)=>({id:bill._id,expectedUpdatedAt:current(bill).updatedAt,description:'Corrected',mode,total,reason:'Owner reason',stockHandling:'KEEP_OUT',entitlementHandling:'KEEP',giftHandling:'KEEP'});
+function sale(){const bill=add(Invoice,{customerId:customer,serviceId:service,kind:'SERVICE',description:'Original',total:1000000,paid:1000000,status:'PAID',refunded:0});const entry=add(CashEntry,{customerId:customer,amount:1000000,day:spaDay(),method:'CASH',direction:'IN',kind:'PAYMENT',reversed:false});const payment=add(Payment,{invoiceId:bill._id,amount:1000000,receiptId:entry._id,reversed:false});return {bill,entry,payment};}
+const payload=(bill:any,mode='CORRECT',total=600000)=>({id:bill._id,expectedUpdatedAt:current(bill).updatedAt,mode,total,reason:'Owner reason',stockHandling:'KEEP_OUT',entitlementHandling:'KEEP',giftHandling:'KEEP'});
 const commit=async(data:any,key=randomUUID())=>{const preview=await call('previewInvoiceAdjustment',data);return {preview,data:{...data,confirmed:true,expectedPreview:preview.previewToken},key};};
-const original=sale(),history=clone([original.entry,original.payment]);
+const original=sale();
+current(original.bill).serviceItems=[{lineId:id(),serviceId:service,name:'Original service',total:1000000,performerId:tech}];
+current(original.bill).performedBy=tech;
+const originalLines=clone(current(original.bill).serviceItems),originalPerformer=current(original.bill).performedBy;
+const history=clone([original.entry,original.payment]);
 const originalCommission=add(Commission,{invoiceId:original.bill._id,staffId:tech,staffName:'Technician',customerId:customer,serviceId:service,amount:50000,earnedAt:new Date().toISOString()});
 const closed=add(Payroll,{staffId:tech,month:spaDay().slice(0,7),status:'PAID',commissionIds:[originalCommission._id],commissionTotal:50000,total:50000});
 const payrollBefore=clone(closed);
+for(const tampering of [{description:'Tampered description'},{serviceItems:[]},{packageItems:[]},{treatmentSessions:[]},{performerId:owner},{quantity:99}]){
+  await assert.rejects(call('previewInvoiceAdjustment',{...payload(original.bill),...tampering}));
+}
+assert.equal(state.InvoiceAdjustment.length,0);
 let req=await commit(payload(original.bill));
+assert.equal(req.preview.after.description,'Original');
+assert.deepEqual(req.preview.after.serviceItems,originalLines);
 for(const action of ['previewInvoiceAdjustment','applyInvoiceAdjustment','refundInvoiceAdjustment'])await assert.rejects(operate({...actor,id:tech,role:'STAFF',cashier:true},action,action==='refundInvoiceAdjustment'?{id:original.bill._id,expectedUpdatedAt:original.bill.updatedAt,amount:1,method:'CASH',reason:'Bad',receivedConfirmation:true}:req.data,randomUUID()),(e:any)=>e.status===403);
 const result=await call('applyInvoiceAdjustment',req.data,req.key);assert.deepEqual(await call('applyInvoiceAdjustment',req.data,req.key),result);
 assert.equal(current(original.bill).paid,600000);assert.equal(current(original.bill).adjustmentCredit,400000);
+assert.equal(current(original.bill).description,'Original');assert.deepEqual(current(original.bill).serviceItems,originalLines);assert.equal(current(original.bill).performedBy,originalPerformer);
 assert.deepEqual([state.CashEntry.find(r=>r._id===original.entry._id),state.Payment.find(r=>r._id===original.payment._id)],history);
 assert.equal(cashFlowNet(state.CashEntry as any,'CASH'),1000000);assert.equal(state.InvoiceAdjustment.length,1);
 assert.deepEqual(state.Payroll.find(r=>r._id===closed._id),payrollBefore);
@@ -109,20 +120,70 @@ req=await commit({...payload(linked.bill,'VOID',0),giftHandling:'REVOKE_UNUSED'}
 const dated=sale(),issuedOn=spaDay(new Date(Date.now()-86400000));
 const datedSources=clone([dated.payment,dated.entry]),datedBefore=clone(current(dated.bill));
 req=await commit({...payload(dated.bill,'CORRECT',1000000),issuedOn});
-const closedDay=add(Day,{day:issuedOn,status:'CLOSED'});
+const closedDay=add(Day,{day:issuedOn,status:'CLOSED',opening:500000,expected:650000,bankNet:200000,counted:650000,difference:0,revision:7});
+const closedSnapshot=clone(closedDay);
 await assert.rejects(call('applyInvoiceAdjustment',req.data,req.key),(e:any)=>e.status===409);
 assert.deepEqual(current(dated.bill),datedBefore);
+assert.deepEqual(state.Day.find(r=>r._id===closedDay._id),closedSnapshot);
 state.Day.find(r=>r._id===closedDay._id).status='OPEN';
+const openSnapshot=clone(state.Day.find(r=>r._id===closedDay._id));
 fail='Audit';await assert.rejects(call('applyInvoiceAdjustment',req.data,req.key),/INJECTED_Audit/);fail='';assert.deepEqual(current(dated.bill),datedBefore);
 await call('applyInvoiceAdjustment',req.data,req.key);await call('applyInvoiceAdjustment',req.data,req.key);
 assert.equal(spaDay(new Date(current(dated.bill).createdAt)),issuedOn);
+assert.deepEqual(state.Day.find(r=>r._id===closedDay._id),openSnapshot);
 assert.deepEqual([state.Payment.find(r=>r._id===dated.payment._id),state.CashEntry.find(r=>r._id===dated.entry._id)],datedSources);
+assert.equal(current(dated.bill).financialRevision,undefined);
 const datedAdjustment=state.InvoiceAdjustment.find(r=>r.invoiceId===dated.bill._id);
 assert.equal(datedAdjustment.before.createdAt,datedBefore.createdAt);assert.equal(spaDay(new Date(datedAdjustment.after.createdAt)),issuedOn);assert.equal(datedAdjustment.delta,0);
 await assert.rejects(call('previewInvoiceAdjustment',{...payload(dated.bill),issuedOn:spaDay(new Date(Date.now()+86400000))}),(e:any)=>e.status===400);
+const noPaymentInvoice=add(Invoice,{customerId:customer,serviceId:service,kind:'SERVICE',description:'Unpaid',total:250000,paid:0,status:'OPEN',refunded:0});
+const noPaymentCashBefore=clone(state.CashEntry);
+req=await commit({...payload(noPaymentInvoice,'CORRECT',noPaymentInvoice.total),issuedOn});
+await call('applyInvoiceAdjustment',req.data);
+assert.equal(spaDay(new Date(current(noPaymentInvoice).createdAt)),issuedOn);
+assert.equal(current(noPaymentInvoice).financialRevision,undefined);
+assert.equal(current(noPaymentInvoice).paid,0);
+assert.deepEqual(state.CashEntry,noPaymentCashBefore);
+const installments=add(Invoice,{customerId:customer,serviceId:service,kind:'SERVICE',description:'Installments',total:600000,paid:400000,status:'OPEN',refunded:0});
+const today=spaDay(),priorDay=spaDay(new Date(Date.now()-86400000)),earlierDay=spaDay(new Date(Date.now()-2*86400000));
+const cashInstallment=add(CashEntry,{customerId:customer,amount:100000,day:today,method:'CASH',direction:'IN',kind:'PAYMENT',reversed:false});
+const bankInstallment=add(CashEntry,{customerId:customer,amount:300000,day:priorDay,method:'BANK_TRANSFER',direction:'IN',kind:'PAYMENT',reversed:false});
+const cashPayment=add(Payment,{invoiceId:installments._id,amount:100000,receiptId:cashInstallment._id,reversed:false});
+const bankPayment=add(Payment,{invoiceId:installments._id,amount:300000,receiptId:bankInstallment._id,reversed:false});
+const installmentSources=clone([cashInstallment,bankInstallment,cashPayment,bankPayment]);
+const installmentCash=()=>state.CashEntry.filter(entry=>[cashInstallment._id,bankInstallment._id].includes(entry._id));
+const installmentTotals=()=>[today,priorDay].map(day=>installmentCash().filter(entry=>entry.day===day).reduce((total,entry)=>total+(entry.direction==='IN'&&!entry.reversed?entry.amount:0),0));
+const receiptCountBefore=state.CashEntry.length,dayTotalsBefore=installmentTotals();
+for(const date of [priorDay,earlierDay]){
+  req=await commit({...payload(installments,'CORRECT',installments.total),expectedUpdatedAt:current(installments).updatedAt,issuedOn:date});
+  await call('applyInvoiceAdjustment',req.data);
+  assert.equal(current(installments).financialRevision,undefined);
+  assert.deepEqual(state.CashEntry.filter(entry=>[cashInstallment._id,bankInstallment._id].includes(entry._id)),installmentSources.slice(0,2));
+  assert.deepEqual([state.Payment.find(row=>row._id===cashPayment._id),state.Payment.find(row=>row._id===bankPayment._id)],installmentSources.slice(2));
+  assert.deepEqual(installmentTotals(),dayTotalsBefore);
+}
+assert.equal(state.CashEntry.length,receiptCountBefore);
+assert.equal(state.InvoiceAdjustment.filter(row=>row.invoiceId===installments._id).length,2);
+const installmentAdjustments=state.InvoiceAdjustment.filter(row=>row.invoiceId===installments._id);
+assert.equal(String(installmentAdjustments[1].previousAdjustmentId),String(installmentAdjustments[0]._id));
+await call('reverseCash',{id:cashInstallment._id,reason:'Test reverse after invoice date edit'});
+assert.equal(current(installments).paid,300000,'date-only corrections must not block reversing the original receipt');
+const reversedRows=state.CashEntry.filter(entry=>[cashInstallment._id,...state.CashEntry.filter(row=>String(row.originalId)===cashInstallment._id).map(row=>row._id)].includes(entry._id));
+assert.equal(cashFlowNet(reversedRows as any,'CASH'),0);
+assert.deepEqual(installmentCash().map(entry=>entry.day),[today,priorDay]);
+const afterReversal=clone(installmentCash());
+req=await commit({...payload(installments,'CORRECT',installments.total),expectedUpdatedAt:current(installments).updatedAt,issuedOn:spaDay(new Date(Date.now()-3*86400000))});
+await call('applyInvoiceAdjustment',req.data);
+assert.deepEqual(installmentCash(),afterReversal,'invoice date edits must preserve both original and reversed receipt days');
+const replaced=sale(),replacementDetails={activeDocumentId:id(),effectiveCode:'HD000123',documentHistory:[{documentId:id(),status:'REPLACED',code:'HD000122'}]};
+Object.assign(current(replaced.bill),replacementDetails);
+req=await commit({...payload(replaced.bill,'CORRECT',replaced.bill.total),issuedOn:issuedOn});
+await call('applyInvoiceAdjustment',req.data);
+assert.deepEqual([current(replaced.bill).activeDocumentId,current(replaced.bill).effectiveCode,current(replaced.bill).documentHistory],
+  [replacementDetails.activeDocumentId,replacementDetails.effectiveCode,replacementDetails.documentHistory]);
 // Gift-only packages do not require a second, unrelated purchased-package choice.
 const giftOnly=sale(),giftInvoice=add(Invoice,{customerId:customer,kind:'GIFT',giftOfInvoiceId:giftOnly.bill._id,total:0,paid:0,status:'PAID'});
 const giftPlan=add(Treatment,{customerId:customer,invoiceId:giftInvoice._id,serviceId:service,name:'Gift',remaining:1,totalSessions:1,status:'ACTIVE'});
-const giftData={id:giftOnly.bill._id,expectedUpdatedAt:current(giftOnly.bill).updatedAt,mode:'VOID',description:'Void service with gift',total:0,reason:'Owner',giftHandling:'REVOKE_UNUSED'};
+const giftData={id:giftOnly.bill._id,expectedUpdatedAt:current(giftOnly.bill).updatedAt,mode:'VOID',total:0,reason:'Owner',giftHandling:'REVOKE_UNUSED'};
 req=await commit(giftData);await call('applyInvoiceAdjustment',req.data);
 assert.equal(state.Treatment.find(r=>r._id===giftPlan._id).status,'CANCELLED');

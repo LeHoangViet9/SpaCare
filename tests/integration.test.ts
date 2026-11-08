@@ -350,7 +350,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const fresh=(await Invoice.findById(bill.id))!;
       const legacy={id:bill.id,expectedUpdatedAt:fresh.updatedAt.toISOString(),reason:'Nhập sai hóa đơn',confirmDelete:true};
       await assert.rejects(call('deleteInvoice',legacy),(e:any)=>e.status===409);
-      const input={id:bill.id,expectedUpdatedAt:fresh.updatedAt.toISOString(),mode:'VOID',description:fresh.description,total:0,reason:'Nhập sai hóa đơn'};
+      const input={id:bill.id,expectedUpdatedAt:fresh.updatedAt.toISOString(),mode:'VOID',total:0,reason:'Nhập sai hóa đơn'};
       const preview=await call('previewInvoiceAdjustment',input);
       const payload={...input,confirmed:true,expectedPreview:preview.previewToken};
       await assert.rejects(operate(employee,'applyInvoiceAdjustment',payload,randomUUID()),/Chỉ chủ spa/);
@@ -444,7 +444,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         assert.ok(beforeRows[ledgerByKind[scenario.kind]].length>0,`${scenario.kind} ledger fixture exists`);
         if(scenario.kind==='InvoiceLineCommission')assert.equal(beforeRows.invoiceLineCommission.length,2);
         if(invoice.paid){
-          const input={id:String(invoice._id),expectedUpdatedAt:invoice.updatedAt.toISOString(),mode:'VOID',description:invoice.description,total:0,reason:`Void ${scenario.kind}`,entitlementHandling:'KEEP',giftHandling:'KEEP',stockHandling:'KEEP_OUT'};
+          const input={id:String(invoice._id),expectedUpdatedAt:invoice.updatedAt.toISOString(),mode:'VOID',total:0,reason:`Void ${scenario.kind}`,entitlementHandling:'KEEP',giftHandling:'KEEP',stockHandling:'KEEP_OUT'};
           const preview=await call('previewInvoiceAdjustment',input);
           await call('applyInvoiceAdjustment',{...input,confirmed:true,expectedPreview:preview.previewToken});
           const afterRows=await ledgerRows(scenario.invoice);

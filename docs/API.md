@@ -1,8 +1,24 @@
 # API nội bộ
 
+## Điều chỉnh từng khoản thu trong Sửa hóa đơn — 08/11/2026
+
+PROPOSED kỹ thuật theo yêu cầu CONFIRMED: previewInvoiceAdjustment/applyInvoiceAdjustment bổ sung paid?: số nguyên VNĐ >=0 và receiptCorrections?: [{paymentId,amount,day}]. Mỗi phần tử strict; 1–100 ID không trùng, amount 0–10^12, day là ngày lịch thực không tương lai. Chỉ CORRECT nhận các field này. paid chỉ kiểm khớp nguồn sau sửa, không ghi trực tiếp; gửi paid khác mà không có nguồn sửa tương ứng bị từ chối. Thiếu receiptCorrections giữ hành vi chỉ sửa tổng/ngày cũ. Không nhận actorId/spaId/receiptId/phương thức mới từ client.
+
+Backend kiểm active OWNER/spa/phiên bản, Payment thuộc hóa đơn và CashEntry đúng khách/cùng spa/chưa đảo/không dùng chung. Nguồn trước sửa phải khớp invoice; ngày cũ/mới đều OPEN. CLOSED/chưa mở, nguồn không khớp hoặc vượt total trả 409, không tự ghi tiền thừa. Hóa đơn đã hoàn tiền/thay tư vấn, phân bổ dòng lịch sử, nguồn thiếu ngày phải đối soát riêng. Preview/apply đều kiểm lại; apply giữ confirmed/expectedPreview và idempotency/transaction/audit hiện có. Không tạo CashEntry/Payment mới; cập nhật projection và append chứng từ chứa nguồn trước/sau liên kết giao dịch gốc. Không sửa snapshot CLOSED.
+
+Preview trả reconciliation.receiptChanges với paymentId/receiptId/method/before/after; cashImpact.incoming/outgoing=0 thể hiện không có giao dịch mới, directReceived là tổng trực tiếp sau sửa. GET /api/invoices/:id: payments thêm receiptId/day; adjustments thêm reconciliation.receiptChanges để tra lịch sử. UI một khoản cho sửa số đã thanh toán; nhiều khoản cộng tổng từ từng số/ngày riêng; chưa có nguồn thì tổng chỉ đọc, không tạo khoản thu giả.
+
+BR-OPEN-005: chưa hỗ trợ sửa khoản thu khi vẫn giữ sổ CLOSED; trả lỗi và yêu cầu đối soát/mở lại theo quy trình hiện có, không âm thầm sửa snapshot hay tạo bút toán hôm nay.
+
+## Bất biến ngày thu khi sửa ngày hóa đơn — 08/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: UI Sửa hóa đơn gọi `previewInvoiceAdjustment`/`applyInvoiceAdjustment`; chỉ truyền `issuedOn` để sửa ngày hóa đơn. Hai action này không nhận `adjustPaymentDates`, không ghi Receipt/CashEntry mới và không đổi ngày của các Payment/CashEntry gốc. Mỗi lần lưu append InvoiceAdjustment/Audit với ngày trước/sau; sửa ngày lặp lại vẫn không cộng trùng thực thu. Ngày giao dịch thật nằm ở `CashEntry.day`.
+
+Dashboard “Thực thu hôm nay”, báo cáo thu chi theo ngày và closeDay dùng ledger `CashEntry.day`. Báo cáo hóa đơn lọc `Invoice.createdAt` và thể hiện giá trị chứng từ theo ngày lập, không phải báo cáo thực thu. API legacy `correctInvoiceDate` vẫn có `adjustPaymentDates` cho một ý định điều chỉnh ngày giao dịch riêng, chỉ khi được gửi tường minh; đây không phải side effect của sửa `issuedOn` và không được UI sửa hóa đơn hiện hành gọi.
+
 ## Bổ sung input ngày và ngữ cảnh modal — 06/11/2026 (ưu tiên mới nhất)
 
-PROPOSED kỹ thuật theo yêu cầu CONFIRMED: previewInvoiceAdjustment/applyInvoiceAdjustment thêm issuedOn?: YYYY-MM-DD, chỉ mode CORRECT. Bỏ trường giữ ngày cũ; không nhận adjustPaymentDates. Chặn ngày không tồn tại/tương lai (400), ngày cũ/mới CLOSED khi thực sự đổi (409); recheck ở preview/apply, lưu cùng chứng từ before/after và không sửa ngày thu tiền. Các guard OWNER/spa/nguồn/token/transaction/idempotency giữ nguyên.
+PROPOSED kỹ thuật theo yêu cầu CONFIRMED: previewInvoiceAdjustment/applyInvoiceAdjustment thêm issuedOn?: YYYY-MM-DD, chỉ mode CORRECT. CORRECT không nhận description hoặc dữ liệu dòng; nội dung/lines gốc được giữ nguyên. Bỏ trường giữ ngày cũ; không nhận adjustPaymentDates. Chặn ngày không tồn tại/tương lai (400), ngày cũ/mới CLOSED khi thực sự đổi (409); recheck ở preview/apply, lưu cùng chứng từ before/after và không sửa ngày thu tiền. Các guard OWNER/spa/nguồn/token/transaction/idempotency giữ nguyên.
 
 GET /api/invoices/:id thêm adjustmentContext? chỉ OWNER: {stock,packages,gifts} boolean. stock từ productId/productItems hoặc StockMovement invoiceId/checkoutInvoiceId; packages từ packageItems, gói liên kết trực tiếp hoặc ledger hoa hồng bán gói (không suy ra chỉ từ kind=PACKAGE); gifts từ hóa đơn quà hoặc CashCard.sourceInvoiceId thực tế. Gói quà không làm packages=true của hóa đơn mua. Context là projection, không phải quyền ghi và không miễn backend truy vấn lại nguồn. Reader adjustments[].before/after thêm createdAt để hiển thị ngày cũ/mới. Workspace tải mới invoice/customer/context trước khi mở form.
 
@@ -12,7 +28,7 @@ UI mới không gọi correctInvoiceDate/cancelInvoice/deleteInvoice: một form
 ## API điều chỉnh hóa đơn và quyền lợi — 06/11/2026 (ưu tiên mới nhất)
 
 PROPOSED kỹ thuật theo nghiệp vụ CONFIRMED tại BR-INV-ADJ-001: POST /api/operations vẫn kiểm Origin, phiên active, spa từ phiên, OWNER trong transaction Control, Idempotency-Key bắt buộc. Thêm:
-- previewInvoiceAdjustment / applyInvoiceAdjustment cùng strict data `{id,expectedUpdatedAt,mode:'CORRECT'|'VOID',description,total,reason,issuedOn?,stockHandling?:'KEEP_OUT'|'RETURN',entitlementHandling?:'KEEP'|'CANCEL_REMAINING',giftHandling?:'KEEP'|'REVOKE_UNUSED',confirmed?,expectedPreview?}`. description 1–500, reason 1–2000 sau trim, total nguyên VNĐ 0–10^12; id là Invoice, expectedUpdatedAt ISO datetime. VOID áp tổng 0; không nhận spaId/actorId/customerId hoặc sửa tiền thu gốc.
+- previewInvoiceAdjustment / applyInvoiceAdjustment cùng strict data `{id,expectedUpdatedAt,mode:'CORRECT'|'VOID',total,reason,issuedOn?,stockHandling?:'KEEP_OUT'|'RETURN',entitlementHandling?:'KEEP'|'CANCEL_REMAINING',giftHandling?:'KEEP'|'REVOKE_UNUSED',confirmed?,expectedPreview?}`. Không nhận description hoặc trường dòng hàng hóa/dịch vụ, số lượng, người thực hiện, tư vấn hay quyền lợi; các trường thừa bị từ chối. reason 1–2000 sau trim, total nguyên VNĐ 0–10^12; id là Invoice, expectedUpdatedAt ISO datetime. VOID áp tổng 0; không nhận spaId/actorId/customerId hoặc sửa tiền thu gốc.
 - Preview trả `{before,after,delta,reconciliation,previewToken}`: nguồn tiền, số trả về cọc/thẻ, direct credit, kho/gói/quà/ledger và tháng bù hoa hồng. Chỉ OWNER đọc được preview này. Apply bắt confirmed=true và expectedPreview SHA-256 khớp toàn bộ dữ liệu đã đối chiếu; có nguồn/quyền lợi/kỳ lương thay đổi phải xem lại, dù updatedAt hóa đơn chưa đổi. Các lựa chọn bắt buộc khi VOID thực sự có nguồn liên quan. Kết quả `{id,adjustmentId,message}`.
 - refundInvoiceAdjustment strict `{id,expectedUpdatedAt,amount,method:'CASH'|'BANK_TRANSFER',reason,receivedConfirmation:true,transferReference?}`. Chỉ OWNER, số dương <= adjustmentCredit hiện tại; ghi OUT/REFUND qua receipt/touchDay hiện có. Bắt xác nhận thực trả/evidence, chỉ ngày thu chi hiện tại OPEN được ghi; hóa đơn CANCELLED vẫn được hoàn số tiền trực tiếp đang giữ. Kết quả `{id,adjustmentId,message}`. Không dùng refundPackage/reverseCash thay luồng này.
 
@@ -657,7 +673,7 @@ Theo yêu cầu mới nhất, bỏ nút Sửa ngày hóa đơn riêng ở danh s
 
 ### Điều chỉnh ngày thu khi nhập hóa đơn muộn (2026-10-26)
 
-CONFIRMED theo yêu cầu chủ spa: trong Sửa hóa đơn, tùy chọn Điều chỉnh cả ngày thu tiền gửi correctInvoiceDate.adjustPaymentDates: true (mặc định false). OWNER đang hoạt động được chuyển CashEntry.day của tất cả khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực về ngày hóa đơn đã chọn, khi thực tế mọi khoản này đã thu ngày đó. Đây là ngoại lệ cho quy tắc trước đó chỉ sửa ngày hóa đơn. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
+CONFIRMED trước đây: `correctInvoiceDate.adjustPaymentDates: true` là ý định tường minh, độc lập để chuyển ngày giao dịch của các khoản thu trực tiếp CASH/BANK_TRANSFER còn hiệu lực khi người dùng xác nhận chúng thực tế được thu vào ngày đó. Không được suy ra từ `issuedOn` hoặc tự gửi trong luồng Sửa hóa đơn hiện tại; luồng này không hiển thị/gửi cờ. Không chuyển ngày tiền cọc/thẻ; giữ số tiền, công nợ, thời gian ghi nhận Payment.createdAt/CashEntry.createdAt, buổi dùng, chữ ký và hoa hồng.
 
 Ngày thu cũ và mới phải có sổ OPEN; ngày hóa đơn cũ/mới không được CLOSED. Backend kiểm tra cùng spa, phiên/quyền, phiên bản hóa đơn, liên kết Payment–CashEntry; chặn khoản đảo/dùng chung và hóa đơn đã hoàn tiền. Ghi tuần tự trong transaction, tăng Day.revision cho các ngày thay đổi, giữ idempotency và Audit.details gồm adjustPaymentDates, receiptChanges (receiptId, paymentId, amount, method, before, after), lý do và ngày hóa đơn trước/sau. Không tạo khoản thu mới; tổng toàn kỳ không đổi, thực thu theo ngày chuyển theo CashEntry.day.
 
