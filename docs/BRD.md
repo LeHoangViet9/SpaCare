@@ -1,5 +1,9 @@
 # SpaCare — Business Requirements
 
+## Thống kê tiền mặt/chuyển khoản — 09/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: Báo cáo → Thu chi thêm Thu tiền mặt, Chi tiền mặt, Thu chuyển khoản, Chi chuyển khoản theo khoảng ngày lọc từ CashEntry, cùng quy tắc loại giao dịch đã đảo với Thực thu/Thực chi; CSV có các tổng tương ứng. Giữ tổng thu/chi, dòng tiền ròng và bảng phương thức. Xem trước Chốt sổ hiển thị riêng bốn tổng này, tiền mặt đầu ngày, tiền mặt kỳ vọng cuối ngày và chuyển khoản ròng. Chỉ kiểm đếm tiền mặt; kỳ vọng = đầu ngày + thu mặt − chi mặt. Backend kiểm lại dữ liệu xem trước trước khi chốt, giữ transaction/idempotency/audit, cùng spa và đúng ngày. Không migration, sửa dữ liệu thật, deploy hoặc merge.
+
 ## KTV trong đúng form Sửa hóa đơn — 08/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: OWNER được thấy KTV đang gán và chọn KTV mới cho dòng dịch vụ lẻ độc lập đủ nguồn đối soát, kể cả đã thực hiện/có hoa hồng. Hiển thị trong form Sửa hóa đơn đang dùng; lý do bắt buộc, preview KTV cũ → mới, lưu lịch sử và bút toán hoa hồng liên kết. Bảo vệ lương đã chốt, cập nhật trạng thái nháp cần tính lại theo cơ chế lương hiện có. Không đổi chữ ký, performedAt, khoản thu hoặc ngày thu. Dòng thuộc gói chưa đủ nguồn vẫn khóa. Ngoại lệ này ưu tiên hơn mô tả “mọi dòng đã thực hiện chỉ xem” ở mục trước; không mở quyền sửa tiền hay bỏ dòng đã làm.

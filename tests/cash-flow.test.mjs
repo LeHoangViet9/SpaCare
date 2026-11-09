@@ -3,8 +3,21 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { tsImport } from 'tsx/esm/api';
 
-const { cashFlowEntries, cashFlowMatch, cashFlowNet } = await tsImport('../src/lib/cash-flow.ts', import.meta.url);
+const { cashFlowEntries, cashFlowMatch, cashFlowNet, cashFlowTotals } = await tsImport('../src/lib/cash-flow.ts', import.meta.url);
 const day = '2026-11-02';
+
+test('method totals count receipts and real expenses, excluding reversed receipts and expenses with linked reversals', () => {
+ const entries = [];
+ for (const method of ['CASH','BANK_TRANSFER']) {
+  entries.push({method,direction:'IN',amount:500,kind:'PAYMENT'}, {method,direction:'OUT',amount:80,kind:'REFUND'});
+  for (const direction of ['IN','OUT']) {
+   entries.push({method,direction,amount:900,reversed:true},
+    {method,direction:direction==='IN'?'OUT':'IN',amount:900,kind:'REVERSAL',originalId:'synthetic-source'});
+  }
+ }
+ assert.deepEqual(cashFlowTotals(entries),{cashIn:500,cashOut:80,bankIn:500,bankOut:80});
+ assert.deepEqual(cashFlowTotals([]),{cashIn:0,cashOut:0,bankIn:0,bankOut:0});
+});
 
 function summarize(entries) {
  const actual = cashFlowEntries(entries);

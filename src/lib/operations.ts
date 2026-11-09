@@ -28,7 +28,7 @@ import { packageTemplateInput, packageSaleInput, invoiceCharge } from './package
 import { payrollCommissionPeriod, payrollInputs, monthBounds, commissionTotals } from './payroll-rules';
 import { productInputs, productNameKey, stockBalance, productTotal } from './product-rules';
 import type { Actor } from './auth';
-import { cashFlowMatch, cashFlowNet } from './cash-flow';
+import { cashFlowMatch, cashFlowNet, cashFlowTotals } from './cash-flow';
 import { hashPassword } from './password';
 import { connect } from './db';
 import {
@@ -204,7 +204,8 @@ const schemas = {
   extendTreatmentHold: z.object({ id: objectId, holdUntil: dateOnly, reason: text }),
   resumeTreatment: z.object({ id: objectId, reason: text, expiresOn: dateOnly.optional() }),
   openDay: z.object({ day: dateOnly, opening: zeroMoney }),
-  closeDay: z.object({ day: dateOnly, counted: zeroMoney, note, expectedPreview:z.number().int().optional() }),
+  closeDay: z.object({ day: dateOnly, counted: zeroMoney, note, expectedPreview:z.number().int().optional(),
+    expectedFlowPreview:z.object({opening:z.number().int().nonnegative(),cashIn:z.number().int().nonnegative(),cashOut:z.number().int().nonnegative(),bankIn:z.number().int().nonnegative(),bankOut:z.number().int().nonnegative()}).strict().optional() }),
   reopenDay: z.object({ day: dateOnly, reason: text }),
 };
 
@@ -1899,6 +1900,9 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           const net = (method: 'CASH' | 'BANK_TRANSFER') => cashFlowNet(entries, method);
           const expected=target.opening + net('CASH');
           ensure(d.expectedPreview===undefined || d.expectedPreview===expected,'Thu chi đã thay đổi từ lúc xem trước. Tải lại và đối chiếu trước khi chốt.',409);
+          const latestFlow = { opening: target.opening, ...cashFlowTotals(entries) };
+          ensure(!d.expectedFlowPreview || (Object.keys(latestFlow) as (keyof typeof latestFlow)[]).every(key => d.expectedFlowPreview![key] === latestFlow[key]),
+            'Thu chi đã thay đổi từ lúc xem trước. Tải lại và đối chiếu trước khi chốt.',409);
           target.expected = expected;
           target.bankNet = net('BANK_TRANSFER');
           target.counted = d.counted;

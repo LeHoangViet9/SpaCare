@@ -1,5 +1,11 @@
 # SpaCare — Business Rules
 
+## BR-CASH-METHOD-001 — Báo cáo và xem trước chốt sổ theo phương thức — 09/11/2026
+
+CONFIRMED theo yêu cầu người dùng: Báo cáo Thu chi hiển thị bốn tổng Thu tiền mặt/Chi tiền mặt/Thu chuyển khoản/Chi chuyển khoản, kèm CSV; giữ các tổng và bảng hiện hành. Nguồn CashEntry.day trong khoảng lọc bao gồm hai đầu, cùng spa; loại reversed=true và REVERSAL có originalId, giữ REFUND là chi thật. Chốt sổ hiển thị riêng bốn tổng, đầu ngày, kỳ vọng cuối ngày và chuyển khoản ròng; chỉ yêu cầu counted tiền mặt. expected = opening + cashIn − cashOut; bankNet = bankIn − bankOut, không cộng chuyển khoản vào tiền cần đếm.
+
+PROPOSED kỹ thuật: GET days OPEN thêm bankIn/bankOut bên cạnh cashIn/cashOut/liveExpected/liveBankNet; GET reports thêm bốn tổng từ methods hiện có. Client gửi expectedFlowPreview gồm opening và bốn tổng; backend tính lại từ CashEntry cùng spa/ngày trong transaction và trả 409 nếu bất kỳ tổng nào khác, kể cả các khoản bù trừ giữ nguyên số ròng. Giữ expectedPreview và tương thích client cũ không gửi object mới. Không ghi snapshot khi đọc, không đổi schema/index hoặc snapshot CLOSED; không thay quy trình OPEN về sửa sai ngày đã chốt.
+
 ## BR-INV-TECH-UI-001 — Điền KTV và đính chính trong form sửa — 08/11/2026
 
 CONFIRMED: OWNER chọn KTV mới cho dịch vụ lẻ độc lập đã thực hiện khi nguồn đủ đối soát, điền sẵn KTV hiện hành. Bắt lý do/xem trước/xác nhận; append hoa hồng âm/dương liên kết ledger gốc và audit trước/sau. Không sửa chữ ký/ngày thực hiện/tiền/ngày thu; giữ khóa gói thiếu liên kết và kỳ lương APPROVED/PAID. Quyền đính chính nguồn đã thực hiện là ngoại lệ rõ ràng đối với UI chỉ xem ở BR-INV-EDIT-SCOPE-001, không thay chính sách các phần khác.

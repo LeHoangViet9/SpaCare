@@ -44,7 +44,10 @@ export async function readReport(user: Actor, query: ReturnType<typeof workspace
       saleCommission:byId(salesCommissions,s._id).saleCommission || 0, commission: byId(commissions, s._id).commission || 0, services: byId(commissions, s._id).services || 0,
       invoices: byId(consulting, s._id).invoices || 0, sales: byId(consulting, s._id).sales || 0 }));
   }
-  return { inflow: days.reduce((s, d) => s + d.incoming, 0), outflow: days.reduce((s, d) => s + d.outgoing, 0), days, methods, kinds, dailyInvoices,
+  const methodTotal = (method: string, direction: 'incoming' | 'outgoing') => methods.find(row => row._id === method)?.[direction] || 0;
+  return { cashIn: methodTotal('CASH', 'incoming'), cashOut: methodTotal('CASH', 'outgoing'),
+    bankIn: methodTotal('BANK_TRANSFER', 'incoming'), bankOut: methodTotal('BANK_TRANSFER', 'outgoing'),
+    inflow: days.reduce((s, d) => s + d.incoming, 0), outflow: days.reduce((s, d) => s + d.outgoing, 0), days, methods, kinds, dailyInvoices,
     invoices: invoices.map(i => ({ ...i, customerName: customers.find(c => String(c._id) === String(i.customerId))?.name || 'Khách hàng cũ' })),
     page, pageSize: query.pageSize, total: invoiceCount, summary: invoiceStats[0] || { count: 0, total: 0, paid: 0, debt: 0 }, employees };
 }

@@ -1,5 +1,12 @@
 # API nội bộ
 
+## Báo cáo/chốt sổ theo phương thức — 09/11/2026
+
+Theo BR-CASH-METHOD-001 CONFIRMED; contract cụ thể là PROPOSED kỹ thuật:
+- GET workspace section=reports (OWNER): thêm cashIn/cashOut/bankIn/bankOut, mặc định 0 khi không có giao dịch phương thức đó; lấy từ methods đã lọc cùng spa theo CashEntry.day trong from/to bao gồm hai đầu, cùng bộ lọc giao dịch đảo với inflow/outflow. CSV Thu chi có bốn tổng này và giữ dữ liệu ngày/phương thức.
+- GET workspace section=days: OPEN thêm bankIn/bankOut; giữ cashIn/cashOut/liveExpected/liveBankNet. CLOSED giữ snapshot hiện có, không ghi lại khi đọc.
+- closeDay (OWNER) thêm expectedFlowPreview?: {opening,cashIn,cashOut,bankIn,bankOut}, strict object gồm đủ năm số nguyên không âm. Client hiện hành gửi object này cùng expectedPreview (tiền mặt kỳ vọng). Backend tính lại từ ledger cùng spa/đúng day trong transaction, trả 409 nếu một tổng hoặc expectedPreview khác; client tải lại và mở lại đối chiếu. Client cũ bỏ field vẫn tương thích và backend vẫn tính expected/bankNet từ nguồn hiện tại. Không tin số client để ghi tiền. counted chỉ là tiền mặt đếm thực tế, expected=opening+cashIn−cashOut, bankNet=bankIn−bankOut; giữ quyền/active session/idempotency/audit và snapshot CLOSED.
+
 ## Hợp đồng tải form sửa có KTV — 08/11/2026
 
 PROPOSED kỹ thuật theo BR-INV-TECH-UI-001 CONFIRMED: loadInvoiceAdjustment dùng GET /api/invoices/:id?edit=1, kiểm ID hóa đơn và cấu trúc editContext (client/source/locks/catalogs). Workspace không mở form CORRECT khi phản hồi thiếu context; dialog nhận DTO cũ sẽ tải lại cùng endpoint trước khi dựng form, lỗi phải hiển thị và chưa có nút lưu. Không chế context/KTV từ dữ liệu tổng tiền. VOID giữ luồng hiện có, không buộc context nội dung.

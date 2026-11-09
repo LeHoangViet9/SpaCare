@@ -1,5 +1,9 @@
 # SpaCare — Data Model
 
+## Projection tổng thu/chi theo phương thức — 09/11/2026
+
+PROPOSED kỹ thuật cho BR-CASH-METHOD-001 CONFIRMED: không đổi schema/index/collection hoặc migration. GET reports bổ sung cashIn/cashOut/bankIn/bankOut từ aggregation methods của CashEntry đã lọc spa/ngày và loại giao dịch đảo. GET days chỉ bổ sung bankIn/bankOut cho OPEN từ cùng aggregation với cashIn/cashOut; các tổng là projection, không lưu vào Day. expectedFlowPreview {opening,cashIn,cashOut,bankIn,bankOut} là input đối chiếu tạm thời của closeDay, không được gán vào schema. Day chỉ lưu expected/bankNet/counted/difference theo cơ chế cũ; snapshot CLOSED và lịch sử audit giữ nguyên.
+
 ## Tên KTV trong lịch sử đính chính — 08/11/2026
 
 PROPOSED kỹ thuật theo BR-INV-TECH-UI-001 CONFIRMED: không đổi schema/index/migration. reconciliation.content.serviceCorrections[].before/after bổ sung performerName snapshot cạnh performerId có sẵn để hiển thị cũ → mới rõ ràng. InvoiceAdjustment/Audit vẫn lưu các field nguồn, actor, lý do, thời điểm và liên kết commission originalLedgerIds/adjustmentId như trước. Không ghi lại TreatmentUse.signature/performedAt hay Payment/CashEntry khi đính chính KTV độc lập. editContext chỉ phục vụ UI điền sẵn; backend vẫn đối soát lại nguồn và payroll trong transaction.
