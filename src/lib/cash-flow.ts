@@ -28,3 +28,12 @@ export function cashFlowNet(entries: readonly CashFlowEntry[], method: CashFlowE
     .filter(entry => entry.method === method)
     .reduce((sum, entry) => sum + (entry.direction === 'IN' ? entry.amount : -entry.amount), 0);
 }
+
+export function cashFlowTotals(entries: readonly CashFlowEntry[]) {
+  const totals = { cashIn: 0, cashOut: 0, bankIn: 0, bankOut: 0 };
+  for (const entry of cashFlowEntries(entries)) {
+    if (entry.method === 'CASH') totals[entry.direction === 'IN' ? 'cashIn' : 'cashOut'] += entry.amount;
+    if (entry.method === 'BANK_TRANSFER') totals[entry.direction === 'IN' ? 'bankIn' : 'bankOut'] += entry.amount;
+  }
+  return totals;
+}

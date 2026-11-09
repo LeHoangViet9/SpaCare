@@ -118,6 +118,8 @@ state.CashEntry.push(
   { _id: 'TEST-FOREIGN', spaId: 'f'.repeat(24), day: today, method: 'CASH', direction: 'IN', kind: 'INCOME', amount: 999999 },
 );
 const call = (action: string, input: any, key = randomUUID()) => operate(actor, action, input, key);
+const initialReport = await readReport(actor, workspaceQuery(new URLSearchParams({section:'reports',from:oldDay,to:today})));
+assert.deepEqual([initialReport.cashIn,initialReport.cashOut,initialReport.bankIn,initialReport.bankOut],[1000,30,2000,70]);
 // Execute the real reversal action against model doubles while the old book is CLOSED.
 for (const id of ['TEST-ORIGINAL-CASH', 'TEST-ORIGINAL-BANK']) {
   const key = randomUUID(), input = { id, reason: 'Synthetic cross-day correction' };
@@ -133,8 +135,11 @@ assert.ok(state.CashEntry.filter(row => row.kind === 'REVERSAL').every(row => ro
 const makeQuery = (section: string, from = oldDay, to = today) => workspaceQuery(new URLSearchParams({ section, from, to }));
 const report = await readReport(actor, makeQuery('reports'));
 assert.equal(report.inflow, 0); assert.equal(report.outflow, 100);
+assert.deepEqual([report.cashIn,report.cashOut,report.bankIn,report.bankOut],[0,30,0,70]);
 assert.deepEqual(report.days, [{ _id: today, incoming: 0, outgoing: 100 }]);
 assert.equal((await readReport(actor, makeQuery('reports', oldDay, oldDay))).days.length, 0);
+const emptyReport = await readReport(actor, makeQuery('reports',oldDay,oldDay));
+assert.deepEqual([emptyReport.cashIn,emptyReport.cashOut,emptyReport.bankIn,emptyReport.bankOut],[0,0,0,0]);
 assert.equal((await readReport(actor, makeQuery('reports', today, today))).outflow, 100);
 
 // Run the actual CSV click handler with browser I/O doubles, rather than rebuild its rows in the test.
@@ -152,6 +157,7 @@ const csv = await exported.text();
 assert.ok(csv.includes(`"${today}","0","100","-100"`));
 assert.ok(csv.includes('"Tiền mặt","0","30","-30"'));
 assert.ok(csv.includes('"Chuyển khoản","0","70","-70"'));
+for (const row of ['"Thu tiền mặt","0"','"Chi tiền mặt","30"','"Thu chuyển khoản","0"','"Chi chuyển khoản","70"']) assert.ok(csv.includes(row),row);
 assert.ok(!csv.includes(oldDay));
 
 let workspace = await readWorkspace(actor, makeQuery('days'));
@@ -160,13 +166,24 @@ assert.equal(saved.expected, 1100); assert.equal(saved.bankNet, 2000);
 assert.equal(saved.liveExpected, undefined);
 const preview = workspace.days.find((row: any) => row.day === today)!;
 assert.equal(preview.liveExpected, 470); assert.equal(preview.liveBankNet, -70);
+assert.deepEqual([preview.cashIn,preview.cashOut,preview.bankIn,preview.bankOut],[0,30,0,70]);
+const expectedFlowPreview = {opening:preview.opening,cashIn:preview.cashIn,cashOut:preview.cashOut,bankIn:preview.bankIn,bankOut:preview.bankOut};
+// Reject changed bank totals and offsetting cash movements even if expected cash is unchanged.
+for (const method of ['BANK_TRANSFER','CASH']) {
+  const before = clone(state);
+  state.CashEntry.push(...['IN','OUT'].map(direction=>({_id:randomUUID(),spaId,day:today,method,direction,kind:direction==='IN'?'INCOME':'EXPENSE',amount:25})));
+  const changed = clone(state);
+  await assert.rejects(call('closeDay',{day:today,counted:470,expectedPreview:470,expectedFlowPreview}),(e:any)=>e.status===409);
+  assert.deepEqual(state,changed,'stale close rolls back all writes');
+  for (const key of Object.keys(state)) state[key]=before[key];
+}
 const cashWorkspace = await readWorkspace(actor, makeQuery('cash'));
 assert.deepEqual(cashWorkspace.pages.cash.summary, { incoming: 0, outgoing: 100 });
 assert.equal(cashWorkspace.cash.length, 6, 'same-spa correction history remains visible in ledger');
 const overview = await readWorkspace(actor, makeQuery('overview'));
 assert.equal(overview.totals.inflow, 0); assert.equal(overview.totals.outflow, 100);
 await assert.rejects(call('closeDay', { day: oldDay, counted: 100 }), /Ngày chưa mở hoặc đã chốt/);
-await call('closeDay', { day: today, counted: 470, expectedPreview: preview.liveExpected });
+await call('closeDay', { day: today, counted: 470, expectedPreview: preview.liveExpected, expectedFlowPreview });
 assert.equal(state.Day.find(row => row.day === today).expected, 470);
 assert.equal(state.Day.find(row => row.day === today).bankNet, -70);
 assert.deepEqual(state.Day.find(row => row.day === oldDay), oldBook);

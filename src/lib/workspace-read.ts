@@ -139,7 +139,8 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
       if(day.status!=='OPEN') return day;
       const sum=(method:string,direction:string)=>flows.filter(row=>row._id.day===day.day && row._id.method===method && row._id.direction===direction).reduce((n,row)=>n+row.amount,0);
       const cashIn=sum('CASH','IN'),cashOut=sum('CASH','OUT');
-      return {...day,liveExpected:day.opening+cashIn-cashOut,cashIn,cashOut,liveBankNet:sum('BANK_TRANSFER','IN')-sum('BANK_TRANSFER','OUT')};
+      const bankIn=sum('BANK_TRANSFER','IN'),bankOut=sum('BANK_TRANSFER','OUT');
+      return {...day,liveExpected:day.opening+cashIn-cashOut,cashIn,cashOut,bankIn,bankOut,liveBankNet:bankIn-bankOut};
     });
   }
 
