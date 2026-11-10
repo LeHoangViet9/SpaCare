@@ -1,5 +1,13 @@
 # SpaCare — Business Rules
 
+## BR-INV-UNIFIED-EDIT-001 — Một form sửa tại chi tiết — 10/11/2026
+
+CONFIRMED: chỉ OWNER sửa qua Xử lý hóa đơn → Sửa hóa đơn; bỏ nút Đính chính dịch vụ / kỹ thuật viên riêng. Dùng chung form sửa từ danh sách, điền sẵn đúng dịch vụ và KTV từng dòng, kể cả nhiều lượt trùng serviceId. Bắt lý do, xem trước giá trị trước/sau, tổng/đã thanh toán/công nợ, chênh lệch và hoa hồng trước xác nhận. Giữ đầy đủ người sửa/thời điểm/lý do/nội dung trong chứng từ và audit. Thay mô tả điểm vào riêng trong BR-INV-TECH-UI-001; không thay chính sách người tư vấn bán gói hoặc hoàn tiền thực tế.
+
+CONFIRMED: chỉ đổi KTV giữ nguyên total/paid/công nợ, Payment/CashEntry và ngày thu. Sửa dịch vụ/giá đủ điều kiện theo BR-INV-CONTENT-001 và cơ chế điều chỉnh hiện có; không tự nhận hoặc trả tiền. Giữ active OWNER/cùng spa, trạng thái, đối soát, preview token/phiên bản, transaction tuần tự và idempotency. Không ghi đè lương APPROVED/PAID; bù hoa hồng và đánh dấu nháp cần tính lại theo quy tắc hiện có.
+
+PROPOSED kỹ thuật giữ nguyên: cùng InvoiceAdjustmentDialog gọi previewInvoiceAdjustment/applyInvoiceAdjustment; không gọi nối tiếp hai mutation để gộp UI. correctionOnly vẫn chỉ sửa danh tính dòng đã làm, không đổi giá/tổng/ngày/khoản thu cùng lần; technicianOnly của buổi gói giữ dịch vụ/quyền lợi/chữ ký/thời điểm. Dòng chưa thực hiện đủ điều kiện vẫn sửa giá/nội dung như trước. Các giới hạn nguồn/lịch/phân bổ/lương chốt không được nới chỉ vì bỏ nút. serviceCorrections bổ sung lineNumber để đối chiếu đúng lượt trùng dịch vụ; lineId/sourceIndex vẫn là nguồn xác định, không ghép theo tên hay serviceId.
+
 ## BR-CASH-METHOD-001 — Báo cáo và xem trước chốt sổ theo phương thức — 09/11/2026
 
 CONFIRMED theo yêu cầu người dùng: Báo cáo Thu chi hiển thị bốn tổng Thu tiền mặt/Chi tiền mặt/Thu chuyển khoản/Chi chuyển khoản, kèm CSV; giữ các tổng và bảng hiện hành. Nguồn CashEntry.day trong khoảng lọc bao gồm hai đầu, cùng spa; loại reversed=true và REVERSAL có originalId, giữ REFUND là chi thật. Chốt sổ hiển thị riêng bốn tổng, đầu ngày, kỳ vọng cuối ngày và chuyển khoản ròng; chỉ yêu cầu counted tiền mặt. expected = opening + cashIn − cashOut; bankNet = bankIn − bankOut, không cộng chuyển khoản vào tiền cần đếm.

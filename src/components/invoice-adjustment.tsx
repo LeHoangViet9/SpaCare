@@ -101,16 +101,18 @@ function InvoiceAdjustmentForm({invoice,mode,onClose,onChanged}:DialogProps){
           {voiding?<p>Công nợ sau vô hiệu hóa: <strong>{money(0)}</strong>. Hóa đơn gốc và các buổi đã làm vẫn được giữ lại.</p>:<table><thead><tr><th>Thông tin</th><th>Trước</th><th>Sau</th></tr></thead><tbody>
             <tr><th>Ngày hóa đơn</th><td>{day(preview.before.createdAt)}</td><td>{day(preview.after.createdAt)}</td></tr>
             {['total','paid'].map(key=><tr key={key}><th>{key==='total'?'Tổng hóa đơn':'Đã thanh toán'}</th><td>{money(preview.before[key])}</td><td>{money(preview.after[key])}</td></tr>)}
+            <tr><th>Còn nợ</th><td>{money(preview.before.total-preview.before.paid)}</td><td>{money(preview.after.total-preview.after.paid)}</td></tr>
           </tbody></table>}
           {!voiding&&preview.reconciliation.content&&<InvoiceContentComparison showCustomer={false} before={preview.reconciliation.content.displayBefore} after={preview.reconciliation.content.displayAfter}/>}
           {!voiding&&preview.reconciliation.content?.serviceCorrections&&<InvoiceTechnicianChanges corrections={preview.reconciliation.content.serviceCorrections}/>}
           {!voiding&&preview.noChanges&&<p role="status">Không có thay đổi.</p>}
           {!voiding&&preview.reconciliation.content?.totalAdjustment!==0&&preview.reconciliation.content&&<p>Chênh lệch tổng so với các dòng: {money(preview.reconciliation.content.totalAdjustment)}.</p>}
-          {!voiding&&<>{preview.delta!==0&&<p>Chênh lệch: <strong>{money(preview.delta)}</strong></p>}<InvoiceAdjustmentCashReview preview={preview} /></>}
+          {!voiding&&<><p>Chênh lệch: <strong>{money(preview.delta)}</strong></p><InvoiceAdjustmentCashReview preview={preview} /></>}
           {!!preview.reconciliation.balance.depositReturn&&<p>Trả về số dư cọc của khách: {money(preview.reconciliation.balance.depositReturn)}.</p>}
           {!!preview.reconciliation.balance.cardReturn&&<p>Trả về thẻ tiền của khách: {money(preview.reconciliation.balance.cardReturn)}.</p>}
           {!!preview.after.adjustmentCredit&&<p>Tiền chờ xử lý: <strong>{money(preview.after.adjustmentCredit)}</strong> · Chưa hoàn.</p>}
           {preview.reconciliation.commissionChanges.map((c:Row)=><p key={c.category+String(c.staffId)}>Hoa hồng {c.staffName}: {money(c.delta)} · kỳ {preview.reconciliation.commissionMonths[String(c.staffId)]}.</p>)}
+          {!voiding&&!preview.reconciliation.commissionChanges.length&&<p>Hoa hồng: không thay đổi.</p>}
           <p>Lý do: {reason}</p><button type="button" disabled={busy} onClick={()=>setPreview(null)}>Quay lại chỉnh sửa</button>
         </section>}
         {error&&<p role="alert">{invoiceAdjustmentErrorText(error)}</p>}

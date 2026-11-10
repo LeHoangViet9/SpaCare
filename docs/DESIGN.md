@@ -1,5 +1,13 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Điểm sửa chi tiết thống nhất — 10/11/2026
+
+CONFIRMED: InvoiceDetail bỏ nút Đính chính dịch vụ / kỹ thuật viên riêng; InvoiceHandlingMenu dùng nhóm/nút Sửa hóa đơn. Cùng callback Workspace tải editContext đầy đủ và mở InvoiceAdjustmentDialog. Không có lựa chọn luồng thứ hai hoặc chuỗi ghi nội dung rồi ghi KTV. Các trường bị khóa tiếp tục theo nguồn backend hiện hành.
+
+PROPOSED kỹ thuật: preview bổ sung hàng công nợ trước/sau, luôn hiện delta và trường hợp hoa hồng không đổi. Đối chiếu KTV gắn số dòng/serviceName để phân biệt hai lượt cùng dịch vụ, giữ fallback cho lịch sử thiếu số dòng. Lý do, xác nhận, chống gửi lặp và API điều chỉnh cũ được tái sử dụng. Không sửa schemas, nguồn thu, chữ ký hoặc quy tắc lương.
+
+Kiểm thử production Workspace với transport local/model doubles: mở từ danh sách và Xử lý hóa đơn tại chi tiết trên desktop/mobile; không còn nút riêng; hai dòng trùng dịch vụ chỉ đổi KTV dòng thứ hai; đối chiếu hoa hồng âm/dương và nguồn thu giữ nguyên; đổi dịch vụ/giá chưa thực hiện tính lại nợ, không ghi tiền/hoa hồng. Fixture nghiệp vụ bổ sung retry/rollback audit và kiểm đúng ledger dòng gốc. MongoDB integration bổ sung trường hợp nhiều dòng, khoản thu ngày CLOSED giữ nguyên, nháp cần tính lại và audit; chỉ chạy spacare_test qua safety runner, không coi model doubles là MongoDB integration.
+
 ## Preview nội dung legacy — 08/11/2026
 
 PROPOSED kỹ thuật: `displayBefore` và nền của `displayAfter` dùng `invoiceContentContext.source`, cùng các dòng canonical điền sẵn form (dịch vụ từ `serviceId`, sản phẩm từ nguồn đơn dòng, gói legacy đủ nguồn). Áp dụng `patch` sau nền canonical để mảng rỗng tường minh phía sau vẫn thể hiện việc xóa dòng. Chỉ thay dữ liệu trình bày preview/chứng từ điều chỉnh mới; giữ snapshot thô trước/sau, không chuẩn hóa ngầm dữ liệu đã lưu, không ghi lại lịch sử cũ hoặc đổi tiền, ngày thu, chữ ký, thời điểm thực hiện, quyền và guard hiện có.

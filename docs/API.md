@@ -1,5 +1,13 @@
 # API nội bộ
 
+## Form sửa hóa đơn thống nhất — 10/11/2026
+
+Theo BR-INV-UNIFIED-EDIT-001 CONFIRMED; contract triển khai là PROPOSED kỹ thuật. Chi tiết chỉ có Xử lý hóa đơn → Sửa hóa đơn, tải GET /api/invoices/:id?edit=1 rồi dùng previewInvoiceAdjustment/applyInvoiceAdjustment như điểm sửa danh sách. Không thêm API hoặc gửi hai mutation độc lập cho nội dung và KTV. canCorrectPerformedServices giữ tương thích đọc, không còn tạo action UI riêng.
+
+Payload content.serviceItems giữ key/sourceIndex/serviceId/total/performerId cho từng lượt; không gộp theo serviceId. Preview và lịch sử reconciliation.content.serviceCorrections[] thêm lineNumber?: number (1-based), chỉ hiển thị; lineId và nguồn backend vẫn quyết định dòng và ledger bù. Lịch sử cũ không có trường này vẫn hiển thị tên dịch vụ/KTV. Đối chiếu UI luôn hiện total/paid/công nợ trước-sau, delta kể cả 0 và commissionChanges (hoặc thông báo không thay đổi).
+
+Không thay guard: correctionOnly không nhận thay giá/tổng/ngày/khoản thu cùng lần đổi danh tính đã làm; technicianOnly không đổi dịch vụ buổi gói. Chỉ dòng đủ điều kiện mới sửa giá/nội dung theo API hiện có. Giữ 403/404/409, active OWNER/spa, expectedUpdatedAt/expectedPreview/confirmed, Idempotency-Key, transaction/audit và bảo vệ payroll chốt. Chỉ đổi KTV không gửi receiptCorrections hoặc ngày thu; không tạo khoản thu/hoàn tiền.
+
 ## Báo cáo/chốt sổ theo phương thức — 09/11/2026
 
 Theo BR-CASH-METHOD-001 CONFIRMED; contract cụ thể là PROPOSED kỹ thuật:

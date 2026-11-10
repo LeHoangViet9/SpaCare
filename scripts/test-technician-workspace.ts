@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {build} from 'esbuild';
 import {actor,owner,tech,tech2,customer,service,add,clone,call,localState,resetLocalState} from '../tests/technician-local-models';
-import {Invoice,Commission,Payroll,CashEntry,Payment,Day,Treatment,TreatmentUse} from '../src/lib/models';
+import {Invoice,Commission,InvoiceLineCommission,Payroll,CashEntry,Payment,Day,Treatment,TreatmentUse,Service} from '../src/lib/models';
 import {readInvoice} from '../src/lib/invoice-read';
 import {spaDay} from '../src/lib/rules';
 import {salaryOverviewRows} from '../src/lib/salary-overview';
@@ -18,17 +18,29 @@ function reset(kind='standalone',closed=false){
  const yesterday=new Date(Date.now()-86400000),day=spaDay(yesterday),month=day.slice(0,7);
  if(!state.Day.some(p=>p.day===day))add(Day,{day,status:'OPEN',opening:0,revision:0});
  const bill=add(Invoice,{code:'HD000021',customerId:customer,serviceId:service,serviceItems:[],kind:'SERVICE',description:'Gội đầu dưỡng sinh',total:300000,paid:300000,status:'PAID',refunded:0,commission:10000,performedBy:tech,performedAt:yesterday.toISOString(),creatorName:'Owner local'});billId=bill._id;
- const ledger=add(Commission,{invoiceId:bill._id,customerId:customer,serviceId:service,serviceName:bill.description,staffId:tech,staffName:'KTV cũ local',amount:10000,earnedAt:yesterday.toISOString(),sourceType:'INVOICE',sourceId:bill._id});
+ let ledger=add(Commission,{invoiceId:bill._id,customerId:customer,serviceId:service,serviceName:bill.description,staffId:tech,staffName:'KTV cũ local',amount:10000,earnedAt:yesterday.toISOString(),sourceType:'INVOICE',sourceId:bill._id});
  const oldDraft=add(Payroll,{staffId:tech,staffName:'KTV cũ local',month,status:closed?'PAID':'DRAFT',commissionIds:[ledger._id],invoiceLineCommissionIds:[],baseSalary:500000,commissionTotal:10000,total:510000,needsRecalculation:false});ledger.payrollId=oldDraft._id;
  const newDraft=add(Payroll,{staffId:tech2,staffName:'KTV mới local',month,status:'DRAFT',commissionIds:[],invoiceLineCommissionIds:[],baseSalary:500000,commissionTotal:0,total:500000,needsRecalculation:false});
  const receipt=add(CashEntry,{actorId:owner,customerId:customer,kind:'PAYMENT',method:'CASH',day,direction:'IN',amount:300000,reversed:false});
  add(Payment,{invoiceId:bill._id,receiptId:receipt._id,amount:300000,reversed:false});
+ if(kind==='multi'){
+  state.Commission.length=0;
+  bill.serviceItems=['a'.repeat(24),'b'.repeat(24)].map(lineId=>({lineId,serviceId:service,name:bill.description,total:150000,commission:10000,performerId:tech}));
+  const roots=bill.serviceItems.map((line:any)=>add(InvoiceLineCommission,{invoiceId:bill._id,customerId:customer,lineId:line.lineId,serviceId:service,serviceName:bill.description,staffId:tech,staffName:'KTV cũ local',amount:10000,earnedAt:yesterday.toISOString(),sourceType:'INVOICE_LINE',sourceId:line.lineId,payrollId:oldDraft._id}));
+  ledger=roots[1];oldDraft.commissionIds=[];oldDraft.invoiceLineCommissionIds=roots.map((r:any)=>r._id);oldDraft.commissionTotal=20000;oldDraft.total=520000;
+ }
+ const replacement=add(Service,{name:'Dịch vụ thay thế local',price:200000,commission:20000,active:true});
+ if(kind==='unperformed'){
+  state.Commission.length=0;state.Payroll.length=0;delete bill.performedAt;delete bill.performedBy;
+  bill.serviceItems=[{lineId:'a'.repeat(24),serviceId:service,name:bill.description,total:300000,commission:10000,performerId:tech}];
+  bill.paid=100000;bill.status='PARTIALLY_PAID';receipt.amount=100000;state.Payment[0].amount=100000;
+ }
  if(kind==='package'){
   const plan=add(Treatment,{invoiceId:'f'.repeat(24),customerId:customer,serviceId:service,name:'Gói nguồn local',packageType:'SESSIONS',totalSessions:5,remaining:4,status:'ACTIVE'});
   const use=add(TreatmentUse,{treatmentId:plan._id,checkoutInvoiceId:'e'.repeat(24),actorId:owner,staffId:tech,performedAt:yesterday.toISOString(),sessionNumber:1,signature:{version:1,strokes:[[[0.1,0.2],[0.8,0.9]]]},signatureDigest:'local-original-signature',snapshot:'local-original-use',digest:'local-original-digest'});
   Object.assign(bill,{treatmentId:plan._id,treatmentUseId:use._id,serviceItems:[{lineId:'d'.repeat(24),serviceId:service,name:bill.description,total:300000,commission:10000,performerId:tech}]});
  }
- ids={billId,tech,tech2,oldDraft:oldDraft._id,newDraft:newDraft._id,ledger:ledger._id};
+ ids={billId,tech,tech2,oldDraft:oldDraft._id,newDraft:newDraft._id,ledger:ledger._id,replacementService:replacement._id};
  original=clone({invoice:bill,receipts:state.CashEntry,payments:state.Payment,uses:state.TreatmentUse,plans:state.Treatment,payrolls:state.Payroll});
  return ids;
 }
@@ -42,7 +54,7 @@ const server=createServer(async(req,res)=>{
   if(url.pathname==='/__test/state'){
    const state=localState(),ledgers=[...state.Commission,...state.InvoiceLineCommission];
    const pending=[tech,tech2].map(staffId=>({_id:{staffId,category:'SERVICE'},amount:ledgers.filter(p=>p.staffId===staffId).reduce((n,p)=>n+p.amount,0),ids:ledgers.filter(p=>p.staffId===staffId).map(p=>p._id)}));
-   return json({ids,original,state,requests,salary:salaryOverviewRows(state.User.filter(p=>[tech,tech2].includes(p._id)),state.Payroll,pending,[],[],state.Payroll[0].month)});
+   return json({ids,original,state,requests,salary:salaryOverviewRows(state.User.filter(p=>[tech,tech2].includes(p._id)),state.Payroll,pending,[],[],state.Payroll[0]?.month||spaDay().slice(0,7))});
   }
   if(url.pathname==='/api/notifications')return json({items:[],unread:0,publicKey:null});
   if(url.pathname==='/api/workspace'){
