@@ -47,7 +47,7 @@ export default function PayrollPanel({ user, section, today, refreshKey, onOpen 
   function editPayroll(person: Row, record?: Row) {
     onOpen(record ? 'Cập nhật bảng lương nháp' : 'Lập bảng lương tháng', 'savePayroll', [numberField('baseSalary', 'Lương cơ bản tháng (VNĐ)'), {...numberField('bonus', 'Thưởng / phụ cấp thêm (chưa gồm hoa hồng) (VNĐ)'),optional:true}, {...numberField('deductions', 'Phạt / khấu trừ (VNĐ)'),optional:true}, {...numberField('advance','Tạm ứng đã nhận (VNĐ)'),optional:true}, { key: 'note', label: 'Lý do thưởng / khấu trừ', optional: true }],
       { ...(record ? { id: record._id } : {}), staffId: person._id, month, advance:record?.advance || 0, attendanceConfirmed:record?.attendanceConfirmed || false, baseSalary: record?.baseSalary ?? person.baseSalary ?? 0, bonus: record?.bonus || 0, deductions: record?.deductions || 0, note: record?.note || '' },
-      `${person.name} · ${month}. Lấy lại toàn bộ hoa hồng đủ điều kiện trong đúng tháng, thay thế snapshot nháp. Cập nhật cuối kỳ trước khi duyệt, không cần làm sau từng khách. Không chấm công hằng ngày. Nghỉ hưởng lương không bị trừ. Nghỉ không lương chưa có công thức chỉ theo ngày nghỉ được xác nhận: giữ lương cơ bản, chủ spa nhập khấu trừ có lý do nếu cần. Lập nháp chưa ghi chi tiền. Tạm ứng nhập là khoản đã nhận, không tạo thêm phiếu chi.`);
+      `${person.name} · ${month}`);
   }
   function pay(record: Row) {
     onOpen('Ghi nhận chi lương', 'payPayroll', [

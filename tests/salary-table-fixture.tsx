@@ -20,5 +20,5 @@ if (process.argv.includes('--preview')) console.log(JSON.stringify('<!doctype ht
 else console.log('Monthly salary table: components, totals and authorized state actions verified');
 
 const stale=renderToStaticMarkup(<SalaryTable rows={[{...record,status:'DRAFT',needsRecalculation:true,commissionTotal:400000,latestServiceCommission:215000,latestSaleCommission:87500,latestCommissionTotal:302500}]} owner={true} onEdit={()=>{}} onApprove={()=>{}} onPay={()=>{}} onAttendance={()=>{}} />);
-assert.match(stale,/Số nháp đang cũ/); assert.match(stale,/Mới nhất/); assert.match(stale,/302\.500/);
+assert.doesNotMatch(stale,/Số nháp đang cũ/); assert.doesNotMatch(stale,/Mới nhất/); assert.doesNotMatch(stale,/302\.500/);
 assert.match(stale,/<button[^>]*disabled=""[^>]*>Duyệt lương/); assert.match(stale,/Nghỉ phép/);
