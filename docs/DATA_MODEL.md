@@ -1,5 +1,9 @@
 # SpaCare — Data Model
 
+## Nhận diện dòng trong form sửa thống nhất — 10/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-UNIFIED-EDIT-001 CONFIRMED: không đổi schema/collection/index hoặc migration. reconciliation.content.serviceCorrections[] bổ sung lineNumber (sourceIndex + 1 tại lần sửa) cạnh lineId, serviceName, before/after. Preview, InvoiceAdjustment và audit lưu số dòng cùng lịch sử hiện có; số dòng chỉ để hiển thị, không làm khóa liên kết. Lịch sử cũ thiếu lineNumber vẫn đọc được. Bút toán hoa hồng giữ originalLedgerIds/adjustmentId; không sửa nguồn thu hay snapshot payroll đã chốt khi đổi KTV. canCorrectPerformedServices trong GET giữ tương thích nhưng giao diện không dùng để dựng nút riêng.
+
 ## Projection tổng thu/chi theo phương thức — 09/11/2026
 
 PROPOSED kỹ thuật cho BR-CASH-METHOD-001 CONFIRMED: không đổi schema/index/collection hoặc migration. GET reports bổ sung cashIn/cashOut/bankIn/bankOut từ aggregation methods của CashEntry đã lọc spa/ngày và loại giao dịch đảo. GET days chỉ bổ sung bankIn/bankOut cho OPEN từ cùng aggregation với cashIn/cashOut; các tổng là projection, không lưu vào Day. expectedFlowPreview {opening,cashIn,cashOut,bankIn,bankOut} là input đối chiếu tạm thời của closeDay, không được gán vào schema. Day chỉ lưu expected/bankNet/counted/difference theo cơ chế cũ; snapshot CLOSED và lịch sử audit giữ nguyên.

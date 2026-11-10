@@ -95,5 +95,5 @@ export function InvoiceTechnicianChanges({corrections}:{corrections:Row[]}){
   const changed=corrections.filter(row=>row.before?.performerId!==row.after?.performerId);
   if(!changed.length)return null;
   const name=(value:Row)=>value.performerName||(value.performerId?'KTV #'+String(value.performerId).slice(-6):'Chưa có');
-  return <section aria-label="Đối chiếu kỹ thuật viên">{changed.map(row=><p key={String(row.lineId)}>Kỹ thuật viên: <strong>{name(row.before)}</strong> → <strong>{name(row.after)}</strong></p>)}</section>;
+  return <section aria-label="Đối chiếu kỹ thuật viên">{changed.map(row=><p key={String(row.lineId)}>{row.lineNumber?`Dòng ${row.lineNumber} · `:''}{row.serviceName&&`${row.serviceName} · `}Kỹ thuật viên: <strong>{name(row.before)}</strong> → <strong>{name(row.after)}</strong></p>)}</section>;
 }

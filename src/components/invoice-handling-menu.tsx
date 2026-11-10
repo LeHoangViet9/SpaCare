@@ -13,7 +13,7 @@ export default function InvoiceHandlingMenu({invoice,treatment,reasons,staff,onE
   const reason=(action:keyof InvoiceHandling)=>blocked[action] && !shared.some(group=>group.actions.includes(action)) ? <p id={reasonId(action)}>{blocked[action]}</p> : null;
   return <details className="invoice-handling"><summary>Xử lý hóa đơn</summary><div className="invoice-handling-body">
     {shared.map(group=><div className="invoice-handling-shared" id={`${prefix}-${group.actions.join('-')}`} key={group.reason}><p>{group.reason}</p><small>Áp dụng: {group.actions.map(action=>actionNames[action]).join(', ')}.</small></div>)}
-    <div className="invoice-handling-groups"><section className="invoice-handling-group" aria-label="Chỉnh sửa"><h3>Chỉnh sửa</h3>
+    <div className="invoice-handling-groups"><section className="invoice-handling-group" aria-label="Sửa hóa đơn"><h3>Sửa hóa đơn</h3>
     <div className="invoice-handling-row"><button type="button" disabled={!!blocked.edit} aria-describedby={reasonId('edit')} onClick={()=>onEdit?.(invoice,treatment)}>Sửa hóa đơn</button>{reason('edit')}</div>
     <div className="invoice-handling-row"><div>{blocked.replace?<button type="button" disabled aria-describedby={reasonId('replace')}>Thay người tư vấn bán gói</button>:<InvoiceReplacement key={`replacement:${invoice.activeDocumentId || invoice._id}`} invoice={invoice} staff={staff!} onChanged={onReplaced} buttonLabel="Thay người tư vấn bán gói"/>}</div>{reason('replace')}</div>
     </section><section className="invoice-handling-group" aria-label="Xử lý hóa đơn sai"><h3>Xử lý hóa đơn sai</h3>

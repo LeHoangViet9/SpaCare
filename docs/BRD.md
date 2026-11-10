@@ -1,5 +1,9 @@
 # SpaCare — Business Requirements
 
+## Một điểm Sửa hóa đơn tại chi tiết — 10/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: bỏ nút riêng Đính chính dịch vụ / kỹ thuật viên. Trong Xử lý hóa đơn, OWNER dùng Sửa hóa đơn để mở form thống nhất, gồm thông tin đang được hỗ trợ và dịch vụ/KTV theo đúng từng dòng. Trước lưu phải đối chiếu trước/sau, tiền, công nợ, hoa hồng và lý do; giữ actor/thời điểm/lịch sử. Chỉ đổi KTV không đổi tiền hoặc ngày thu. Sửa dịch vụ/giá đủ điều kiện dùng nghiệp vụ chênh lệch hiện có, không tự thu hoặc hoàn; payroll đã duyệt/chi bất biến. Quyết định này thay điểm vào đính chính riêng của BR-INV-TECH-UI-001, không yêu cầu bỏ guard nguồn/lương đã chốt hoặc mở quyền sửa dòng đang bị khóa. Chỉ làm trên nhánh hiện tại, không push/merge main/deploy.
+
 ## Thống kê tiền mặt/chuyển khoản — 09/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: Báo cáo → Thu chi thêm Thu tiền mặt, Chi tiền mặt, Thu chuyển khoản, Chi chuyển khoản theo khoảng ngày lọc từ CashEntry, cùng quy tắc loại giao dịch đã đảo với Thực thu/Thực chi; CSV có các tổng tương ứng. Giữ tổng thu/chi, dòng tiền ròng và bảng phương thức. Xem trước Chốt sổ hiển thị riêng bốn tổng này, tiền mặt đầu ngày, tiền mặt kỳ vọng cuối ngày và chuyển khoản ròng. Chỉ kiểm đếm tiền mặt; kỳ vọng = đầu ngày + thu mặt − chi mặt. Backend kiểm lại dữ liệu xem trước trước khi chốt, giữ transaction/idempotency/audit, cùng spa và đúng ngày. Không migration, sửa dữ liệu thật, deploy hoặc merge.

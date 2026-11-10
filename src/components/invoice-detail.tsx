@@ -73,7 +73,6 @@ export default function InvoiceDetail({ replacementStaff, onTreatmentChanged, on
           {data.payments?.some((payment: Row) => !['CASH', 'BANK_TRANSFER'].includes(payment.method)) && <p>Thiếu phương thức trên phiếu thu liên kết; cần đối chiếu giao dịch gốc.</p>}
         </section>
         {onCompleteService && data.invoice.status !== 'CANCELLED' && data.canCompleteService && <button onClick={() => onCompleteService(data.invoice)}>Hoàn thành dịch vụ / ghi hoa hồng</button>}
-        {data.canCorrectPerformedServices&&onEdit&&<button onClick={()=>onEdit(data.invoice,null)}>Đính chính dịch vụ / kỹ thuật viên</button>}
         {onPayment && data.invoice.total > data.invoice.paid && <div className="actions"><button onClick={() => onPayment(data.invoice)}>Thanh toán</button></div>}
         {data.invoice.kind === 'SESSION' && <p>Buổi thuộc liệu trình: 0đ{data.invoice.total>0 ? ' · Có dịch vụ lẻ thu thêm trong hóa đơn' : ' · Không thu thêm tiền'}</p>}
         {data.invoice.kind === 'GIFT' && <p>Quà tặng 0đ · Hóa đơn mua #{data.invoice.giftOfInvoiceId?.slice(-6)}</p>}

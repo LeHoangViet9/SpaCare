@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import mongoose from 'mongoose';
-import {Spa,Control,User,Customer,Service,Invoice,Payment,CashEntry,Product,StockMovement,InvoiceAdjustment,Audit,Day} from '../src/lib/models';
+import {Spa,Control,User,Customer,Service,Invoice,Payment,CashEntry,Product,StockMovement,InvoiceAdjustment,InvoiceLineCommission,Payroll,Audit,Day} from '../src/lib/models';
 import {operate} from '../src/lib/operations';
 import {readInvoice} from '../src/lib/invoice-read';
 import {hashPassword} from '../src/lib/password';
@@ -71,4 +71,36 @@ export async function invoiceContentIntegration(extraSpaIds:mongoose.Types.Objec
  assert.equal(legacyHistory!.reconciliation.content.displayAfter.serviceItems[0].name,replacement.name);
  assert.deepEqual(snapshot([(await CashEntry.findById(receipt._id))!.toObject(),(await Payment.findById(payment._id))!.toObject()]),source);
  assert.equal(await CashEntry.countDocuments(scope),1);
+
+ // The unified editor uses the same transaction for independent, repeated performed lines.
+ const technician=await User.create({...scope,name:'Old line technician',role:'STAFF',active:true,passwordHash:hashPassword(randomUUID())});
+ const target=await User.create({...scope,name:'New line technician',role:'STAFF',active:true,passwordHash:hashPassword(randomUUID())});
+ const lineService=await Service.create({...scope,name:'Repeated performed service',price:150000,commission:10000,active:true});
+ const performedAt=new Date(),lines=[0,1].map(()=>({lineId:new mongoose.Types.ObjectId(),serviceId:lineService._id,name:lineService.name,total:150000,commission:10000,performerId:technician._id}));
+ const repeated=await Invoice.create({...scope,customerId:customer._id,kind:'SERVICE',description:'Two repeated services',serviceId:lineService._id,serviceItems:lines,total:300000,paid:100000,status:'PARTIALLY_PAID',performedAt});
+ const roots:{_id:mongoose.Types.ObjectId}[]=[];for(const line of lines)roots.push(await InvoiceLineCommission.create({...scope,invoiceId:repeated._id,customerId:customer._id,lineId:line.lineId,serviceId:lineService._id,serviceName:lineService.name,staffId:technician._id,staffName:technician.name,amount:10000,earnedAt:performedAt,sourceType:'INVOICE_LINE',sourceId:line.lineId}));
+ const oldDraft=await Payroll.create({...scope,staffId:technician._id,month:spaDay(performedAt).slice(0,7),status:'DRAFT',baseSalary:0,bonus:0,deductions:0,advance:0,commissionTotal:20000,total:20000,invoiceLineCommissionIds:roots.map(r=>r._id)});
+ const newDraft=await Payroll.create({...scope,staffId:target._id,month:oldDraft.month,status:'DRAFT',baseSalary:0,bonus:0,deductions:0,advance:0,commissionTotal:0,total:0});
+ const repeatedReceipt=await CashEntry.create({...scope,actorId:owner._id,customerId:customer._id,day:yesterday,kind:'PAYMENT',method:'CASH',direction:'IN',amount:100000});
+ const repeatedPayment=await Payment.create({...scope,invoiceId:repeated._id,receiptId:repeatedReceipt._id,amount:100000});
+ const retainedSources=snapshot([repeatedReceipt.toObject(),repeatedPayment.toObject()]),unchangedFirst=snapshot(repeated.serviceItems![0]);
+ const repeatedRead=await readInvoice(actor,String(repeated._id),1,true);assert.equal(repeatedRead.handling!.edit,'');
+ const repeatedFields=snapshot(repeatedRead.editContext!.client.serviceItems);repeatedFields[1].performerId=String(target._id);
+ const repeatedInput={id:String(repeated._id),expectedUpdatedAt:repeated.updatedAt.toISOString(),mode:'CORRECT',total:300000,reason:'Correct second repeated service technician',content:{serviceItems:repeatedFields}};
+ const repeatedPreview=await call('previewInvoiceAdjustment',repeatedInput);
+ assert.equal(repeatedPreview.delta,0);assert.equal(repeatedPreview.after.total-repeatedPreview.after.paid,200000);
+ assert.equal(repeatedPreview.reconciliation.content.serviceCorrections[0].lineNumber,2);
+ const repeatedApply={...repeatedInput,confirmed:true,expectedPreview:repeatedPreview.previewToken},repeatedKey=randomUUID();
+ const repeatedResult=await call('applyInvoiceAdjustment',repeatedApply,repeatedKey);assert.deepEqual(await call('applyInvoiceAdjustment',repeatedApply,repeatedKey),repeatedResult);
+ const repeatedSaved=(await Invoice.findById(repeated._id))!;
+ assert.deepEqual(snapshot(repeatedSaved.serviceItems![0]),unchangedFirst);assert.equal(String(repeatedSaved.serviceItems![1].performerId),String(target._id));
+ assert.deepEqual([repeatedSaved.total,repeatedSaved.paid,repeatedSaved.total-repeatedSaved.paid],[300000,100000,200000]);assert.equal(repeatedSaved.performedAt!.toISOString(),performedAt.toISOString());
+ assert.deepEqual(snapshot([(await CashEntry.findById(repeatedReceipt._id))!.toObject(),(await Payment.findById(repeatedPayment._id))!.toObject()]),retainedSources);
+ const compensation=await InvoiceLineCommission.find({...scope,invoiceId:repeated._id,adjustmentId:{$exists:true}}).lean();
+ assert.equal(compensation.length,2);assert.deepEqual(compensation.map(r=>r.amount).sort((a,b)=>a-b),[-10000,10000]);
+ assert.ok(compensation.every(r=>r.originalLedgerIds!.map(String).includes(String(roots[1]._id))&&!r.originalLedgerIds!.map(String).includes(String(roots[0]._id))));
+ assert.equal((await Payroll.findById(oldDraft._id))!.needsRecalculation,true);assert.equal((await Payroll.findById(newDraft._id))!.needsRecalculation,true);
+ const repeatedAudit=(await Audit.findOne({...scope,targetId:repeated._id,action:'correctInvoice'}))!;
+ assert.equal(String(repeatedAudit.actorId),String(owner._id));assert.ok(repeatedAudit.createdAt);assert.equal(repeatedAudit.details.reason,repeatedInput.reason);
+ assert.equal(String(repeatedAudit.details.before.serviceItems[1].performerId),String(technician._id));assert.equal(String(repeatedAudit.details.after.serviceItems[1].performerId),String(target._id));
 }
