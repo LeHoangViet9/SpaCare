@@ -80,6 +80,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  const [packageItems,setPackageItems]=useState<Row[]>([]);
  const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[catalogPage,setCatalogPage]=useState(1);
  const [performerId,setPerformerId]=useState(''),[issuedOn,setIssuedOn]=useState('');
+ const [dueDate,setDueDate]=useState('');
  const [participantIds,setParticipantIds]=useState<string[]>([data.user.id || data.user._id]);
  const [error,setError]=useState('');
  const staffOptions=data.staff.filter((row:Row)=>row.active && ['OWNER','STAFF'].includes(row.role));
@@ -96,7 +97,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  const appliedCard=cardEligible && cardPreview.context===cardContext ? cardPreview.amount:0;
  const basketCount=serviceItems.length+sessionItems.length+productItems.length+packageItems.length;
  useEffect(()=>{if(!serviceItems.length && !productItems.length && !packageItems.length)setDiscount(undefined);},[serviceItems.length,productItems.length,packageItems.length]);
- function resetSelection(){setDiscount(undefined);setAppointment(null);setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
+ function resetSelection(){setDueDate('');setDiscount(undefined);setAppointment(null);setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
  useEffect(()=>{if(initialCustomer){setCustomer(initialCustomer);resetSelection();setCatalogPage(1);}},[initialCustomer?._id]);
  const allCatalog=cashierCatalog({services:data.services,products:data.products || [],packageTemplates:data.packageTemplates || [],treatments:data.treatments},browseMode,customer?._id || '',search);
  const categoryOf=(row:Row)=>browseMode==='product' ? data.productGroups?.find((group:Row)=>group._id===row.groupId)?.name : browseMode==='service' ? row.category || 'Chưa phân nhóm' : data.services.find((service:Row)=>service._id===row.serviceId)?.category;
@@ -127,7 +128,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      const signature=rawSignature ? JSON.parse(String(rawSignature)):undefined;
      if(signature && !isValidSignature(signature))throw new Error('Chữ ký chưa hợp lệ. Ký lại hoặc xóa nét ký để bỏ qua.');
      const cardValue=fd.get('cashCard');
-     const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate:'',signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
+     const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate,signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
      if(discount && subtotal===0 && !serviceItems.length && !productItems.length && !packageItems.length)throw new Error('Bỏ giảm giá khi giỏ không có khoản bán mới.');
      invoiceDiscount(subtotal,discount);
      const date={...(issuedOn?{issuedOn}:{}),...(discount?{discount}:{})};
@@ -194,6 +195,8 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    <div className="cashier-total"><span>Tổng thanh toán sau giảm</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
    <label>Ngày hóa đơn (để trống: hôm nay)<input type="date" max={data.today} value={issuedOn} disabled={busy} onChange={e=>setIssuedOn(e.target.value)}/></label>
+   <label>Hạn thanh toán<input type="date" name="dueDate" value={dueDate} disabled={busy} onChange={e=>setDueDate(e.target.value)}/></label>
+   <small>Hạn thanh toán không bắt buộc. Để trống nếu chưa có hạn.</small>
    {basketCount>0&&appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={amount} disabled={busy}/>}
    {error && <p className="negative" role="alert">{error}</p>}
    <button type="submit" className="primary cashier-save" disabled={busy || !customer || !basketCount || !!appointment?.invoice || (!!appointment && !['CONFIRMED','COMPLETED'].includes(appointment.appointment.status))}>{busy?'Đang lưu…':appointment?'Hoàn thành lịch & lưu hóa đơn':'Lưu toàn bộ giỏ'}</button>

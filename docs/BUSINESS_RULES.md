@@ -1,5 +1,11 @@
 # SpaCare — Business Rules
 
+## BR-INV-DEADLINE-001 — Hạn thanh toán tùy chọn — 11/11/2026
+
+CONFIRMED: trường Hạn thanh toán của form tạo là tùy chọn; trống/không gửi nghĩa là không có hạn, không suy từ ngày hóa đơn hoặc tự cộng số ngày. Hạn nhập phải là ngày lịch thực; giữ kiểm tra hạn gói không trước ngày bán hiện có. Khi sửa, vẫn có thể bỏ trống/xóa hạn bằng content.dueDate=null theo quy trình điều chỉnh hiện hành; không thay quyền, xác nhận hay audit.
+
+CONFIRMED: chỉ hiển thị dòng Hạn thanh toán ở chi tiết/PDF khi Invoice.dueDate có giá trị và Invoice.total > Invoice.paid. Không phụ thuộc Invoice.status; total đã bao gồm giảm giá, không cộng giá dòng hoặc trừ giảm giá lần hai. Tất toán chỉ ẩn dòng hiển thị, không sửa/xóa ngày hạn trong dữ liệu. Luồng báo cáo/công nợ/khoản thu và các màn hình ngoài phạm vi giữ nguyên.
+
 ## BR-INV-DISCOUNT-001 — Giảm giá lúc tạo — 11/11/2026
 
 CONFIRMED theo yêu cầu người dùng: giảm theo tiền hoặc phần trăm chỉ tại lúc tạo; không sửa/thêm trên hóa đơn cũ. Giá dòng/hoa hồng dịch vụ cố định không đổi, không phân bổ giảm giá ngược vào dòng. Invoice.total là tổng sau giảm, mọi thu/cọc/thẻ/công nợ/báo cáo giữ nguồn tổng hiện hành; hoa hồng gói vẫn 5% thực thu theo cơ chế cũ. Tổng và số giảm không âm, số giảm không vượt tạm tính. Giữ thu theo tổng hóa đơn, không tạo phân bổ dòng mới. Quy tắc này thay phần chưa có giảm giá trong BR-INV-CONTENT-001 và bổ sung phép trừ giảm giá vào BR-INV-PRICE-001.

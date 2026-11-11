@@ -1,5 +1,19 @@
 # SpaCare — Kế hoạch và hướng dẫn kiểm thử (SWT)
 
+## Hạn thanh toán tùy chọn — kiểm chứng 11/11/2026
+
+`tests/invoice-deadline-fixture.ts` kiểm trống/không gửi, ngày lịch thực/ngày sai; dòng hạn PDF có/không theo số dư sau giảm, kể cả status cũ, render không sửa dữ liệu. `tests/invoice-amount-cash-flow-fixture.ts` kiểm lưu hạn cho dịch vụ/sản phẩm/gói và SESSION kèm bán thêm qua operate. `tests/invoice-discount-integration.ts` kiểm API tạo/GET/PDF theo từng luồng và checkout, bỏ trống, tất toán vẫn lưu hạn nhưng ẩn PDF, sửa/xóa hạn qua preview/apply hiện có giữ tiền/ngày gốc.
+
+Kết quả local (giữ nguyên thay đổi sẵn có ở next-env.d.ts, không production/reset/drop/volume/commit/push/merge/deploy):
+
+- `npm.cmd test`: 269 pass, 0 fail.
+- `npm.cmd run typecheck`: đạt.
+- `npm.cmd run build`: đạt; cảnh báo middleware → proxy của Next.js hiện có.
+- Với `SPACARE_TEST_CHROME` trỏ Chrome local, `npm.cmd run test:ui -- --grep "invoice deadline"`: 16 pass, 0 fail, desktop/mobile. Kiểm tạo có hạn/trống ở cashier/CommercialFields; chi tiết nợ có hạn/nợ không hạn/đã trả đủ có hạn/status lệch số dư.
+- Cùng Chrome local, `node --import tsx scripts/test-invoice-discount-pdf.ts`: đạt, bill 80mm một trang có hạn đúng; đã xem PNG, không cắt/chồng dòng. Artifact tổng hợp ở outputs/invoice-discount-pdf (gitignored).
+- `npm.cmd run test:integration`: BLOCKED [DOCKER_CLI], không tìm thấy Docker trong PATH, không khởi chạy suite qua runner này.
+- Harness chạy trực tiếp với bộ `INTEGRATION_ENV` và các guard sẵn có trên spacare_test hiện đang chạy: 76 pass, 0 fail, 0 skip. Lệnh dùng `node --import tsx --input-type=module -e "import {INTEGRATION_ENV} from './tests/integration-safety.ts'; import {spawnSync} from 'node:child_process'; const result=spawnSync(process.execPath,['--import','tsx','--test','tests/integration.test.ts'],{env:{...process.env,...INTEGRATION_ENV},stdio:'inherit'}); process.exitCode=result.status??1;"`. Không nạp env-file hay URI vận hành. Log local: outputs/invoice-deadline-integration.log.
+
 ## Bổ sung kiểm thử giảm giá — 11/11/2026
 
 `tests/invoice-discount-fixture.ts` kiểm tiền/phần trăm, 0/100%, âm/lẻ/vượt tạm tính/giới hạn tiền, làm tròn, schema snapshot, công nợ, mọi dòng hỗn hợp/KTV và pipeline vẽ PDF không còn các dòng đã bỏ. `tests/invoice-amount-cash-flow-fixture.ts` dùng model doubles, gọi operate để kiểm tạo/thu hai phương thức, nợ/báo cáo, giá/hoa hồng dịch vụ, gói 5% thực thu, sản phẩm/tồn kho, idempotency và rollback khi lỗi tiền/audit. Đây không thay integration MongoDB thật.

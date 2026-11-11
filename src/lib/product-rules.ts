@@ -1,3 +1,4 @@
+import {optionalInvoiceDeadline} from './invoice-deadline.ts';
 import { z } from 'zod';
 const id = z.string().regex(/^[a-f\d]{24}$/i);
 const name = z.string().trim().min(1).max(200);
@@ -17,7 +18,7 @@ export const productInputs = {
   productStatus: z.object({ id, active: z.boolean() }),
   productGroup: z.object({ name }), updateProductGroup: z.object({ id, name }),
   stockMovement: z.object({ productId: id, direction: z.enum(['IN', 'OUT']), quantity, reason: z.string().trim().max(2000).default('') }),
-  sellProduct: z.object({ customerId: id, productId: id, quantity, unitPrice: salePrice.optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), consultantId: id.optional() }),
+  sellProduct: z.object({ customerId: id, productId: id, quantity, unitPrice: salePrice.optional(), dueDate: optionalInvoiceDeadline, consultantId: id.optional() }),
 };
 export const productNameKey = (value: string) => value.trim().normalize('NFC').toLocaleLowerCase('vi').replace(/\s+/g, ' ');
 export function stockBalance(before: number, direction: 'IN' | 'OUT', amount: number) {

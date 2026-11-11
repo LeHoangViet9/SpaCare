@@ -1,5 +1,26 @@
 import {test,expect} from '@playwright/test';
 
+for(const form of ['commercial','cashier'])for(const date of ['','2026-12-01'])test(`invoice deadline: ${form} creation ${date?'with date':'blank'}`,async({page})=>{
+ await page.goto(form==='commercial'?'/pre-service':'/repeated-services');
+ if(form==='commercial')await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ else {await page.getByRole('button',{name:'Sản phẩm',exact:true}).click();await page.getByRole('button',{name:/^Dầu gội QA/}).click();}
+ const due=page.getByLabel('Hạn thanh toán',{exact:true});await expect(due).toHaveValue('');
+ expect(await due.getAttribute('required')).toBeNull();
+ if(date)await due.fill(date);
+ await page.getByRole('button',{name:form==='commercial'?'Lưu thông tin':'Lưu toàn bộ giỏ',exact:true}).click();
+ const saved=JSON.parse(await page.locator(form==='commercial'?'#saved-advance':'#saved-cashier').textContent());
+ const values=form==='commercial'?saved:saved.values;
+ expect(values.dueDate).toBe(date||undefined);
+});
+
+for(const variant of ['debt','missing','paid','stale-paid'])test(`invoice deadline detail: ${variant}`,async({page})=>{
+ await page.goto('/invoice-detail?deadlineCase='+variant);
+ const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'});
+ await expect(dialog.getByText('Tổng thanh toán sau giảm',{exact:false})).toBeVisible();
+ await expect(dialog.getByText('Hạn thanh toán: 2026-12-01',{exact:true})).toHaveCount(['debt','stale-paid'].includes(variant)?1:0);
+ if(variant==='missing'||variant==='paid')await expect(dialog.getByText(/^Hạn thanh toán:/)).toHaveCount(0);
+});
+
 async function repeatedCart(page,count){
  await page.goto('/repeated-services');
  await page.getByRole('button',{name:/Nhóm QA.*1 dịch vụ/}).click();

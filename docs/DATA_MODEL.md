@@ -1,5 +1,9 @@
 # SpaCare — Data Model
 
+## Hạn thanh toán tùy chọn — 11/11/2026
+
+PROPOSED kỹ thuật thực hiện BR-INV-DEADLINE-001 CONFIRMED: tái dùng Invoice.dueDate?: String YYYY-MM-DD hiện có, không schema/index/migration/backfill mới. Input tạo rỗng được chuẩn hóa thành undefined; ngày được kiểm hợp lệ trước lưu, không gán mặc định. Nhánh invoice dùng buổi gói kèm bán thêm cũng lưu hạn đã gửi trên chứng từ mới. Gộp gói giữ hạn chung đã chọn; không mất hạn khi dòng gói đầu thiếu hạn và dòng sau có hạn hợp lệ. Reader trả dueDate đã lưu kể cả đã tất toán; UI/PDF ẩn theo total−paid <= 0. Không thay đổi dữ liệu lịch sử hoặc số dư; chỉnh hạn tiếp tục qua InvoiceAdjustment hiện có.
+
 ## Snapshot giảm giá hóa đơn mới — 11/11/2026
 
 PROPOSED kỹ thuật cho BR-INV-DISCOUNT-001: Invoice thêm subtotal?: integer VND 0–MAX_MONEY và discount?: {type: AMOUNT|PERCENT, value: number, amount: integer VND}. Input chỉ nhận type/value; backend tính amount và total=subtotal−amount, lưu cùng transaction hiện có. Không nhận subtotal/amount/tổng sau giảm do client tính. Dòng serviceItems/packageItems/productItems giữ nguyên giá bán trước giảm; paid/debt ở cấp Invoice dùng total sau giảm. Không index/collection/migration/backfill mới. Hóa đơn cũ thiếu field được đọc là không giảm giá, subtotal=total.

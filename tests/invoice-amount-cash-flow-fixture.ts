@@ -312,6 +312,19 @@ function discountSetup(){
   return {customerId:state.Customer[0]._id,serviceId:service._id};
 }
 const creationReceipt=(amount:number,method='CASH')=>({amount,method,receivedConfirmation:true,receivedOn:today});
+for(const action of ['invoice','serviceInvoice','productInvoice','sellProduct','sellPackage'])for(const dueDate of [undefined,'',today]){
+  const {customerId,serviceId}=discountSetup();
+  const product=add(allModels.find(model=>model.modelName==='Product'),{name:'Deadline product',sku:'DUE',unit:'chai',price:30000,stock:10,active:true});
+  const template=add(allModels.find(model=>model.modelName==='PackageTemplate'),{name:'Deadline package',serviceId,price:30000,totalSessions:3,packageType:'SESSIONS',active:true});
+  const data=action==='invoice'?{serviceId}:action==='serviceInvoice'?{items:[{serviceId,performerId:ownerId}]}:action==='sellPackage'?{templateId:template._id}:action==='sellProduct'?{productId:product._id,quantity:1}:{items:[{productId:product._id,quantity:1,unitPrice:30000}]};
+  await call(action,{customerId,...data,...(dueDate===undefined?{}:{dueDate}),discount:{type:'PERCENT',value:10},payments:[creationReceipt(10000)]});
+  assert.equal(state.Invoice[0].dueDate,dueDate||undefined,action);
+  assert.equal(state.Invoice[0].total,27000);assert.equal(state.Invoice[0].paid,10000);assert.equal(state.InvoiceAdjustment.length,0);
+}
+for(const dueDate of ['2026-02-30','2026-13-01','not-a-date']){
+  const {customerId,serviceId}=discountSetup(),before=clone(state);
+  await assert.rejects(call('invoice',{customerId,serviceId,dueDate}));assert.deepEqual(state,before);
+}
 for(const discount of [{type:'AMOUNT',value:3000},{type:'PERCENT',value:10}]){
   const {customerId,serviceId}=discountSetup(),key=randomUUID();
   const data={customerId,serviceId,discount,payments:[creationReceipt(10000),creationReceipt(5000,'BANK_TRANSFER')]};
@@ -380,9 +393,10 @@ for(const mixed of [false,true]){
   const plan=add(modelByName('Treatment'),{customerId,serviceId,invoiceId:purchase._id,name:'Synthetic existing package',totalSessions:3,remaining:3,status:'ACTIVE',packageType:'SESSIONS'});
   const data={customerId,serviceId,treatmentId:plan._id,remainingBefore:3,staffId:ownerId,discount:{type:'PERCENT',value:10}};
   const before=clone(state);await assert.rejects(call('invoice',data),/không hỗ trợ giảm giá/);assert.deepEqual(state,before);
-  const result=await call('invoice',{...data,additionalServices:[{serviceId,total:30000,performerId:ownerId}]});
+  const result=await call('invoice',{...data,dueDate:today,additionalServices:[{serviceId,total:30000,performerId:ownerId}]});
   const session=state.Invoice.find(row=>row._id===result.invoiceId);
   assert.equal(session.kind,'SESSION');assert.equal(session.total,27000);assert.equal(session.subtotal,30000);
+  assert.equal(session.dueDate,today);
   assert.equal(session.serviceItems[0].total,0);assert.equal(state.Treatment[0].remaining,2);
 }
 for(const failure of ['overpaid','audit','receipt']){

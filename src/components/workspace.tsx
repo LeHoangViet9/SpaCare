@@ -654,6 +654,7 @@ export function FormModal({ spec, busy, error, fieldErrors={}, onClose, onSubmit
     if (spec.action === 'sellPackage' && fd.get('participantIds')) values.participantIds = JSON.parse(String(fd.get('participantIds')));
     if (spec.action === 'sellPackage' && fd.get('startsOn')) values.startsOn = fd.get('startsOn');
     if (spec.action === 'invoice' || spec.action === 'sellPackage') {
+      if(fd.get('dueDate'))values.dueDate=fd.get('dueDate');else delete values.dueDate;
       for (const key of spec.action === 'invoice' ? ['serviceId', 'description', 'total'] : ['templateId', 'total', 'promotion', 'gifts']) {
         values[key] = key === 'total' ? parseMoney(String(fd.get(key))) : key === 'gifts' ? JSON.parse(String(fd.get(key) || '[]')) : fd.get(key);
       }

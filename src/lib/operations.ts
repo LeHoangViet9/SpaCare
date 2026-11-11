@@ -1,3 +1,4 @@
+import {optionalInvoiceDeadline} from './invoice-deadline';
 import { invoiceDiscount } from './invoice-discount';
 import { ensureGroupedPackageIndex } from './package-invoice-indexes';
 import {receiptDayInput} from './receipt-day';
@@ -97,7 +98,7 @@ const schemas = {
   replacePackageAdvisor: z.object({id:objectId,expectedUpdatedAt:date,expectedDocumentId:objectId,oldStaffId:objectId,newStaffId:objectId,reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
-  productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).min(1).max(30)}),
+  productInvoice: z.object({customerId:objectId,dueDate:optionalInvoiceDeadline,items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).min(1).max(30)}),
   serviceGroup: z.object({name:z.string().transform(serviceGroupName).pipe(z.string().min(1,'Nhập tên nhóm dịch vụ.').max(100))}),
   ...cashCardInputs,
   ...productInputs,
@@ -138,7 +139,7 @@ const schemas = {
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore:remainingBefore.optional(),recipientCustomerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional() }),
-  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: zeroMoney.optional(), consultantId: objectId.optional() }),
+  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate:optionalInvoiceDeadline, description: text.optional(), total: zeroMoney.optional(), consultantId: objectId.optional() }),
   deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, issuedOn:dateOnly.optional(), description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
@@ -146,7 +147,7 @@ const schemas = {
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).max(30).optional(),
-    customerId: objectId, staffId: objectId.optional(), dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
+    customerId: objectId, staffId: objectId.optional(), dueDate:optionalInvoiceDeadline, cashCard: invoiceCardInput.optional(),
     items: z.array(z.object({ serviceId: objectId, total: zeroMoney.optional(), performerId: objectId.optional() })).min(1).max(30),
   }),
   invoice: z.object({
@@ -161,7 +162,7 @@ const schemas = {
     description: text.optional(),
     total: zeroMoney.optional(),
     consultantId: objectId.optional(),
-    dueDate: dateOnly.optional(),
+    dueDate:optionalInvoiceDeadline,
   }),
   deposit: z.object({ customerId: objectId, amount: moneySchema, method, note }),
   allocate: z.object({
@@ -1320,6 +1321,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               if (!invoice.saleParticipants?.length) {
                 Object.assign(invoice, { sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, ...(advisor.consultantId ? advisor : {}) });
               } else ensure(JSON.stringify(invoice.saleParticipants.map((p:any)=>String(p.staffId)))===JSON.stringify(participants.map(p=>String(p.staffId))) && (!invoice.dueDate || !d.dueDate || String(invoice.dueDate)===String(d.dueDate)) && String(invoice.consultantId || '')===String(advisor.consultantId || ''),'Các gói trong cùng hóa đơn phải có cùng người tư vấn và hạn thanh toán.');
+              if (!invoice.dueDate && d.dueDate) invoice.dueDate=d.dueDate;
               invoice.total=money(invoice.total+money(d.total ?? template.price,true),true);
               invoice.giftCashCardAmount=money((invoice.giftCashCardAmount || 0)+(d.giftCashCardAmount || 0),true);
               // A mixed checkout is one financial document; retain its service
@@ -1617,6 +1619,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             await addProducts(target,d.additionalProducts || []);
             if (d.description && selections.length === 1 && !d.additionalServices?.length && !d.additionalProducts?.length) target.description = d.description;
             if (d.consultantId) Object.assign(target, await consultant(customer, d.consultantId));
+            if (d.dueDate) target.dueDate=d.dueDate;
             await target.save({ session });
             break;
           }

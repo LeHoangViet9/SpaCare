@@ -47,6 +47,8 @@ export default function CommercialFields({ action, data, disabled, customerId, i
     {treatment && <input type="hidden" name="serviceId" value={treatment.serviceId}/>}
     {!packageSale && <section><strong>Dùng liệu trình đã mua · chọn một hoặc nhiều</strong>{treatments.map((t:Row)=><label key={t._id}><input type="checkbox" checked={treatmentIds.includes(t._id)} onChange={()=>{const next=treatmentIds.includes(t._id)?treatmentIds.filter(id=>id!==t._id):[...treatmentIds,t._id];setTreatmentIds(next);setDiscount(undefined);if(next.length){setSelection(treatments.find((row:Row)=>row._id===next[0]).serviceId);setDescription('');}}}/>{t.name} · {packageLabel(t)} · 0đ</label>)}</section>}
     <label>Giá bán (VNĐ)<MoneyInput name="total" required min={treatment ? 0 : 1} max={1_000_000_000_000} value={treatment ? '0' : total} readOnly={!!treatment} onValueChange={setTotal} /></label>
+    <label>Hạn thanh toán<input name="dueDate" type="date"/></label>
+    <small>Hạn thanh toán không bắt buộc. Để trống nếu chưa có hạn.</small>
     {!treatment && <InvoiceDiscountFields subtotal={subtotal} value={discount} onChange={setDiscount} disabled={disabled}/>}
     {!packageSale && !treatment && customerId && selection && <InvoiceCardPayment key={customerId+selection+total+receiptTotal} customerId={customerId} total={receiptTotal} disabled={disabled} onAppliedChange={setAppliedCard} defaultReceivedOn={issuedOn||data.today}/>}
     {appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={receiptTotal} disabled={disabled}/>}

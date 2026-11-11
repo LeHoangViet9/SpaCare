@@ -1,5 +1,9 @@
 # SpaCare — Business Requirements
 
+## Hạn thanh toán tùy chọn và hiển thị theo dư nợ — 11/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: form tạo hóa đơn có Hạn thanh toán, không bắt buộc, để trống không tự gán ngày. Lưu/trả đúng hạn đã chọn; giữ khả năng sửa/xóa hạn qua quy trình sửa hiện có. Chi tiết/PDF chỉ hiện Hạn thanh toán khi có ngày đã lưu và total > paid; total là tổng sau giảm giá, paid là số thanh toán được ghi nhận. Không dùng status để suy tất toán. Hóa đơn không có hạn hoặc đã trả đủ không hiện dòng hạn, nhưng không xóa hạn đã lưu chỉ vì tất toán. Không thay giá/giảm giá/khoản thu/nợ/ngày hóa đơn/lịch sử/quyền. Yêu cầu này thay cách PDF luôn hiện Hạn thanh toán/Chưa đặt trước đây.
+
 ## Giảm giá lúc tạo và bill theo từng dịch vụ — 11/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: chỉ nhập giảm giá khi tạo hóa đơn mới, theo số tiền hoặc phần trăm; lưu loại, giá trị và số tiền giảm để tra cứu/PDF. Tạm tính giữ giá bán từng dòng, tổng phải trả/công nợ dùng tổng sau giảm. Giữ giá dòng, hoa hồng hiện có, thu tiền cấp hóa đơn, quyền, transaction, idempotency và audit. Không thêm/sửa giảm giá ở hóa đơn đã tạo. Thay mô tả trước đây chưa có trường giảm giá riêng; không mở rộng chính sách sửa hóa đơn cũ.

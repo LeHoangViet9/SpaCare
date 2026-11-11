@@ -5,6 +5,7 @@ import TreatmentEdit, { TreatmentComparison } from './treatment-edit';
 import { InvoiceDocumentHistory } from './invoice-replacement';
 import InvoiceHandlingMenu from './invoice-handling-menu';
 import { invoiceSummary, discountLabel } from '@/lib/invoice-discount';
+import {visibleInvoiceDeadline} from '@/lib/invoice-deadline';
 import { invoiceCode } from '@/lib/invoice-code';
 import CashCards from './cash-cards';
 import { packageLabel } from '@/lib/treatment-rules';
@@ -55,6 +56,7 @@ export default function InvoiceDetail({ replacementStaff, onTreatmentChanged, on
           <div className="invoice-detail-heading"><strong className="invoice-code">{invoiceCode(data.invoice)}</strong><time>{new Date(data.invoice.createdAt).toLocaleString('vi-VN')}</time></div>
           <p><strong>{data.customer?.name}</strong>{data.customer?.phone ? ` · ${data.customer.phone}` : ''}</p>
           <h3>{data.invoice.description}</h3>
+          {visibleInvoiceDeadline(data.invoice) && <p>Hạn thanh toán: {visibleInvoiceDeadline(data.invoice)}</p>}
           {data.invoice.packageItems?.length>0 && <section className="invoice-service-lines"><h3>Gói liệu trình trong hóa đơn</h3>{data.invoice.packageItems.map((item:Row)=><p key={item.lineId || item.treatmentId}><span>{item.name}{item.promotion ? ' · '+item.promotion : ''}</span><strong>{money(item.total)}</strong></p>)}</section>}
           {serviceLines.length > 0 && <section className="invoice-service-lines"><h3>Dịch vụ trong hóa đơn</h3>{serviceLines.map((item: Row, index: number) => <p key={item.lineId || `${item.serviceId || item.treatmentUseId}:${index}`}><span className="invoice-service-info"><span>{index + 1}. {item.name}</span><small>Kỹ thuật viên: {item.performerName || 'Chưa có'}</small></span><strong>{money(item.total)}</strong></p>)}</section>}
           {data.invoice.productItems?.length>0 && <section className="invoice-service-lines"><h3>Sản phẩm mua thêm</h3>{data.invoice.productItems.map((item:Row)=><p key={item.lineId || item.productId}><span>{item.name} · {item.quantity} {item.unit} × {money(item.unitPrice)}</span><strong>{money(item.total)}</strong></p>)}</section>}

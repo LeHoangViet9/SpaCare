@@ -1,4 +1,5 @@
 import {invoiceSummary,discountLabel} from './invoice-discount';
+import {visibleInvoiceDeadline} from './invoice-deadline';
 import { historicalInvoiceCode, invoiceCode } from './invoice-code';
 import type { Actor } from './auth';
 import type { ExportDocument } from './export-document';
@@ -51,7 +52,7 @@ export function invoiceExportDocument(data: Awaited<ReturnType<typeof readInvoic
         ...(bill.giftCashCardAmount ? [['Mệnh giá thẻ tặng kèm', money(bill.giftCashCardAmount)]] : []),
         ...(bill.refunded ? [['Đã hoàn', money(bill.refunded)]] : []),
         ['Còn nợ', money(Math.max(0, bill.total - bill.paid))],
-        ['Hạn thanh toán', bill.dueDate || 'Chưa đặt'],
+        ...(visibleInvoiceDeadline(bill) ? [['Hạn thanh toán',visibleInvoiceDeadline(bill)!]] : []),
       ] },
     ],
   };

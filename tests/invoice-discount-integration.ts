@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import mongoose from 'mongoose';
-import {Spa,User,Control,Customer,Service,PackageTemplate,Product,Invoice,Payment,CashEntry,Audit,InvoiceLineCommission,Treatment,Idempotency,CashCard} from '../src/lib/models';
+import {Spa,User,Control,Customer,Service,PackageTemplate,Product,Invoice,Payment,CashEntry,Audit,InvoiceLineCommission,Treatment,Idempotency,CashCard,InvoiceAdjustment} from '../src/lib/models';
 import {operate} from '../src/lib/operations';
 import {readInvoice} from '../src/lib/invoice-read';
 import {invoiceExport} from '../src/lib/export-read';
@@ -23,6 +23,41 @@ export async function invoiceDiscountIntegration(extraSpaIds:mongoose.Types.Obje
   const customerId=String(customer._id),serviceId=String(service._id),performerId=String(technician._id);
   const receivedOn=spaDay();await call('openDay',{day:receivedOn,opening:0});
   const pay=(amount:number,method='CASH')=>({amount,method,receivedOn,receivedConfirmation:true});
+  // Optional deadlines round-trip through each creation action without changing money.
+  for(const dueDate of [undefined,'',receivedOn])for(const [action,data,subtotal]of [
+    ['invoice',{customerId,serviceId},1000],
+    ['serviceInvoice',{customerId,items:[{serviceId,performerId}]},1000],
+    ['sellProduct',{customerId,productId:String(product._id),quantity:2},1000],
+    ['productInvoice',{customerId,items:[{productId:String(product._id),quantity:2,unitPrice:500}]},1000],
+    ['sellPackage',{customerId,templateId:String(template._id)},2000],
+    ['checkout',{customerId,actions:[{action:'serviceInvoice',data:{items:[{serviceId,performerId}],dueDate}},{action:'sellPackage',data:{templateId:String(template._id),dueDate}}]},3000],
+  ] as const){
+    const result=await call(action,{...data,...(dueDate===undefined?{}:{dueDate}),discount:{type:'PERCENT',value:20},payments:[pay(100)]});
+    const invoiceId=result.invoiceId||result.id,stored=(await Invoice.findById(invoiceId).lean())!;
+    assert.equal(stored.dueDate,dueDate||undefined,action);
+    assert.equal(stored.total,subtotal*0.8);assert.equal(stored.paid,100);assert.equal(await InvoiceAdjustment.countDocuments({spaId,invoiceId}),0);
+    assert.equal((await readInvoice(actor,invoiceId)).invoice.dueDate,dueDate||undefined);
+    const pdf=await invoiceExport(actor,invoiceId);
+    assert.equal(pdf.tables.at(-1)!.rows.some(row=>row[0]==='Hạn thanh toán'),!!dueDate);
+    await call('payment',{invoiceId,...pay(stored.total-stored.paid)});
+    assert.equal((await Invoice.findById(invoiceId))!.dueDate,dueDate||undefined,'payment keeps deadline stored');
+    assert.equal((await invoiceExport(actor,invoiceId)).tables.at(-1)!.rows.some(row=>row[0]==='Hạn thanh toán'),false);
+  }
+  {
+    const result=await call('invoice',{customerId,serviceId,dueDate:receivedOn});
+    const invoiceId=result.id,before=(await Invoice.findById(invoiceId).lean())!;
+    const finances=(row:any)=>JSON.stringify([row.total,row.paid,row.subtotal,row.discount,row.createdAt]);
+    for(const dueDate of [null,receivedOn]){
+      const current=(await Invoice.findById(invoiceId))!;
+      const input={id:invoiceId,mode:'CORRECT',total:current.total,expectedUpdatedAt:current.updatedAt.toISOString(),reason:'Synthetic deadline correction',content:{dueDate}};
+      const preview=await call('previewInvoiceAdjustment',input);
+      await call('applyInvoiceAdjustment',{...input,confirmed:true,expectedPreview:preview.previewToken});
+      const after=(await Invoice.findById(invoiceId).lean())!;
+      assert.equal(after.dueDate,dueDate||undefined);assert.equal(finances(after),finances(before));
+      assert.equal(await Payment.countDocuments({spaId,invoiceId}),0);assert.equal(await CashEntry.countDocuments({spaId,customerId,kind:'PAYMENT',amount:0}),0);
+    }
+    assert.equal(await InvoiceAdjustment.countDocuments({spaId,invoiceId}),2);
+  }
   const key=randomUUID(),payload={customerId,items:[{serviceId,performerId},{serviceId,performerId:String(owner._id)}],discount:{type:'PERCENT',value:25},payments:[pay(500),pay(300,'BANK_TRANSFER')]};
   const result=await call('serviceInvoice',payload,key);
   assert.deepEqual(await call('serviceInvoice',payload,key),result);

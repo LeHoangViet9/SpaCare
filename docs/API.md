@@ -1,5 +1,11 @@
 # API nội bộ
 
+## Hạn thanh toán tạo mới/hiển thị — 11/11/2026
+
+Theo BR-INV-DEADLINE-001 CONFIRMED: invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/completeAppointment nhận dueDate? YYYY-MM-DD, kiểm ngày lịch thực; '' chuẩn hóa undefined, không gửi/trống không tự chọn ngày. Giữ điều kiện ngày hạn gói hiện có. Checkout gửi cùng hạn trong data của các action con theo cashierActions, không thêm nguồn ngày mặc định hoặc payload thu tiền mới. Nhánh invoice dùng gói lưu dueDate trên hóa đơn mới, không sửa hạn hóa đơn mua gói nguồn.
+
+GET invoice giữ dueDate đã lưu dù đã trả đủ; chi tiết/PDF chỉ hiện dòng hạn nếu dueDate có giá trị và total > paid, không dựa status. Content sửa vẫn nhận dueDate?: ngày|null (null xóa hạn), giữ kiểm tra quyền/phiên bản/preview/idempotency/audit và lịch sử hiện có. Không thay response tiền, giảm giá, ngày hóa đơn hoặc schema.
+
 ## Giảm giá khi tạo hóa đơn — 11/11/2026
 
 Theo BR-INV-DISCOUNT-001 CONFIRMED; contract/làm tròn dưới đây PROPOSED kỹ thuật. invoice/serviceInvoice/sellPackage/sellProduct/productInvoice/checkout nhận discount?: {type:'AMOUNT'|'PERCENT',value:number}, object strict. AMOUNT nguyên 0–10^12, không vượt tạm tính; PERCENT nguyên 0–100. Backend tính số giảm/làm tròn VNĐ, lưu Invoice.subtotal/discount.amount/total sau giảm. Không nhận amount trong object discount. payments/cashCard áp trên tổng sau giảm trong cùng transaction/idempotency/audit. Khoản vượt nợ/thiếu xác nhận/ngày đóng tiếp tục bị chặn, rollback toàn lần tạo.
