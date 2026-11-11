@@ -42,6 +42,19 @@ function AdvanceInvoiceHarness() {
  const [saved,setSaved]=React.useState('');
  return <><FormModal catalogs={fixture} busy={false} error="" onClose={()=>{}} onSubmit={values=>setSaved(JSON.stringify(values))} spec={{title:'Lập hóa đơn trước khi thực hiện',action:'invoice',defaults:{customerId:customer},fields:[{key:'customerId',label:'Khách hàng',remoteCustomers:true},{key:'staffId',label:'Kỹ thuật viên khi thực hiện ngay',optional:true,options:[[id,'Chủ spa kiểm thử']]}]}}/><output hidden id="saved-advance">{saved}</output></>;
 }
-window.fetch=async(input:any)=>{await new Promise(resolve=>setTimeout(resolve,35));return new Response(JSON.stringify(String(input).startsWith('/api/cash-cards')?{cards:[],uses:[],total:0,useTotal:0}:String(input).startsWith('/api/invoices/')?detailFixture:String(input).includes('/api/workspace')?fixture:{customers:fixture.customers,total:1,page:1}),{status:200,headers:{'Content-Type':'application/json'}});};
+function invoiceDeadlineDetail(){
+ if(new URLSearchParams(location.search).has('programSnapshot'))return {...detailFixture,invoice:{...detailFixture.invoice,subtotal:2000000,discount:{type:'PERCENT',value:25,amount:500000,programId:'8'.repeat(24),programCode:'GG_OLD',programName:'Chương trình cũ'}}};
+ const variant=new URLSearchParams(location.search).get('deadlineCase');
+ if(!variant)return detailFixture;
+ return {...detailFixture,invoice:{...detailFixture.invoice,subtotal:1000000,discount:{type:'PERCENT',value:20,amount:200000},total:800000,paid:variant==='paid'?800000:300000,status:variant==='stale-paid'?'PAID':'OPEN',dueDate:variant==='missing'?undefined:'2026-12-01'}};
+}
+(window as any).__programRequests=0;
+window.fetch=async(input:any,options:any)=>{
+ await new Promise(resolve=>setTimeout(resolve,35));
+ if(String(input).startsWith('/api/discount-programs')){
+  (window as any).__programRequests++;throw new Error('Retired program API must not be called');
+ }
+ return new Response(JSON.stringify(String(input).startsWith('/api/cash-cards')?{cards:[],uses:[],total:0,useTotal:0}:String(input).startsWith('/api/invoices/')?invoiceDeadlineDetail():String(input).includes('/api/workspace')?fixture:{customers:fixture.customers,total:1,page:1}),{status:200,headers:{'Content-Type':'application/json'}});
+};
 function Harness(){const [saved,setSaved]=React.useState('');return <><Workspace/><aside id="money-test" style={{margin:20,padding:20,background:'white'}}><h2>Kiểm thử tiền</h2><ValidatedForm onSubmit={e=>{e.preventDefault();setSaved(String(parseMoney(String(new FormData(e.currentTarget).get('amount')))));}}><label>Số tiền<MoneyInput name="amount" required/></label><label>Ghi chú<textarea name="note"/></label><button>Lưu tiền kiểm thử</button></ValidatedForm><output id="saved-money">{saved}</output><p>Dữ liệu minh họa trong bộ nhớ, không kết nối database.</p></aside></>;}
 createRoot(document.getElementById('root')!).render(location.pathname === '/pre-service' ? <AdvanceInvoiceHarness/> : location.pathname === '/repeated-services' ? <RepeatedServiceHarness/> : location.pathname === '/split-payment' ? <PaymentHarness/> : location.pathname === '/invoice-detail' ? <InvoiceDetail record={{kind:'invoice',id}} onClose={()=>{}} onInvoice={()=>{}} onEdit={()=>{}}/> : <Harness/>);

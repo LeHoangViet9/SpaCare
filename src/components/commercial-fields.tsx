@@ -1,4 +1,6 @@
 'use client';
+import InvoiceDiscountFields from './invoice-discount-fields';
+import {invoiceDiscount,type InvoiceDiscountInput} from '@/lib/invoice-discount';
 import { TreatmentConfirmations } from './treatment-selection';
 import { packageLabel, timedPackage, treatmentAvailable, treatmentDay } from '@/lib/treatment-rules';
 import {serviceGroupNames} from '@/lib/service-groups';
@@ -22,12 +24,15 @@ export default function CommercialFields({ action, data, disabled, customerId, i
   const [giftCashCardAmount,setGiftCashCardAmount] = useState('0');
   const [treatmentIds,setTreatmentIds]=useState<string[]>([]);
   const [appliedCard,setAppliedCard]=useState(0);
+  const [discount,setDiscount]=useState<InvoiceDiscountInput>();
   let receiptTotal=0;try{receiptTotal=parseMoney(total||'0');}catch{}
+  const subtotal=receiptTotal;
   const setTreatmentId=(_id:string)=>setTreatmentIds([]);
   const giftCardValue = (()=>{try{return parseMoney(giftCashCardAmount);}catch{return 0;}})();
   const treatments = data.treatments.filter((t: Row) => t.customerId === customerId && t.serviceId && treatmentAvailable(t));
   const selectedTreatments=treatmentIds.map(id=>treatments.find((t:Row)=>t._id===id)).filter(Boolean);
   const treatment=selectedTreatments[0];
+  try{receiptTotal=invoiceDiscount(subtotal,discount).total;}catch{}
   const templates = saleablePackageTemplates<Row>(data.packageTemplates || [],data.services);
   const options = (packageSale ? templates : data.services.filter((s: Row) => s.active)).filter((r:Row)=>!category || (packageSale ? data.services.find((service:Row)=>service._id===r.serviceId)?.category : r.category)===category);
   return <fieldset disabled={disabled} className="commercial-fields">
@@ -40,9 +45,12 @@ export default function CommercialFields({ action, data, disabled, customerId, i
     {!options.length && <p role="status">{packageSale ? 'Chưa có gói mẫu đang bán trong nhóm này. Chủ spa cần tạo dịch vụ, rồi thêm gói tại Danh mục liệu trình.' : 'Chưa có dịch vụ đang hoạt động trong nhóm này.'}</p>}
     {!packageSale && <label>Nội dung<input name="description" maxLength={500} value={description} onChange={e => setDescription(e.target.value)} /></label>}
     {treatment && <input type="hidden" name="serviceId" value={treatment.serviceId}/>}
-    {!packageSale && <section><strong>Dùng liệu trình đã mua · chọn một hoặc nhiều</strong>{treatments.map((t:Row)=><label key={t._id}><input type="checkbox" checked={treatmentIds.includes(t._id)} onChange={()=>{const next=treatmentIds.includes(t._id)?treatmentIds.filter(id=>id!==t._id):[...treatmentIds,t._id];setTreatmentIds(next);if(next.length){setSelection(treatments.find((row:Row)=>row._id===next[0]).serviceId);setDescription('');}}}/>{t.name} · {packageLabel(t)} · 0đ</label>)}</section>}
+    {!packageSale && <section><strong>Dùng liệu trình đã mua · chọn một hoặc nhiều</strong>{treatments.map((t:Row)=><label key={t._id}><input type="checkbox" checked={treatmentIds.includes(t._id)} onChange={()=>{const next=treatmentIds.includes(t._id)?treatmentIds.filter(id=>id!==t._id):[...treatmentIds,t._id];setTreatmentIds(next);setDiscount(undefined);if(next.length){setSelection(treatments.find((row:Row)=>row._id===next[0]).serviceId);setDescription('');}}}/>{t.name} · {packageLabel(t)} · 0đ</label>)}</section>}
     <label>Giá bán (VNĐ)<MoneyInput name="total" required min={treatment ? 0 : 1} max={1_000_000_000_000} value={treatment ? '0' : total} readOnly={!!treatment} onValueChange={setTotal} /></label>
-    {!packageSale && !treatment && customerId && selection && <InvoiceCardPayment key={customerId+selection+total} customerId={customerId} total={(()=>{try{return parseMoney(total);}catch{return 0;}})()} disabled={disabled} onAppliedChange={setAppliedCard} defaultReceivedOn={issuedOn||data.today}/>}
+    <label>Hạn thanh toán<input name="dueDate" type="date"/></label>
+    <small>Hạn thanh toán không bắt buộc. Để trống nếu chưa có hạn.</small>
+    {!treatment && <InvoiceDiscountFields subtotal={subtotal} value={discount} onChange={setDiscount} disabled={disabled}/>}
+    {!packageSale && !treatment && customerId && selection && <InvoiceCardPayment key={customerId+selection+total+receiptTotal} customerId={customerId} total={receiptTotal} disabled={disabled} onAppliedChange={setAppliedCard} defaultReceivedOn={issuedOn||data.today}/>}
     {appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={receiptTotal} disabled={disabled}/>}
     {treatment && <TreatmentConfirmations key={treatmentIds.join(',')} treatments={selectedTreatments} disabled={disabled} staffOptions={data.staff || []}/>}
     {packageSale && <><SaleParticipants people={data.staff || []} value={participantIds} onChange={setParticipantIds} total={Number(total)} disabled={disabled} />{(timedPackage(templates.find((t: Row) => t._id === selection) || {})) && <label>Ngày bắt đầu sử dụng<input name="startsOn" type="date" required defaultValue={treatmentDay()} /><small>Gói triệt lông 36 tháng tự tính từ ngày mua.</small></label>}<label>Đợt khuyến mãi<input name="promotion" maxLength={2000} required={gifts.length > 0 || giftCardValue>0} placeholder="Ví dụ: ưu đãi tháng 10" /></label>

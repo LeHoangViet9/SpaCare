@@ -1,5 +1,35 @@
 # API nội bộ
 
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+Contract PROPOSED kỹ thuật thực hiện BR-DISCOUNT-PROGRAM-RETIRED-001 CONFIRMED: gỡ GET /api/discount-programs và section discount_programs. POST operations không còn saveDiscountProgram/setDiscountProgramStatus/deleteDiscountProgram, trả lỗi thao tác không hợp lệ. Payload discountProgram cũ không còn được xử lý hoặc dùng để chọn chương trình; trường dư vẫn theo cơ chế parse hiện có, không tạo snapshot chương trình.
+
+Các action tạo hóa đơn/checkout giữ discount?: {type:AMOUNT|PERCENT,value:number} thủ công và kiểm tra hiện có; completeAppointment không tra chương trình. GET invoice, báo cáo, PDF vẫn trả/hiển thị snapshot chương trình cũ; không tính lại total/paid/nợ hay thay lịch sử. API hạn thanh toán, KTV và thanh toán giữ nguyên.
+
+## [Lịch sử — đã được thay thế] Chương trình giảm giá theo ngày — 11/11/2026
+
+Contract PROPOSED kỹ thuật thực hiện BR-DISCOUNT-PROGRAM-001 CONFIRMED:
+
+- GET /api/discount-programs?manage=1&page=1: chỉ OWNER; phân trang 20, rows/total/page/today, sort startsOn/_id giảm. STAFF kể cả cashier nhận 403. Workspace /workspace/discount_programs nằm trong Quản trị và chỉ OWNER truy cập.
+- GET /api/discount-programs?day=YYYY-MM-DD: OWNER/STAFF active cùng spa được xem chương trình áp dụng để preview bán/hoàn thành lịch; không có chức năng quản lý. Ngày mặc định hôm nay Việt Nam; trả {program,day}, program=null khi không hiệu lực, 409 khi nhiều chương trình bật cùng ngày. Private/no-store. STAFF không được dùng endpoint này để sửa cấu hình hoặc xem danh sách quản lý.
+- POST operations saveDiscountProgram {id?,expectedUpdatedAt?,name,startsOn,endsOn,percent,enabled,confirmedRunning?}; tạo mới không id, sửa có id/phiên bản. setDiscountProgramStatus {id,expectedUpdatedAt,enabled,confirmedRunning?}. Strict objects, ngày thực, phần trăm nguyên 0–100. Chỉ active OWNER từ DB; ID cùng spa, thiếu nguồn 404, stale/overlap/thiếu xác nhận đang chạy 409; audit, transaction/idempotency/Control như action khác.
+- POST /api/operations với action=deleteDiscountProgram và data={id,expectedUpdatedAt,confirmDelete:true}; strict object, Idempotency-Key bắt buộc như các operation. Chỉ active OWNER cùng spa; STAFF 403, nguồn khác spa/không tồn tại 404, phiên bản cũ hoặc từng áp dụng 409. Kiểm Invoice hiện tại/lịch sử, InvoiceAdjustment và audit invoiceDiscount trong Control transaction; đã dùng trả hướng dẫn tắt. Thành công theo envelope operation hiện có, audit before đầy đủ/after=null, retry cùng key không xóa/audit lần hai. Không thêm HTTP DELETE hoặc sửa API hóa đơn.
+- Payload tạo mới hiện có thêm discountProgram?: {id,updatedAt}|null, chỉ để đối chiếu preview; không tin client cho tỷ lệ/tên/số giảm. Backend chọn theo ngày hóa đơn thực lưu (kể cả issuedOn), áp trước cashCard/payments và sau ráp giỏ. Có chương trình thì không nhận discount thủ công; snapshot lấy backend. Nguồn khác preview trả 409; UI yêu cầu tải lại. Checkout gửi ở cấp ngoài, không trong action con. completeAppointment hỗ trợ preview chương trình khi tạo hóa đơn mới, không thêm giảm thủ công vào luồng này, không sửa hóa đơn đã liên kết.
+
+GET invoice và báo cáo giữ discount snapshot; báo cáo Hóa đơn & doanh số hiện tên/phần trăm/số giảm trong nội dung từng hóa đơn. Aggregate doanh số/nợ giữ total/paid sau giảm, dòng tiền từ CashEntry; không cộng chương trình như doanh thu hoặc khoản chi mới. Điều chỉnh hóa đơn không nhận programme mới, không sửa snapshot giảm cũ.
+
+## Hạn thanh toán tạo mới/hiển thị — 11/11/2026
+
+Theo BR-INV-DEADLINE-001 CONFIRMED: invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/completeAppointment nhận dueDate? YYYY-MM-DD, kiểm ngày lịch thực; '' chuẩn hóa undefined, không gửi/trống không tự chọn ngày. Giữ điều kiện ngày hạn gói hiện có. Checkout gửi cùng hạn trong data của các action con theo cashierActions, không thêm nguồn ngày mặc định hoặc payload thu tiền mới. Nhánh invoice dùng gói lưu dueDate trên hóa đơn mới, không sửa hạn hóa đơn mua gói nguồn.
+
+GET invoice giữ dueDate đã lưu dù đã trả đủ; chi tiết/PDF chỉ hiện dòng hạn nếu dueDate có giá trị và total > paid, không dựa status. Content sửa vẫn nhận dueDate?: ngày|null (null xóa hạn), giữ kiểm tra quyền/phiên bản/preview/idempotency/audit và lịch sử hiện có. Không thay response tiền, giảm giá, ngày hóa đơn hoặc schema.
+
+## Giảm giá khi tạo hóa đơn — 11/11/2026
+
+Theo BR-INV-DISCOUNT-001 CONFIRMED; contract/làm tròn dưới đây PROPOSED kỹ thuật. invoice/serviceInvoice/sellPackage/sellProduct/productInvoice/checkout nhận discount?: {type:'AMOUNT'|'PERCENT',value:number}, object strict. AMOUNT nguyên 0–10^12, không vượt tạm tính; PERCENT nguyên 0–100. Backend tính số giảm/làm tròn VNĐ, lưu Invoice.subtotal/discount.amount/total sau giảm. Không nhận amount trong object discount. payments/cashCard áp trên tổng sau giảm trong cùng transaction/idempotency/audit. Khoản vượt nợ/thiếu xác nhận/ngày đóng tiếp tục bị chặn, rollback toàn lần tạo.
+
+Checkout chỉ nhận discount cấp ngoài, không nhận trong actions[].data; áp một lần sau khi ráp một hóa đơn chung. Giỏ nhiều chứng từ có giảm giá trả 409, không chia giảm giá. SESSION có bán thêm được giảm phần có giá; SESSION thuần 0đ/GIFT/chuyển số dư không nhận. Các action không tạo hóa đơn từ chối field discount; content patch sửa hóa đơn tiếp tục strict và không nhận trường giảm giá. GET invoice trả snapshot đã lưu; export dùng cùng snapshot và total/paid hiện hành, gồm delta điều chỉnh nếu có. Dữ liệu cũ thiếu discount/subtotal giữ tương thích, không backfill. Retry cùng key có giảm giá khác trả 409.
+
 ## Form sửa hóa đơn thống nhất — 10/11/2026
 
 Theo BR-INV-UNIFIED-EDIT-001 CONFIRMED; contract triển khai là PROPOSED kỹ thuật. Chi tiết chỉ có Xử lý hóa đơn → Sửa hóa đơn, tải GET /api/invoices/:id?edit=1 rồi dùng previewInvoiceAdjustment/applyInvoiceAdjustment như điểm sửa danh sách. Không thêm API hoặc gửi hai mutation độc lập cho nội dung và KTV. canCorrectPerformedServices giữ tương thích đọc, không còn tạo action UI riêng.

@@ -1,5 +1,25 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+Gỡ panel DiscountPrograms và menu Quản trị tương ứng, hook useInvoiceProgram/InvoiceProgramDiscount và endpoint cấu hình. Cashier/CommercialFields dùng trực tiếp InvoiceDiscountFields: preview tổng sau giảm theo tiền/% nhập thủ công; không chặn lưu vì tải chương trình. Form completeAppointment không có preview chương trình.
+
+PROPOSED kỹ thuật: backend không đọc DiscountProgram trong bất kỳ luồng lập hóa đơn/checkout/hoàn thành lịch; chỉ áp data.discount lên hóa đơn mới trước thanh toán theo transaction/idempotency/audit cũ. Giữ nguyên reader/render snapshot ở chi tiết/PDF/báo cáo và nhãn audit lịch sử. Không thay schema/index hoặc chạy migration.
+
+## [Lịch sử — đã được thay thế] Chương trình giảm giá theo ngày — 11/11/2026
+
+Giao diện quản lý bổ sung: mỗi thẻ có công tắc role=switch/aria-checked, bật xanh nút bên phải, tắt xám bên trái; đổi trạng thái lưu ngay, lỗi giữ trạng thái server. Nút SVG bút chì và thùng rác riêng có aria-label. Form gọn hai cột desktop/một cột mobile; thẻ và thao tác xuống hàng khi màn hình hẹp. Công tắc của bản nháp mới chỉ là trạng thái tạo; bản đã có lưu ngay và giữ các trường chưa lưu cùng version vừa nhận. Dialog native xác nhận tắt chương trình đang chạy hoặc xóa, có Cancel mặc định, hỗ trợ Escape và khóa khi đang lưu; xóa bị chặn hiển thị hướng dẫn tắt. Form sửa chương trình đang chạy vẫn yêu cầu xác nhận. Đây là yêu cầu UI đã xác nhận; cách triển khai dialog/CSS là PROPOSED kỹ thuật.
+
+PROPOSED kỹ thuật: DiscountPrograms là panel riêng trong Quản trị, danh sách phân trang hiển thị phase ngày và trạng thái bật/tắt; form bắt đủ trường và xác nhận dựa source đang chạy. Các action save/status dùng Control trong operate nên quản lý và tạo hóa đơn không đua nhau qua khoảng trùng. Tài khoản active/spa/OWNER/version kiểm ở backend; không dựa việc ẩn menu.
+
+useInvoiceProgram tải preview no-store theo ngày hóa đơn, chặn submit khi đang tải/lỗi. InvoiceProgramDiscount hiện tên/%/số giảm và ẩn giảm thủ công; ngày đổi tải lại, card preview được reset theo chương trình/tỷ lệ. Cashier, CommercialFields và form completeAppointment mới dùng cùng preview; form hoàn thành lịch không mở giảm thủ công. Backend tái chọn theo Invoice.createdAt ngày Việt Nam, kiểm id/version preview, chặn cộng dồn và lưu snapshot trong transaction trước tiền. Retry không đổi snapshot theo cấu hình mới. Detail/PDF/reports chỉ dùng invoice.discount; không đọc cấu hình để tính lại hóa đơn cũ. Schema/index mới cần chuẩn bị riêng theo quy trình triển khai, không chạy migration production trong phiên này.
+
+## Giảm giá và bill dọc — 11/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-DISCOUNT-001: dùng helper invoiceDiscount chung phía client/backend; InvoiceDiscountFields chỉ đặt trong form tạo (Cashier/CommercialFields), không đưa vào form sửa. Giỏ giữ giá bán gốc từng dòng, preview tổng sau giảm cho thu tiền/thẻ; backend tính lại từ dữ liệu đã xác minh trong transaction. Checkout giảm một lần ở hóa đơn chung sau ráp gói/dòng và trước splitPayment; inline cashCard áp giảm trước redeemCard. Notification hóa đơn phát sau hoàn tất tổng để không gửi số trước giảm. Không ghi song song trong transaction.
+
+invoiceSummary đọc snapshot gốc hoặc fallback legacy, hiển thị delta điều chỉnh riêng để không sửa discount khi OWNER chỉnh tổng qua luồng cũ. Export giữ canvas 680px/80mm và bảng hai cột, thêm KTV xuống dòng trong cùng ô dịch vụ; dòng gói/sản phẩm và dịch vụ đều được giữ trong hóa đơn hỗn hợp. Chỉ PDF hóa đơn bỏ Xuất lúc; header Ngày in và lời cảm ơn giữ nguyên. Không có ảnh tham chiếu đính kèm nên đối chiếu bố cục bill đang có.
+
 ## Điểm sửa chi tiết thống nhất — 10/11/2026
 
 CONFIRMED: InvoiceDetail bỏ nút Đính chính dịch vụ / kỹ thuật viên riêng; InvoiceHandlingMenu dùng nhóm/nút Sửa hóa đơn. Cùng callback Workspace tải editContext đầy đủ và mở InvoiceAdjustmentDialog. Không có lựa chọn luồng thứ hai hoặc chuỗi ghi nội dung rồi ghi KTV. Các trường bị khóa tiếp tục theo nguồn backend hiện hành.

@@ -1,3 +1,5 @@
+import {optionalInvoiceDeadline} from './invoice-deadline';
+import { invoiceDiscount } from './invoice-discount';
 import { ensureGroupedPackageIndex } from './package-invoice-indexes';
 import {receiptDayInput} from './receipt-day';
 import {adjustInvoice, refundInvoiceAdjustment} from './invoice-adjustment';
@@ -83,6 +85,7 @@ const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, ''
 const paymentInput = z.object({ invoiceId: objectId, amount: moneySchema, method, note, transferReference: z.string().trim().max(500).optional(), receivedConfirmation: z.literal(true, 'Cần xác nhận đã thực nhận tiền.'), receivedOn:receiptDayInput.optional(), lineAllocations: ignoredLineAllocations });
 const creationPaymentsInput=z.array(paymentInput.omit({invoiceId:true}).extend({receivedOn:receiptDayInput}).strict()).min(1).max(2)
   .refine(payments=>new Set(payments.map(payment=>payment.method)).size===payments.length,'Không lặp phương thức trong cùng lần thanh toán.');
+const discountInput=z.object({type:z.enum(['AMOUNT','PERCENT']),value:z.number().int().min(0).max(MAX_MONEY)}).strict().refine(d=>d.type!=='PERCENT'||d.value<=100,'Phần trăm giảm giá phải từ 0 đến 100.');
 const invoiceCreationActions=new Set(['invoice','serviceInvoice','sellPackage','sellProduct','productInvoice','checkout']);
 
 const schemas = {
@@ -95,7 +98,7 @@ const schemas = {
   replacePackageAdvisor: z.object({id:objectId,expectedUpdatedAt:date,expectedDocumentId:objectId,oldStaffId:objectId,newStaffId:objectId,reason:text}).strict(),
   linkAppointmentInvoice: z.object({appointmentId:objectId,invoiceId:objectId,reason:text}),
   checkout: z.object({customerId:objectId,appointmentId:objectId.optional(),actions:z.array(z.object({action:z.enum(['invoice','serviceInvoice','sellPackage','productInvoice']),data:z.record(z.string(),z.unknown())})).min(1).max(31)}),
-  productInvoice: z.object({customerId:objectId,dueDate:dateOnly.optional(),items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).min(1).max(30)}),
+  productInvoice: z.object({customerId:objectId,dueDate:optionalInvoiceDeadline,items:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).min(1).max(30)}),
   serviceGroup: z.object({name:z.string().transform(serviceGroupName).pipe(z.string().min(1,'Nhập tên nhóm dịch vụ.').max(100))}),
   ...cashCardInputs,
   ...productInputs,
@@ -136,7 +139,7 @@ const schemas = {
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
   completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore:remainingBefore.optional(),recipientCustomerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional() }),
-  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate: dateOnly.optional(), description: text.optional(), total: zeroMoney.optional(), consultantId: objectId.optional() }),
+  completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate:optionalInvoiceDeadline, description: text.optional(), total: zeroMoney.optional(), consultantId: objectId.optional() }),
   deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
   updateInvoice: z.object({id:objectId, expectedUpdatedAt:date, issuedOn:dateOnly.optional(), description:text, total:moneySchema, dueDate:dateOnly.optional(), reason:text, items:z.array(z.object({serviceId:objectId,total:moneySchema})).min(1).max(30).optional(),
@@ -144,7 +147,7 @@ const schemas = {
   sellPackage: packageSaleInput,
   serviceInvoice: z.object({
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).max(30).optional(),
-    customerId: objectId, staffId: objectId.optional(), dueDate: dateOnly.optional(), cashCard: invoiceCardInput.optional(),
+    customerId: objectId, staffId: objectId.optional(), dueDate:optionalInvoiceDeadline, cashCard: invoiceCardInput.optional(),
     items: z.array(z.object({ serviceId: objectId, total: zeroMoney.optional(), performerId: objectId.optional() })).min(1).max(30),
   }),
   invoice: z.object({
@@ -159,7 +162,7 @@ const schemas = {
     description: text.optional(),
     total: zeroMoney.optional(),
     consultantId: objectId.optional(),
-    dueDate: dateOnly.optional(),
+    dueDate:optionalInvoiceDeadline,
   }),
   deposit: z.object({ customerId: objectId, amount: moneySchema, method, note }),
   allocate: z.object({
@@ -248,15 +251,17 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
   ensure(Object.hasOwn(schemas, action), 'Thao tác không hợp lệ.');
   ensure(/^[a-zA-Z0-9-]{16,100}$/.test(key), 'Cần Idempotency-Key hợp lệ.');
   const op = action as Operation;
+  ensure(invoiceCreationActions.has(op) || !raw || typeof raw !== 'object' || !Object.hasOwn(raw,'discount'), 'Chỉ nhập giảm giá khi tạo hóa đơn mới.');
   const data = {...schemas[op].parse(raw), ...(invoiceCreationActions.has(op) ? {
     issuedOn:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().parse((raw as Record<string,unknown>)?.issuedOn),
+    discount:discountInput.optional().parse((raw as Record<string,unknown>)?.discount),
     payments:creationPaymentsInput.optional().parse((raw as Record<string,unknown>)?.payments),
   } : {})};
   const fingerprint = sha(JSON.stringify({ action, data }));
   await connect();
   return mongoose.connection.transaction(
     async session => {
-      // A per-spa write guard serializes competing writes, including interval checks and day closure.
+      // A per-spa write guard serializes competing writes, including day closure.
       // withTransaction retries transient conflicts with a fresh snapshot.
       const control = await Control.findOneAndUpdate(
         { spaId: initial.spaId },
@@ -287,6 +292,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         return previous.result;
       }
       let groupedPackageSale = false;
+      const today=spaDay();
       let packageInvoice: any;
       let checkoutAppointmentId: string | undefined;
       const createdInvoiceIds: string[] = [];
@@ -310,6 +316,24 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if(model === Invoice && doc.activeDocumentId && !doc.financialRevision && ['payment','splitPayment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
           ensure(false,'Chứng từ đã thay thế: phiên bản này chưa hỗ trợ thay đổi tài chính hoặc nội dung tiếp theo.',409);
         return doc;
+      };
+      const discountedIds = new Set<string>();
+      const applyNewDiscount = async (invoice: any) => {
+        if (discountedIds.has(String(invoice._id))) return;
+        if (!createdInvoiceIds.includes(String(invoice._id))) {ensure(!data.discount,'Chỉ giảm giá hóa đơn mới trong lần tạo này.',409);return;}
+        const eligible=!invoice.openingBalance && !invoice.giftOfInvoiceId &&
+          (['SERVICE','PACKAGE','PRODUCT'].includes(invoice.kind) ||
+           (invoice.kind === 'SESSION' && invoice.total > 0));
+        if(!eligible){ensure(!data.discount,'Chứng từ này không hỗ trợ giảm giá.');return;}
+        const selected=data.discount;
+        if(!selected)return;
+        ensure(invoice.paid === 0, 'Phải áp dụng giảm giá trước thanh toán.', 409);
+        Object.assign(invoice, invoiceDiscount(invoice.total, selected));
+        invoice.status = invoiceState(invoice.total, invoice.paid);
+        await invoice.save({session});
+        discountedIds.add(String(invoice._id));
+        await create(Audit,{actorId:actor.id,action:'invoiceDiscount',targetId:invoice._id,
+          details:{invoiceId:String(invoice._id),subtotal:invoice.subtotal,discount:invoice.discount,total:invoice.total}});
       };
       const checkTreatmentUse = async (treatment: any, day = today) => {
         const purchase = await Invoice.findOne({ ...scope, _id: treatment.invoiceId }).session(session);
@@ -354,7 +378,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           sharedSaleCommission: await snapshot(SharedSaleCommission),
         };
       };
-      const today = spaDay();
       const consultant = async (customer: any, selectedId?: string) => {
         const consultantId = selectedId || (customer.consultantId ? String(customer.consultantId) : undefined);
         if (!consultantId) return {};
@@ -1301,6 +1324,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
               if (!invoice.saleParticipants?.length) {
                 Object.assign(invoice, { sellerId:seller.staffId, sellerName:seller.staffName, saleParticipants:participants, saleCommissionVersion:participants.length > 1 ? 2 : 1, saleCommissionAccrued:0, ...(advisor.consultantId ? advisor : {}) });
               } else ensure(JSON.stringify(invoice.saleParticipants.map((p:any)=>String(p.staffId)))===JSON.stringify(participants.map(p=>String(p.staffId))) && (!invoice.dueDate || !d.dueDate || String(invoice.dueDate)===String(d.dueDate)) && String(invoice.consultantId || '')===String(advisor.consultantId || ''),'Các gói trong cùng hóa đơn phải có cùng người tư vấn và hạn thanh toán.');
+              if (!invoice.dueDate && d.dueDate) invoice.dueDate=d.dueDate;
               invoice.total=money(invoice.total+money(d.total ?? template.price,true),true);
               invoice.giftCashCardAmount=money((invoice.giftCashCardAmount || 0)+(d.giftCashCardAmount || 0),true);
               // A mixed checkout is one financial document; retain its service
@@ -1568,7 +1592,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             if (item.performerId && item.commission) await accrueCommission(target, String(item.performerId), 'INVOICE', String(item.lineId), target.performedAt, item.commission, item);
           }
           if(d.additionalProducts?.length){ensure(!d.cashCard,'Thẻ tiền chỉ dùng cho hóa đơn chỉ có dịch vụ lẻ.',409);await addProducts(target,d.additionalProducts);}
-          if (d.cashCard) await redeemCard({ ...d.cashCard, invoiceId: String(target._id) });
+          if (d.cashCard) { await applyNewDiscount(target); await redeemCard({ ...d.cashCard, invoiceId: String(target._id) }); }
           linkedInvoiceId = String(target._id);
           break;
         }
@@ -1598,6 +1622,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             await addProducts(target,d.additionalProducts || []);
             if (d.description && selections.length === 1 && !d.additionalServices?.length && !d.additionalProducts?.length) target.description = d.description;
             if (d.consultantId) Object.assign(target, await consultant(customer, d.consultantId));
+            if (d.dueDate) target.dueDate=d.dueDate;
             await target.save({ session });
             break;
           }
@@ -1619,7 +1644,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             total: line.total, serviceItems: [line],
             paid: 0, ...(performer ? {performedBy:performer._id,performedAt:new Date()} : {}),
           });
-          if (cashCard) await redeemCard({ ...cashCard, invoiceId: String(target._id) });
+          if (cashCard) { await applyNewDiscount(target); await redeemCard({ ...cashCard, invoiceId: String(target._id) }); }
           if (performer && line.commission) await accrueCommission(target, String(performer._id), 'INVOICE', String(line.lineId), new Date(), line.commission, line);
           break;
         }
@@ -1924,7 +1949,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           break;
         }
       }
-      if(action!=='checkout') for (const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
+      if (action !== 'checkout' && (invoiceCreationActions.has(op)||op==='completeAppointment')) await applyNewDiscount(await get(Invoice,linkedInvoiceId || String(target._id)));
       const details = { ...data } as Record<string, unknown>;
       // Deprecated input fields are accepted for old clients/idempotency fingerprints only.
       // Do not describe ignored line assignments as applied in a new operation's audit.
@@ -2012,6 +2037,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if(groupedPackageSale) await ensureGroupedPackageIndex();
         const orderedActions=mixedPackageCheckout ? [...baseLines,...packageLines] : batch.actions;
         for(const line of orderedActions){
+          ensure(line.data.discount===undefined,'Giảm giá của giỏ phải gửi ở cấp checkout.');
           ensure(line.data.payments===undefined,'Các khoản thu của giỏ phải gửi ở cấp checkout để thanh toán đúng hóa đơn chung.');
           ensure(line.data.customerId===undefined || line.data.customerId===batch.customerId,'Mọi mục trong giỏ phải cùng khách.');
           const values=schemas[line.action].parse({...line.data,customerId:batch.customerId});
@@ -2035,12 +2061,18 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const total=money(invoices.reduce((sum,item)=>sum+item.total,0),true);
         result={id:invoices[0].id,invoiceId:invoices[0].id,invoiceIds:invoices.map(item=>item.id),invoices,total,message:'Đã lưu '+invoices.length+' hóa đơn trong cùng lần thu ngân.'};
       }else result=await execute(op,data);
+      if (op === 'checkout' && data.discount) {
+        ensure(!data.discount||result.invoiceIds.length === 1, 'Chỉ giảm giá thủ công khi giỏ tạo một hóa đơn chung.',409);
+        const invoices=[];
+        for(const id of result.invoiceIds){const invoice=await get(Invoice,id);await applyNewDiscount(invoice);invoices.push({id:String(invoice._id),code:invoice.code,total:invoice.total});}
+        result = {...result,total:money(invoices.reduce((sum,item)=>sum+item.total,0),true),invoices};
+      }
       if(invoiceCreationActions.has(op)&&data.payments?.length){
         ensure(!result.invoiceIds||result.invoiceIds.length===1,'Chỉ ghi khoản thu tạo cùng một hóa đơn chung. Thanh toán riêng từng hóa đơn nếu giỏ tạo nhiều chứng từ.',409);
         const collected=await execute('splitPayment',{invoiceId:result.invoiceId||result.id,payments:data.payments});
         result={...result,paymentIds:collected.paymentIds};
       }
-      if(op==='checkout') for(const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
+      for(const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
       await create(Idempotency, { userId: actor.id, key, fingerprint, result });
       return result;
     },

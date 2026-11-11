@@ -1,5 +1,47 @@
 import {test,expect} from '@playwright/test';
 
+for(const form of ['commercial','cashier'])for(const mode of ['active','error'])test(`retired programs: ${form} ${mode} still allows manual discount without API reads`,async({page})=>{
+ await page.goto((form==='commercial'?'/pre-service':'/repeated-services')+'?program='+mode);
+ if(form==='commercial')await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ else {await page.getByRole('button',{name:'Sản phẩm',exact:true}).click();await page.getByRole('button',{name:/^Dầu gội QA/}).click();}
+ await expect(page.getByRole('region',{name:'Chương trình giảm giá áp dụng'})).toHaveCount(0);
+ await page.getByRole('combobox',{name:'Loại giảm giá',exact:true}).selectOption('PERCENT');
+ await page.getByRole('spinbutton',{name:'Phần trăm giảm giá (0–100)',exact:true}).fill('10');
+ await page.getByRole('button',{name:form==='commercial'?'Lưu thông tin':'Lưu toàn bộ giỏ',exact:true}).click();
+ const saved=JSON.parse(await page.locator(form==='commercial'?'#saved-advance':'#saved-cashier').textContent());const values=form==='commercial'?saved:saved.values;
+ expect(values.discount).toEqual({type:'PERCENT',value:10});expect(values.discountProgram).toBeUndefined();
+ expect(await page.evaluate(()=>window.__programRequests)).toBe(0);
+});
+test('retired programs: management navigation and screen are absent',async({page})=>{
+ await page.goto('/workspace/discount_programs');await expect(page.getByRole('button',{name:'Chương trình giảm giá',exact:true})).toHaveCount(0);
+ await expect(page.locator('.discount-program-manager')).toHaveCount(0);expect(await page.evaluate(()=>window.__programRequests)).toBe(0);
+});
+
+test('discount program: invoice detail displays the saved historical program',async({page})=>{
+ await page.goto('/invoice-detail?programSnapshot=1');await expect(page.getByText(/Chương trình giảm giá: Chương trình cũ/)).toContainText('GG_OLD');await expect(page.getByText(/Chương trình giảm giá: Chương trình cũ/)).toContainText('500.000 đ');
+});
+
+for(const form of ['commercial','cashier'])for(const date of ['','2026-12-01'])test(`invoice deadline: ${form} creation ${date?'with date':'blank'}`,async({page})=>{
+ await page.goto(form==='commercial'?'/pre-service':'/repeated-services');
+ if(form==='commercial')await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ else {await page.getByRole('button',{name:'Sản phẩm',exact:true}).click();await page.getByRole('button',{name:/^Dầu gội QA/}).click();}
+ const due=page.getByLabel('Hạn thanh toán',{exact:true});await expect(due).toHaveValue('');
+ expect(await due.getAttribute('required')).toBeNull();
+ if(date)await due.fill(date);
+ await page.getByRole('button',{name:form==='commercial'?'Lưu thông tin':'Lưu toàn bộ giỏ',exact:true}).click();
+ const saved=JSON.parse(await page.locator(form==='commercial'?'#saved-advance':'#saved-cashier').textContent());
+ const values=form==='commercial'?saved:saved.values;
+ expect(values.dueDate).toBe(date||undefined);
+});
+
+for(const variant of ['debt','missing','paid','stale-paid'])test(`invoice deadline detail: ${variant}`,async({page})=>{
+ await page.goto('/invoice-detail?deadlineCase='+variant);
+ const dialog=page.getByRole('dialog',{name:'Chi tiết hóa đơn'});
+ await expect(dialog.getByText('Tổng thanh toán sau giảm',{exact:false})).toBeVisible();
+ await expect(dialog.getByText('Hạn thanh toán: 2026-12-01',{exact:true})).toHaveCount(['debt','stale-paid'].includes(variant)?1:0);
+ if(variant==='missing'||variant==='paid')await expect(dialog.getByText(/^Hạn thanh toán:/)).toHaveCount(0);
+});
+
 async function repeatedCart(page,count){
  await page.goto('/repeated-services');
  await page.getByRole('button',{name:/Nhóm QA.*1 dịch vụ/}).click();
@@ -80,6 +122,40 @@ test('technician requirement: advance invoice saves without a technician',async(
  const saved=JSON.parse(await page.locator('#saved-advance').textContent());expect(saved.staffId).toBeUndefined();expect(saved.serviceId).toBe('c'.repeat(24));
 });
 
+for(const type of ['AMOUNT','PERCENT'])test(`new invoice ${type} discount previews net amount and saves its input`,async({page},testInfo)=>{
+ await page.goto('/pre-service');await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ await page.getByRole('combobox',{name:'Loại giảm giá',exact:true}).selectOption(type);
+ if(type==='AMOUNT')await page.getByRole('textbox',{name:'Số tiền giảm (VNĐ)',exact:true}).fill('20.000');
+ else await page.getByRole('spinbutton',{name:'Phần trăm giảm giá (0–100)',exact:true}).fill('20');
+ await expect(page.locator('.invoice-discount-fields')).toContainText('Tạm tính: 100.000 đ');
+ await expect(page.locator('.invoice-discount-fields')).toContainText('Tổng thanh toán sau giảm: 80.000 đ');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('50000');
+ await page.getByRole('checkbox',{name:'Đã thực nhận tiền mặt',exact:true}).check();
+ await page.getByRole('button',{name:'Lưu thông tin',exact:true}).click();
+ const saved=JSON.parse(await page.locator('#saved-advance').textContent());
+ expect(saved.discount).toEqual({type,value:type==='AMOUNT'?20000:20});expect(saved.total).toBe(100000);
+ expect(saved.payments[0].amount).toBe(50000);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('invoice-discount.png'),fullPage:true});
+});
+
+test('covered package form has no discount input',async({page})=>{
+ await page.goto('/pre-service');await page.getByRole('checkbox',{name:/Gói chăm sóc da/}).check();
+ await expect(page.getByRole('combobox',{name:'Loại giảm giá',exact:true})).toHaveCount(0);
+});
+
+test('cashier discount preserves repeated line prices and is sent once',async({page})=>{
+ await repeatedCart(page,2);
+ await assignOccurrence(page,0,'Kỹ thuật viên An');await assignOccurrence(page,1,'Kỹ thuật viên Bình');
+ await page.getByRole('combobox',{name:'Loại giảm giá',exact:true}).selectOption('PERCENT');
+ await page.getByRole('spinbutton',{name:'Phần trăm giảm giá (0–100)',exact:true}).fill('10');
+ await expect(page.locator('.invoice-discount-fields')).toContainText('Tổng thanh toán sau giảm: 630.000 đ');
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ',exact:true}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
+ expect(saved.values.discount).toEqual({type:'PERCENT',value:10});expect(saved.values.items.map(row=>row.total)).toEqual([350000,350000]);
+ expect(saved.values.items.map(row=>row.performerId)).toEqual(['1'.repeat(24),'2'.repeat(24)]);
+});
+
 test('technician requirement: recording a package in the invoice form requires an explicit line technician',async({page},testInfo)=>{
  await page.goto('/pre-service');await page.getByRole('checkbox',{name:/Gói chăm sóc da/}).check();
  const technician=page.getByRole('combobox',{name:'Kỹ thuật viên lượt dùng gói 1 (Gói chăm sóc da)',exact:true});
@@ -93,7 +169,7 @@ test('technician requirement: recording a package in the invoice form requires a
 
 test('invoice list opens one payment form for both methods', async ({page}) => {
  await page.goto('/workspace/invoices');
- await page.locator('.invoice-list-actions summary').click();
+ await expect(page.locator('.invoice-list-actions').getByRole('button',{name:'Thanh toán',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Thanh toán',exact:true}).click();
  await expect(page.getByRole('dialog')).toBeVisible();
  await expect(page.getByRole('textbox',{name:'Tiền mặt',exact:true})).toBeVisible();
@@ -168,7 +244,9 @@ for(const scenario of [
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill(String(scenario.cash));
  await dialog.getByRole('textbox',{name:'Chuyển khoản / QR',exact:true}).fill(String(scenario.bank));
- await expect(dialog.getByRole('textbox')).toHaveCount(2);
+ await expect(dialog.locator('input[inputmode="numeric"]')).toHaveCount(2);
+ await expect(dialog.locator('input[type="date"]')).toHaveCount(Number(!!scenario.cash)+Number(!!scenario.bank));
+ const receivedDays=await dialog.locator('input[type="date"]').evaluateAll(inputs=>inputs.map(input=>input.value));
  await expect(dialog.locator('input[name*="Allocations"],.payment-service-allocation')).toHaveCount(0);
  await expect(dialog.getByText(/phân bổ/i)).toHaveCount(0);
  if(scenario.cash)await dialog.getByRole('checkbox',{name:'Đã đếm và thực nhận tiền mặt'}).check();
@@ -176,6 +254,7 @@ for(const scenario of [
  await dialog.getByRole('button',{name:'Xác nhận đã nhận tiền'}).click();
  const saved=JSON.parse(await page.locator('#saved-payment').textContent());
  expect(saved.payments.reduce((sum,row)=>sum+row.amount,0)).toBe(scenario.cash+scenario.bank);
+ expect(saved.payments.map(row=>row.receivedOn)).toEqual(receivedDays);
  expect(saved.payments.every(row=>!('lineAllocations' in row))).toBe(true);
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -196,7 +275,7 @@ test('invoice detail keeps per-service staff, separate receipts and totals on de
  await expect(services.nth(2)).toContainText('Kỹ thuật viên: Chưa có');
  const payments = dialog.getByRole('region', {name:'Phương thức thanh toán'}).getByRole('listitem');
  await expect(payments).toHaveText(['Chuyển khoản:500.000 đ', 'Tiền mặt:600.000 đ', 'Tiền mặt:400.000 đ']);
- await expect(dialog.locator('.invoice-detail-money > span')).toHaveText(['Tổng tiền1.500.000 đ', 'Đã thanh toán1.500.000 đ', 'Còn nợ0 đ']);
+ await expect(dialog.locator('.invoice-detail-money > span')).toHaveText(['Tạm tính1.500.000 đ', 'Giảm giá (Không áp dụng)0 đ', 'Tổng thanh toán sau giảm1.500.000 đ', 'Đã thanh toán1.500.000 đ', 'Còn nợ0 đ']);
  await expect(dialog.getByText('Người tạo:', {exact:false})).toContainText('Chủ spa kiểm thử');
  await expect(dialog.getByText(/hệ thống sẽ kiểm tra và chặn|Nhân viên đã ghi nhận|Đã thực hiện:/)).toHaveCount(0);
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
@@ -223,13 +302,13 @@ test('money draft keeps caret, stores numeric VND, optional fields stay optional
  await input.pressSequentially('1.000.000');await expect(input).toHaveValue('1.000.000');await expect(input).toBeFocused();
  await form.getByRole('button',{name:'Lưu tiền kiểm thử'}).click();await expect(page.locator('#saved-money')).toHaveText('1000000');
  await input.fill('1.00');await form.getByRole('button',{name:'Lưu tiền kiểm thử'}).click();await expect(form.locator('.field-error')).toBeVisible();await expect(input).toHaveValue('1.00');
- await expect(form.locator('label').filter({has:input}).locator('.required-mark')).toHaveCount(1);
- await expect(form.locator('label').filter({has:form.locator('textarea')}).locator('.required-mark')).toHaveCount(0);
+ await expect(form.locator('label:has(input[name="amount"]) .required-mark')).toHaveCount(1);
+ await expect(form.locator('label:has(textarea) .required-mark')).toHaveCount(0);
 });
 test('packages remove duplicate metrics and keep both date inputs in the same row without horizontal overflow',async({page})=>{
  await page.goto('/workspace/packages');await expect(page.getByRole('textbox',{name:'Tìm kiếm',exact:true})).toBeVisible();
- await expect(page.getByText('Tổng số gói',{exact:true})).toHaveCount(0);await expect(page.getByText('Số buổi còn lại',{exact:true})).toHaveCount(0);await expect(page.getByText('8/10 buổi',{exact:true})).toBeVisible();
- const from=await page.getByLabel('Từ ngày',{exact:true}).boundingBox(),to=await page.getByLabel('Đến ngày',{exact:true}).boundingBox();
+ await expect(page.getByText('Tổng số gói',{exact:true})).toHaveCount(0);await expect(page.getByText('Số buổi còn lại',{exact:true})).toHaveCount(0);await expect(page.getByText('Còn 8/10 buổi',{exact:true})).toBeVisible();
+ const from=await page.getByRole('textbox',{name:'Từ ngày',exact:true}).boundingBox(),to=await page.getByRole('textbox',{name:'Đến ngày',exact:true}).boundingBox();
  expect(Math.abs(from.y-to.y)).toBeLessThan(2);expect(to.x).toBeGreaterThan(from.x);expect(from.height).toBeGreaterThanOrEqual(40);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });

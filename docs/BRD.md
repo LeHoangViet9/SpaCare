@@ -1,5 +1,33 @@
 # SpaCare — Business Requirements
 
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu mới nhất: gỡ Chương trình giảm giá theo ngày khỏi menu, màn hình, form tạo/sửa, bật/tắt/xóa và API/backend quản lý. Không tự áp dụng chương trình khi lập hóa đơn, checkout hoặc hoàn thành lịch hẹn. Hóa đơn mới chỉ nhận giảm giá tiền/% người dùng nhập trong form lập hóa đơn; giữ giảm giá thủ công, hạn thanh toán, KTV, PDF, thanh toán và báo cáo.
+
+Không xóa collection/bản ghi chương trình hoặc snapshot; hóa đơn cũ giữ tiền, đã thu, nợ, lịch sử và nội dung PDF. Không sửa production, migration xóa dữ liệu. Quyết định này thay thế toàn bộ chính sách quản lý/tự áp dụng chương trình bên dưới.
+
+## [Lịch sử — đã được thay thế] Chương trình giảm giá theo ngày — 11/11/2026
+
+CONFIRMED theo yêu cầu giao diện mới nhất: công tắc bật/tắt riêng lưu ngay trên chương trình đã tạo; nút bút chì sửa và thùng rác xóa có nhãn truy cập được. Xác nhận trước khi sửa/tắt chương trình đang chạy và trước mọi lần xóa. Chỉ OWNER được xóa chương trình chưa từng được áp dụng; chương trình đã dùng bị chặn xóa, hướng dẫn tắt để giữ lịch sử. Yêu cầu này thay giới hạn không xóa cứng chương trình chưa dùng trước đây; lịch sử tài chính không bị xóa.
+
+CONFIRMED theo yêu cầu mới nhất: OWNER tạo/sửa/bật/tắt chương trình có tên, ngày đầu/cuối, phần trăm nguyên 0–100 theo giảm giá hiện có, trạng thái bật/tắt. Không cho chương trình đang bật cùng phạm vi chồng ngày; tính hai đầu và ngày hóa đơn theo Việt Nam. Tự áp dụng cho hóa đơn bán mới đủ điều kiện có tổng trước giảm dương, không cộng thủ công; không có chương trình thì giữ giảm thủ công. Giữ giá dòng, hoa hồng và thu tiền/công nợ theo tổng sau giảm.
+
+CONFIRMED: lưu snapshot mã/tên/phần trăm/số giảm trong hóa đơn; sửa/tắt/hết hạn không sửa hóa đơn cũ. Chi tiết/PDF/bảng báo cáo dùng snapshot. Quản lý chỉ OWNER, audit đầy đủ, xác nhận trước sửa/tắt chương trình đang chạy. Không áp dụng cho chuyển số dư, quà, lượt gói thuần 0đ, điều chỉnh hoặc khoản thu của hóa đơn cũ.
+
+PROPOSED kỹ thuật: một phạm vi ALL_NEW_SALES chung trong mỗi spa, gồm dịch vụ/sản phẩm/gói mới và phần bán thêm có giá trên chứng từ SESSION. Không mở phân loại phạm vi riêng. Dùng transaction Control tuần tự để chống race khoảng ngày; dữ liệu chồng lấn có sẵn chặn lưu hóa đơn thay vì chọn chương trình. Không migration/backfill hóa đơn cũ hay sửa dữ liệu vận hành.
+
+## Hạn thanh toán tùy chọn và hiển thị theo dư nợ — 11/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: form tạo hóa đơn có Hạn thanh toán, không bắt buộc, để trống không tự gán ngày. Lưu/trả đúng hạn đã chọn; giữ khả năng sửa/xóa hạn qua quy trình sửa hiện có. Chi tiết/PDF chỉ hiện Hạn thanh toán khi có ngày đã lưu và total > paid; total là tổng sau giảm giá, paid là số thanh toán được ghi nhận. Không dùng status để suy tất toán. Hóa đơn không có hạn hoặc đã trả đủ không hiện dòng hạn, nhưng không xóa hạn đã lưu chỉ vì tất toán. Không thay giá/giảm giá/khoản thu/nợ/ngày hóa đơn/lịch sử/quyền. Yêu cầu này thay cách PDF luôn hiện Hạn thanh toán/Chưa đặt trước đây.
+
+## Giảm giá lúc tạo và bill theo từng dịch vụ — 11/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: chỉ nhập giảm giá khi tạo hóa đơn mới, theo số tiền hoặc phần trăm; lưu loại, giá trị và số tiền giảm để tra cứu/PDF. Tạm tính giữ giá bán từng dòng, tổng phải trả/công nợ dùng tổng sau giảm. Giữ giá dòng, hoa hồng hiện có, thu tiền cấp hóa đơn, quyền, transaction, idempotency và audit. Không thêm/sửa giảm giá ở hóa đơn đã tạo. Thay mô tả trước đây chưa có trường giảm giá riêng; không mở rộng chính sách sửa hóa đơn cũ.
+
+Chi tiết/PDF ghi KTV ngay dưới từng dịch vụ theo đúng người đã lưu, thiếu ghi Chưa có; không gộp người thực hiện chung. PDF giữ bill dọc hiện tại và lời cảm ơn, thêm tạm tính/giảm giá/tổng sau giảm/đã trả/còn nợ; bỏ hai cảnh báo tra cứu/thời điểm xuất và dòng Xuất lúc. Không có ảnh tham chiếu đính kèm trong phiên này; bố cục hiện có là nguồn đối chiếu.
+
+PROPOSED kỹ thuật: phần trăm nguyên 0–100, làm tròn số giảm tới VNĐ gần nhất. Áp một lần trên hóa đơn bán mới (dịch vụ, sản phẩm, gói hoặc hỗn hợp); buổi gói kèm hàng/dịch vụ bán thêm chỉ giảm phần có giá. Không nhận cho buổi gói thuần 0đ, quà tặng, chuyển số dư hoặc giỏ sinh nhiều hóa đơn chưa có quy tắc chia giảm giá. Không migration/backfill hoặc sửa dữ liệu thật.
+
 ## Một điểm Sửa hóa đơn tại chi tiết — 10/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: bỏ nút riêng Đính chính dịch vụ / kỹ thuật viên. Trong Xử lý hóa đơn, OWNER dùng Sửa hóa đơn để mở form thống nhất, gồm thông tin đang được hỗ trợ và dịch vụ/KTV theo đúng từng dòng. Trước lưu phải đối chiếu trước/sau, tiền, công nợ, hoa hồng và lý do; giữ actor/thời điểm/lịch sử. Chỉ đổi KTV không đổi tiền hoặc ngày thu. Sửa dịch vụ/giá đủ điều kiện dùng nghiệp vụ chênh lệch hiện có, không tự thu hoặc hoàn; payroll đã duyệt/chi bất biến. Quyết định này thay điểm vào đính chính riêng của BR-INV-TECH-UI-001, không yêu cầu bỏ guard nguồn/lương đã chốt hoặc mở quyền sửa dòng đang bị khóa. Chỉ làm trên nhánh hiện tại, không push/merge main/deploy.

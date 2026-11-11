@@ -66,6 +66,7 @@ const calls:any[]=[];
 const voidResults=new Map<string,Record<string,any>>();let droppedVoidResponse=false;
 (window as any).__replacementCalls=calls;
 window.fetch=(async(input:any,options:any)=>{
+ if(String(input).startsWith('/api/discount-programs'))return Response.json({program:null});
  if(String(input).startsWith('/api/invoices/'+a+'?edit=1'))return Response.json({invoice:currentInvoice,customer:{name:'Khách fixture'},payments:currentInvoice.payments||[],adjustmentContext:{stock:false,packages:false,gifts:false},editContext:receiptCase==='missing-context'?undefined:currentInvoice.editContext||{
   client:{customerId:c,description:currentInvoice.description,dueDate:null,promotion:'',consultantId:null,participantIds:[],serviceItems:[],productItems:[],packageItems:[]},
   source:{serviceItems:[],productItems:[],packageItems:[],treatmentSessions:[]},catalogs:editCatalogs,locks:{metadata:'',services:[],packages:[]},references:{gifts:[],giftCards:[]}}});

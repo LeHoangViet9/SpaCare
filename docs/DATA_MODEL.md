@@ -1,5 +1,29 @@
 # SpaCare — Data Model
 
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: giữ model DiscountProgram, collection discountprograms và toàn bộ indexes/bản ghi hiện có để bảo toàn dữ liệu. Invoice.discount.programId/programCode/programName cùng type/value/amount và subtotal giữ nguyên để đọc lịch sử. Không migration/backfill/xóa dữ liệu hoặc viết lại hóa đơn, Payment, CashEntry hay audit.
+
+PROPOSED kỹ thuật: bỏ reader cấu hình và logic quản lý/tự áp dụng khỏi runtime. Hóa đơn mới lưu snapshot giảm thủ công theo model hiện hành, không thêm tham chiếu chương trình. Schema cũ vẫn hiện diện trong allModels cho kiểm tra tương thích; điều này không cấp lại API ghi chương trình.
+
+## [Lịch sử — đã được thay thế] DiscountProgram và snapshot — 11/11/2026
+
+PROPOSED kỹ thuật cho BR-DISCOUNT-PROGRAM-001: collection discountprograms qua model DiscountProgram {spaId,code,name,startsOn,endsOn,percent,enabled,scope:ALL_NEW_SALES,createdAt,updatedAt}. Mã ổn định GG + ObjectId in hoa; API không cho sửa code/spaId/scope. Index unique {spaId,code} và lookup {spaId,enabled,startsOn,endsOn}; chồng khoảng được kiểm bởi operations trong Control transaction (unique index đơn không đủ kiểm overlap). Model thêm vào allModels để setup/preflight test biết schema; không tự chạy setup/migration lên production.
+
+Invoice.discount giữ type/value/amount hiện có, thêm optional programId:ObjectId/programCode:String/programName:String. value là phần trăm snapshot, amount là số giảm thực tế; Invoice.subtotal/total/paid vẫn là nguồn tiền cũ. Không join cấu hình hiện tại để hiển thị lịch sử, không backfill invoice cũ. Audit saveDiscountProgram/setDiscountProgramStatus giữ yêu cầu, before/after, actor/thời điểm; audit invoiceDiscount chứa snapshot chương trình trong transaction tạo. Chỉ được xóa cứng chương trình chưa dùng theo yêu cầu mới; không xóa chương trình đã áp dụng hoặc lịch sử tài chính. Không đổi index hóa đơn, Payment, CashEntry, Treatment hoặc hoa hồng.
+
+PROPOSED kỹ thuật bổ sung: deleteDiscountProgram lưu bản cấu hình đầy đủ vào Audit.details.before và after=null trong cùng transaction. Guard kiểm programId dạng ObjectId/string trong Invoice.discount, documentHistory.snapshot.discount/documentHistory.discount, InvoiceAdjustment.before/after.discount và Audit invoiceDiscount.details.discount. Không thêm schema/index hoặc migration cho thao tác xóa; không xóa các tham chiếu để cho phép xóa cấu hình.
+
+## Hạn thanh toán tùy chọn — 11/11/2026
+
+PROPOSED kỹ thuật thực hiện BR-INV-DEADLINE-001 CONFIRMED: tái dùng Invoice.dueDate?: String YYYY-MM-DD hiện có, không schema/index/migration/backfill mới. Input tạo rỗng được chuẩn hóa thành undefined; ngày được kiểm hợp lệ trước lưu, không gán mặc định. Nhánh invoice dùng buổi gói kèm bán thêm cũng lưu hạn đã gửi trên chứng từ mới. Gộp gói giữ hạn chung đã chọn; không mất hạn khi dòng gói đầu thiếu hạn và dòng sau có hạn hợp lệ. Reader trả dueDate đã lưu kể cả đã tất toán; UI/PDF ẩn theo total−paid <= 0. Không thay đổi dữ liệu lịch sử hoặc số dư; chỉnh hạn tiếp tục qua InvoiceAdjustment hiện có.
+
+## Snapshot giảm giá hóa đơn mới — 11/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-DISCOUNT-001: Invoice thêm subtotal?: integer VND 0–MAX_MONEY và discount?: {type: AMOUNT|PERCENT, value: number, amount: integer VND}. Input chỉ nhận type/value; backend tính amount và total=subtotal−amount, lưu cùng transaction hiện có. Không nhận subtotal/amount/tổng sau giảm do client tính. Dòng serviceItems/packageItems/productItems giữ nguyên giá bán trước giảm; paid/debt ở cấp Invoice dùng total sau giảm. Không index/collection/migration/backfill mới. Hóa đơn cũ thiếu field được đọc là không giảm giá, subtotal=total.
+
+Audit invoiceDiscount lưu invoiceId/subtotal/discount/total cùng actorId/thời điểm trong transaction tạo, idempotency bao cả giảm giá và thu tiền. Snapshot giảm giá giữ nguyên qua các luồng chỉnh nội dung/tổng/VOID hiện có; UI/PDF thêm delta Điều chỉnh sau lập = total hiện hành − (subtotal gốc − discount.amount) khi khác 0. Không tạo chức năng cập nhật discount; InvoiceAdjustment trước/sau vẫn giữ đầy đủ snapshot. performerName đã được reader resolve cùng spa theo performerId từng dòng; PDF dùng đúng projection này, không dùng performer chung thay dòng trống.
+
 ## Nhận diện dòng trong form sửa thống nhất — 10/11/2026
 
 PROPOSED kỹ thuật cho BR-INV-UNIFIED-EDIT-001 CONFIRMED: không đổi schema/collection/index hoặc migration. reconciliation.content.serviceCorrections[] bổ sung lineNumber (sourceIndex + 1 tại lần sửa) cạnh lineId, serviceName, before/after. Preview, InvoiceAdjustment và audit lưu số dòng cùng lịch sử hiện có; số dòng chỉ để hiển thị, không làm khóa liên kết. Lịch sử cũ thiếu lineNumber vẫn đọc được. Bút toán hoa hồng giữ originalLedgerIds/adjustmentId; không sửa nguồn thu hay snapshot payroll đã chốt khi đổi KTV. canCorrectPerformedServices trong GET giữ tương thích nhưng giao diện không dùng để dựng nút riêng.

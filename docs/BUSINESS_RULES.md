@@ -1,5 +1,41 @@
 # SpaCare — Business Rules
 
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED — BR-DISCOUNT-PROGRAM-RETIRED-001: ngừng toàn bộ quản lý và tự áp dụng chương trình, kể cả bản ghi enabled=true hoặc chồng ngày còn lưu. invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/checkout chỉ dùng discount tiền/% nhập trực tiếp; completeAppointment không tra hoặc áp chương trình, không bổ sung giảm thủ công vào luồng này. Thanh toán hóa đơn cũ không tính lại giảm giá.
+
+Giữ nguyên collection, bản ghi và các snapshot programId/programCode/programName/type/value/amount/subtotal. Detail/PDF/báo cáo đọc snapshot đã lưu, không join chương trình để tính lại tiền. Lịch sử audit quản lý chương trình tiếp tục đọc được. Quyết định này thay thế BR-DISCOUNT-PROGRAM-001 về quản lý, xóa cấu hình và tự áp dụng. Giữ các quy tắc giảm thủ công và transaction/idempotency/audit hiện có.
+
+## [Lịch sử — đã được thay thế] BR-DISCOUNT-PROGRAM-001 — Chương trình theo ngày — 11/11/2026
+
+CONFIRMED bổ sung: chỉ active OWNER cùng spa xóa chương trình chưa được dùng, sau xác nhận. Chặn xóa khi có tham chiếu trong hóa đơn hoặc lịch sử áp dụng, kể cả chương trình đang tắt; hướng dẫn tắt thay vì xóa. Xóa không thay đổi hóa đơn, khoản thu, công nợ hay snapshot. Công tắc chương trình đã tạo lưu ngay, bật lại vẫn kiểm chồng lấn; sửa/tắt chương trình đang chạy vẫn cần xác nhận.
+
+PROPOSED kỹ thuật: deleteDiscountProgram kiểm expectedUpdatedAt và confirmDelete=true trong cùng Control transaction với kiểm tham chiếu Invoice.discount, Invoice.documentHistory, InvoiceAdjustment.before/after và audit invoiceDiscount. Chỉ xóa cấu hình chưa dùng; audit lưu toàn bộ before, after=null. Idempotency retry trả kết quả cũ sau khi bản cấu hình đã xóa; lỗi audit rollback cả xóa. Control tuần tự hóa xóa với tạo hóa đơn để tránh tham chiếu mất nguồn.
+
+CONFIRMED: chỉ active OWNER cùng spa quản lý; tên không trống, ngày lịch thực, endsOn >= startsOn, percent nguyên 0–100 (cùng Math.round tới VNĐ đang dùng cho giảm hóa đơn), enabled bắt buộc. Ngày áp dụng = spaDay(Invoice.createdAt) tại Asia/Ho_Chi_Minh; issuedOn hồi tố dùng ngày hồi tố đó. Đầu/cuối bao gồm. Không chương trình bật nào trong cùng phạm vi có startsOn <= endsOn của chương trình kia và endsOn >= startsOn của chương trình kia. Chương trình tắt được trùng; bật lại vẫn phải kiểm tra chồng lấn. Trùng ngày biên cũng là chồng lấn.
+
+CONFIRMED: chương trình bật trong ngày tự thay giảm thủ công ở hóa đơn bán mới đủ điều kiện có tạm tính dương. Không cộng dồn, kể cả chương trình 0%; gửi thủ công khi đang có chương trình bị từ chối rõ ràng. Không có chương trình hiệu lực giữ giảm thủ công. Snapshot được chốt lúc tạo, gồm mã/tên/ID/phần trăm/số giảm; thay đổi sau đó không tính lại hóa đơn cũ. Giá dòng và hoa hồng dịch vụ cố định giữ nguyên; hoa hồng gói vẫn theo thực nhận, không theo tạm tính. Không áp chương trình vào thanh toán/cọc/thẻ/điều chỉnh hóa đơn cũ, openingBalance, GIFT hoặc buổi gói thuần 0đ.
+
+PROPOSED kỹ thuật: phạm vi duy nhất ALL_NEW_SALES mỗi spa; invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/checkout và completeAppointment thực sự tạo hóa đơn mới được áp dụng. SESSION chỉ phần bán thêm dương; gói/quà nguồn không đổi. Checkout áp phần trăm độc lập trên từng chứng từ bán mới nếu giỏ tạo nhiều chứng từ, làm tròn riêng trên từng hóa đơn; không phân bổ giảm ngược vào dòng. Guard giảm thủ công cho giỏ nhiều chứng từ giữ nguyên. Đây là lựa chọn triển khai, không mở thêm chính sách chia giảm giá giữa dòng/phạm vi.
+
+PROPOSED kỹ thuật: OWNER sửa/tắt chương trình đang bật và trong ngày chạy phải gửi confirmedRunning=true và expectedUpdatedAt đúng. Backend kiểm source trong transaction, không tin trạng thái form. Mọi quản lý qua Control/idempotency/audit; tạo hai khoảng trùng đồng thời chỉ một thành công. Reader/creator gặp dữ liệu bật chồng lấn trả 409. Preview form có discountProgram {id,updatedAt} hoặc null; nguồn thay đổi sau preview trả 409, yêu cầu tải lại form, không âm thầm đổi số tiền trước thu. Client cũ không gửi preview vẫn được server tự áp từ nguồn đã kiểm tra. Retry key cũ giữ snapshot cũ dù chương trình đã sửa/tắt.
+
+## BR-INV-DEADLINE-001 — Hạn thanh toán tùy chọn — 11/11/2026
+
+CONFIRMED: trường Hạn thanh toán của form tạo là tùy chọn; trống/không gửi nghĩa là không có hạn, không suy từ ngày hóa đơn hoặc tự cộng số ngày. Hạn nhập phải là ngày lịch thực; giữ kiểm tra hạn gói không trước ngày bán hiện có. Khi sửa, vẫn có thể bỏ trống/xóa hạn bằng content.dueDate=null theo quy trình điều chỉnh hiện hành; không thay quyền, xác nhận hay audit.
+
+CONFIRMED: chỉ hiển thị dòng Hạn thanh toán ở chi tiết/PDF khi Invoice.dueDate có giá trị và Invoice.total > Invoice.paid. Không phụ thuộc Invoice.status; total đã bao gồm giảm giá, không cộng giá dòng hoặc trừ giảm giá lần hai. Tất toán chỉ ẩn dòng hiển thị, không sửa/xóa ngày hạn trong dữ liệu. Luồng báo cáo/công nợ/khoản thu và các màn hình ngoài phạm vi giữ nguyên.
+
+## BR-INV-DISCOUNT-001 — Giảm giá lúc tạo — 11/11/2026
+
+CONFIRMED theo yêu cầu người dùng: giảm theo tiền hoặc phần trăm chỉ tại lúc tạo; không sửa/thêm trên hóa đơn cũ. Giá dòng/hoa hồng dịch vụ cố định không đổi, không phân bổ giảm giá ngược vào dòng. Invoice.total là tổng sau giảm, mọi thu/cọc/thẻ/công nợ/báo cáo giữ nguồn tổng hiện hành; hoa hồng gói vẫn 5% thực thu theo cơ chế cũ. Tổng và số giảm không âm, số giảm không vượt tạm tính. Giữ thu theo tổng hóa đơn, không tạo phân bổ dòng mới. Quy tắc này thay phần chưa có giảm giá trong BR-INV-CONTENT-001 và bổ sung phép trừ giảm giá vào BR-INV-PRICE-001.
+
+PROPOSED kỹ thuật: AMOUNT là số nguyên VNĐ 0–MAX_MONEY; PERCENT là số nguyên 0–100, amount = Math.round(subtotal × value / 100). Đây là lựa chọn về độ chính xác/làm tròn, chưa phải spa xác nhận riêng. Snapshot subtotal/discount bất biến sau tạo; điều chỉnh tổng qua quy trình cũ được hiển thị riêng là Điều chỉnh sau lập, không đổi loại/giá trị giảm hoặc tính lại phần trăm. Không tự điều chỉnh hóa đơn lịch sử.
+
+PROPOSED kỹ thuật về phạm vi: invoice/serviceInvoice/sellPackage/sellProduct/productInvoice và checkout tạo một hóa đơn chung nhận discount cấp ngoài. Giỏ nhiều chứng từ bị chặn nguyên tử khi có discount; không tự chia. SESSION chỉ hỗ trợ khi có dịch vụ/sản phẩm bán thêm có tổng dương, các buổi đã mua vẫn 0đ. GIFT, buổi gói thuần 0đ, openingBalance và các thao tác khác từ chối discount. Áp sau ráp dòng/gộp gói và trước thu/thẻ; lỗi rollback cả hóa đơn/kho/gói/hoa hồng/tiền/audit. Retry cùng key/nội dung không nhân đôi, đổi giảm giá với key cũ bị chặn.
+
+CONFIRMED về trình bày: KTV từng dòng dịch vụ ở chi tiết/PDF, thiếu ghi Chưa có, không fallback người tạo hoặc người chung vào dòng thiếu. PDF có Tạm tính, Giảm giá (loại và số tiền), Tổng thanh toán sau giảm, Đã trả, Còn nợ; giữ lời cảm ơn. Bỏ hai cảnh báo tra cứu/thời điểm xuất và dòng Xuất lúc của PDF hóa đơn; PDF báo cáo khác giữ cách xuất hiện có.
+
 ## BR-INV-UNIFIED-EDIT-001 — Một form sửa tại chi tiết — 10/11/2026
 
 CONFIRMED: chỉ OWNER sửa qua Xử lý hóa đơn → Sửa hóa đơn; bỏ nút Đính chính dịch vụ / kỹ thuật viên riêng. Dùng chung form sửa từ danh sách, điền sẵn đúng dịch vụ và KTV từng dòng, kể cả nhiều lượt trùng serviceId. Bắt lý do, xem trước giá trị trước/sau, tổng/đã thanh toán/công nợ, chênh lệch và hoa hồng trước xác nhận. Giữ đầy đủ người sửa/thời điểm/lý do/nội dung trong chứng từ và audit. Thay mô tả điểm vào riêng trong BR-INV-TECH-UI-001; không thay chính sách người tư vấn bán gói hoặc hoàn tiền thực tế.
