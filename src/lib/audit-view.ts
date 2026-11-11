@@ -3,6 +3,7 @@ import {discountLabel} from './invoice-discount';
 type Row = Record<string, any>;
 export const auditActions: Record<string, string> = {
   saveDiscountProgram:'Tạo / sửa chương trình giảm giá',setDiscountProgramStatus:'Bật / tắt chương trình giảm giá',
+  deleteDiscountProgram:'Xóa chương trình giảm giá chưa dùng',
   invoiceDiscount:'Giảm giá khi tạo hóa đơn',
   correctInvoice:'Sửa sai hóa đơn bằng chứng từ điều chỉnh',voidInvoice:'Vô hiệu hóa hóa đơn có đối soát',refundInvoiceAdjustment:'Ghi nhận hoàn tiền điều chỉnh thực tế',
   updateCustomerTreatment: 'Sửa gói trong hồ sơ khách hàng',
@@ -49,6 +50,7 @@ export function auditValue(key: string, value: any, data: Row): string {
 export function auditLines(details: Row | null | undefined, data: Row): string[] {
   const d = details || {};
   const lines: string[] = [];
+  if(d.before&&d.after===null&&d.confirmDelete)lines.push(`Đã xóa chương trình: ${d.before.name} · ${d.before.code}`);
   if(d.discount)lines.push(`Giảm giá (${discountLabel(d.discount)}): ${formatCurrency(d.discount.amount)}`);
   if(d.discount?.programName)lines.push(`Chương trình: ${d.discount.programName} · ${d.discount.programCode}`);
   const changed = new Set<string>();

@@ -1,12 +1,19 @@
 # API nội bộ
 
-## Chương trình giảm giá theo ngày — 11/11/2026
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+Contract PROPOSED kỹ thuật thực hiện BR-DISCOUNT-PROGRAM-RETIRED-001 CONFIRMED: gỡ GET /api/discount-programs và section discount_programs. POST operations không còn saveDiscountProgram/setDiscountProgramStatus/deleteDiscountProgram, trả lỗi thao tác không hợp lệ. Payload discountProgram cũ không còn được xử lý hoặc dùng để chọn chương trình; trường dư vẫn theo cơ chế parse hiện có, không tạo snapshot chương trình.
+
+Các action tạo hóa đơn/checkout giữ discount?: {type:AMOUNT|PERCENT,value:number} thủ công và kiểm tra hiện có; completeAppointment không tra chương trình. GET invoice, báo cáo, PDF vẫn trả/hiển thị snapshot chương trình cũ; không tính lại total/paid/nợ hay thay lịch sử. API hạn thanh toán, KTV và thanh toán giữ nguyên.
+
+## [Lịch sử — đã được thay thế] Chương trình giảm giá theo ngày — 11/11/2026
 
 Contract PROPOSED kỹ thuật thực hiện BR-DISCOUNT-PROGRAM-001 CONFIRMED:
 
 - GET /api/discount-programs?manage=1&page=1: chỉ OWNER; phân trang 20, rows/total/page/today, sort startsOn/_id giảm. STAFF kể cả cashier nhận 403. Workspace /workspace/discount_programs nằm trong Quản trị và chỉ OWNER truy cập.
 - GET /api/discount-programs?day=YYYY-MM-DD: OWNER/STAFF active cùng spa được xem chương trình áp dụng để preview bán/hoàn thành lịch; không có chức năng quản lý. Ngày mặc định hôm nay Việt Nam; trả {program,day}, program=null khi không hiệu lực, 409 khi nhiều chương trình bật cùng ngày. Private/no-store. STAFF không được dùng endpoint này để sửa cấu hình hoặc xem danh sách quản lý.
-- POST operations saveDiscountProgram {id?,expectedUpdatedAt?,name,startsOn,endsOn,percent,enabled,confirmedRunning?}; tạo mới không id, sửa có id/phiên bản. setDiscountProgramStatus {id,expectedUpdatedAt,enabled,confirmedRunning?}. Strict objects, ngày thực, phần trăm nguyên 0–100. Chỉ active OWNER từ DB; ID cùng spa, thiếu nguồn 404, stale/overlap/thiếu xác nhận đang chạy 409; audit, transaction/idempotency/Control như action khác. Không DELETE.
+- POST operations saveDiscountProgram {id?,expectedUpdatedAt?,name,startsOn,endsOn,percent,enabled,confirmedRunning?}; tạo mới không id, sửa có id/phiên bản. setDiscountProgramStatus {id,expectedUpdatedAt,enabled,confirmedRunning?}. Strict objects, ngày thực, phần trăm nguyên 0–100. Chỉ active OWNER từ DB; ID cùng spa, thiếu nguồn 404, stale/overlap/thiếu xác nhận đang chạy 409; audit, transaction/idempotency/Control như action khác.
+- POST /api/operations với action=deleteDiscountProgram và data={id,expectedUpdatedAt,confirmDelete:true}; strict object, Idempotency-Key bắt buộc như các operation. Chỉ active OWNER cùng spa; STAFF 403, nguồn khác spa/không tồn tại 404, phiên bản cũ hoặc từng áp dụng 409. Kiểm Invoice hiện tại/lịch sử, InvoiceAdjustment và audit invoiceDiscount trong Control transaction; đã dùng trả hướng dẫn tắt. Thành công theo envelope operation hiện có, audit before đầy đủ/after=null, retry cùng key không xóa/audit lần hai. Không thêm HTTP DELETE hoặc sửa API hóa đơn.
 - Payload tạo mới hiện có thêm discountProgram?: {id,updatedAt}|null, chỉ để đối chiếu preview; không tin client cho tỷ lệ/tên/số giảm. Backend chọn theo ngày hóa đơn thực lưu (kể cả issuedOn), áp trước cashCard/payments và sau ráp giỏ. Có chương trình thì không nhận discount thủ công; snapshot lấy backend. Nguồn khác preview trả 409; UI yêu cầu tải lại. Checkout gửi ở cấp ngoài, không trong action con. completeAppointment hỗ trợ preview chương trình khi tạo hóa đơn mới, không thêm giảm thủ công vào luồng này, không sửa hóa đơn đã liên kết.
 
 GET invoice và báo cáo giữ discount snapshot; báo cáo Hóa đơn & doanh số hiện tên/phần trăm/số giảm trong nội dung từng hóa đơn. Aggregate doanh số/nợ giữ total/paid sau giảm, dòng tiền từ CashEntry; không cộng chương trình như doanh thu hoặc khoản chi mới. Điều chỉnh hóa đơn không nhận programme mới, không sửa snapshot giảm cũ.

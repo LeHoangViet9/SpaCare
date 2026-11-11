@@ -1,6 +1,14 @@
 # SpaCare — Business Requirements
 
-## Chương trình giảm giá theo ngày — 11/11/2026
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu mới nhất: gỡ Chương trình giảm giá theo ngày khỏi menu, màn hình, form tạo/sửa, bật/tắt/xóa và API/backend quản lý. Không tự áp dụng chương trình khi lập hóa đơn, checkout hoặc hoàn thành lịch hẹn. Hóa đơn mới chỉ nhận giảm giá tiền/% người dùng nhập trong form lập hóa đơn; giữ giảm giá thủ công, hạn thanh toán, KTV, PDF, thanh toán và báo cáo.
+
+Không xóa collection/bản ghi chương trình hoặc snapshot; hóa đơn cũ giữ tiền, đã thu, nợ, lịch sử và nội dung PDF. Không sửa production, migration xóa dữ liệu. Quyết định này thay thế toàn bộ chính sách quản lý/tự áp dụng chương trình bên dưới.
+
+## [Lịch sử — đã được thay thế] Chương trình giảm giá theo ngày — 11/11/2026
+
+CONFIRMED theo yêu cầu giao diện mới nhất: công tắc bật/tắt riêng lưu ngay trên chương trình đã tạo; nút bút chì sửa và thùng rác xóa có nhãn truy cập được. Xác nhận trước khi sửa/tắt chương trình đang chạy và trước mọi lần xóa. Chỉ OWNER được xóa chương trình chưa từng được áp dụng; chương trình đã dùng bị chặn xóa, hướng dẫn tắt để giữ lịch sử. Yêu cầu này thay giới hạn không xóa cứng chương trình chưa dùng trước đây; lịch sử tài chính không bị xóa.
 
 CONFIRMED theo yêu cầu mới nhất: OWNER tạo/sửa/bật/tắt chương trình có tên, ngày đầu/cuối, phần trăm nguyên 0–100 theo giảm giá hiện có, trạng thái bật/tắt. Không cho chương trình đang bật cùng phạm vi chồng ngày; tính hai đầu và ngày hóa đơn theo Việt Nam. Tự áp dụng cho hóa đơn bán mới đủ điều kiện có tổng trước giảm dương, không cộng thủ công; không có chương trình thì giữ giảm thủ công. Giữ giá dòng, hoa hồng và thu tiền/công nợ theo tổng sau giảm.
 

@@ -8,7 +8,6 @@ import { workspaceQuery } from '../src/lib/workspace-query';
 import { operate } from '../src/lib/operations';
 import { spaDay } from '../src/lib/rules';
 import {DiscountProgram} from '../src/lib/models';
-import {readDiscountPrograms} from '../src/lib/discount-program-read';
 import {invoiceExportDocument} from '../src/lib/export-read';
 
 // In-memory model doubles only. Any attempt to open a database connection fails.
@@ -32,15 +31,16 @@ function matches(row: any, filter: any): boolean {
     if (key === '$and') return value.every((part: any) => matches(row, part));
     if (key === '$or') return value.some((part: any) => matches(row, part));
     if (key === '$nor') return !value.some((part: any) => matches(row, part));
-    if (!value || typeof value !== 'object' || value instanceof mongoose.Types.ObjectId || value instanceof Date) return equal(row[key], value);
+    const actual=key.split('.').reduce((v:any,part:string)=>v?.[part],row);
+    if (!value || typeof value !== 'object' || value instanceof mongoose.Types.ObjectId || value instanceof Date) return equal(actual, value);
     return Object.entries(value).every(([op, expected]: any) => {
       switch (op) {
-        case '$ne': return !equal(row[key], expected);
-        case '$exists': return (row[key] !== undefined) === expected;
-        case '$in': return expected.some((v: any) => equal(row[key], v));
-        case '$gte': return expected instanceof Date ? new Date(row[key]) >= expected : row[key] >= expected;
-        case '$lte': return row[key] <= expected;
-        case '$lt': return expected instanceof Date ? new Date(row[key]) < expected : row[key] < expected;
+        case '$ne': return !equal(actual, expected);
+        case '$exists': return (actual !== undefined) === expected;
+        case '$in': return expected.some((v: any) => equal(actual, v));
+        case '$gte': return expected instanceof Date ? new Date(actual) >= expected : actual >= expected;
+        case '$lte': return actual <= expected;
+        case '$lt': return expected instanceof Date ? new Date(actual) < expected : actual < expected;
         default: assert.fail('Unsupported fixture predicate: ' + op);
       }
     });
@@ -145,57 +145,44 @@ function setup(received:number,closed=false){
 }
 const call=(action:string,data:any,key=randomUUID())=>operate(actor,action,data,key);
 function reset(){setup(0);state.Invoice=[];state.Payment=[];state.CashEntry=[];state.Service[0].commission=1000;return {customerId:state.Customer[0]._id,serviceId:state.Service[0]._id};}
-const nextDay=spaDay(new Date(Date.now()+86400000));
-const input={name:'Synthetic program',startsOn:oldDay,endsOn:nextDay,percent:25,enabled:true};
-const version=(id:string)=>new Date(state.DiscountProgram.find(row=>row._id===id).updatedAt).toISOString();
-let refs=reset();const key=randomUUID(),created=await call('saveDiscountProgram',input,key);
-assert.deepEqual(await call('saveDiscountProgram',input,key),created);assert.equal(state.DiscountProgram.length,1);
-assert.equal(state.Audit.filter(row=>row.action==='saveDiscountProgram').length,1);
-for(const data of [{...input,name:'Overlap'},{...input,startsOn:nextDay,endsOn:nextDay}]){
- const before=clone(state);await assert.rejects(call('saveDiscountProgram',data),/chồng lấn/);assert.deepEqual(state,before);
+
+const refs=reset();
+const program=add(DiscountProgram,{code:'GG_OLD',name:'Chương trình cũ',startsOn:oldDay,endsOn:today,percent:25,enabled:true});
+add(DiscountProgram,{...program,_id:objectId(),code:'GG_OVERLAP'});
+const programs=clone(state.DiscountProgram);
+for(const method of ['find','findOne','exists']) (DiscountProgram as any)[method]=()=>assert.fail('New operations must not read retired programs');
+// Persisted historical snapshots remain readable without configuration lookups.
+const historical=add(Invoice,{customerId:refs.customerId,serviceId:refs.serviceId,kind:'SERVICE',description:'Historical sale',subtotal:30000,discount:{type:'PERCENT',value:25,amount:7500,programId:program._id,programCode:program.code,programName:program.name},total:22500,paid:10000,status:'PARTIAL',documentHistory:[{snapshot:{total:22500,discount:{programName:program.name}}}]});
+const receipt=add(CashEntry,{customerId:refs.customerId,actorId:ownerId,amount:10000,method:'CASH',direction:'IN',kind:'PAYMENT',day:today,reversed:false});
+add(Payment,{invoiceId:historical._id,receiptId:receipt._id,amount:10000,reversed:false});
+const saved=clone(historical),sources=clone([state.Payment,state.CashEntry]);
+const pdf=()=>invoiceExportDocument({invoice:state.Invoice[0],customer:{name:'Synthetic'},gifts:[],adjustments:[]} as any);
+const oldPdf=pdf();
+assert.ok(oldPdf.tables[0].rows.some(row=>row[0]==='Chương trình giảm giá'&&row[1].includes(program.name)));
+for(const action of ['saveDiscountProgram','setDiscountProgramStatus','deleteDiscountProgram']){
+ const before=clone(state);await assert.rejects(call(action,{id:program._id}),/Thao tác không hợp lệ/);assert.deepEqual(state,before);
 }
-await call('saveDiscountProgram',{...input,enabled:false});assert.equal(state.DiscountProgram.length,2);
-const beforeConfirm=clone(state);
-await assert.rejects(call('setDiscountProgramStatus',{id:created.id,expectedUpdatedAt:version(created.id),enabled:false}),/xác nhận/);
-assert.deepEqual(state,beforeConfirm);
-const sale={...refs,items:[{serviceId:refs.serviceId,performerId:ownerId},{serviceId:refs.serviceId,performerId:ownerId}],payments:[{amount:20000,method:'CASH',receivedOn:today,receivedConfirmation:true},{amount:10000,method:'BANK_TRANSFER',receivedOn:today,receivedConfirmation:true}]};
-const sold=await call('serviceInvoice',sale),invoice=state.Invoice[0];
-assert.equal(invoice.subtotal,60000);assert.equal(invoice.total,45000);assert.equal(invoice.paid,30000);
-assert.deepEqual(invoice.serviceItems.map((row:any)=>row.total),[30000,30000]);assert.deepEqual(state.InvoiceLineCommission.map(row=>row.amount),[1000,1000]);
-assert.deepEqual([invoice.discount.programId,invoice.discount.programName,invoice.discount.value,invoice.discount.amount],[created.id,input.name,25,15000]);
+const fresh=await call('invoice',refs);
+assert.equal(state.Invoice.find(row=>row._id===fresh.id).total,30000);
+assert.equal(state.Invoice.find(row=>row._id===fresh.id).discount,undefined);
+for(const discount of [{type:'AMOUNT',value:1500},{type:'PERCENT',value:10}]){
+ const key=randomUUID(),result=await call('invoice',{...refs,discount},key);
+ assert.equal(state.Invoice.find(row=>row._id===result.id).total,discount.type==='AMOUNT'?28500:27000);
+ assert.equal(state.Invoice.find(row=>row._id===result.id).discount.programId,undefined);
+ assert.deepEqual(await call('invoice',{...refs,discount},key),result);
+}
+const plain=await call('checkout',{customerId:refs.customerId,actions:[{action:'serviceInvoice',data:{items:[{serviceId:refs.serviceId,performerId:ownerId}]}}]});
+assert.equal(state.Invoice.find(row=>row._id===plain.invoiceId).total,30000);
+assert.equal(state.Invoice.find(row=>row._id===plain.invoiceId).discount,undefined);
+const sold=await call('checkout',{customerId:refs.customerId,discount:{type:'PERCENT',value:10},actions:[{action:'serviceInvoice',data:{items:[{serviceId:refs.serviceId,performerId:ownerId}]}}],payments:[{amount:10000,method:'CASH',receivedOn:today,receivedConfirmation:true}]});
+const bill=state.Invoice.find(row=>row._id===sold.invoiceId);
+assert.equal(bill.total,27000);assert.equal(bill.paid,10000);assert.equal(bill.serviceItems[0].total,30000);
+assert.equal(state.InvoiceLineCommission.at(-1).amount,1000);
+const appointment=add((await import('../src/lib/models')).Appointment,{customerId:refs.customerId,serviceId:refs.serviceId,staffId:ownerId,startAt:new Date(),status:'CONFIRMED'});
+const completed=await call('completeAppointment',{id:appointment._id});
+assert.equal(state.Invoice.find(row=>row._id===completed.invoiceId).total,30000);
+assert.equal(state.Invoice.find(row=>row._id===completed.invoiceId).discount,undefined);
+assert.deepEqual(state.Invoice[0],saved);assert.deepEqual([state.Payment.slice(0,1),state.CashEntry.slice(0,1)],sources);
+assert.deepEqual(state.DiscountProgram,programs);assert.deepEqual(pdf(),oldPdf);
 const report=await readReport(actor,workspaceQuery(new URLSearchParams({section:'reports',from:today,to:today})));
-assert.equal(report.summary.total,45000);assert.equal(report.summary.debt,15000);assert.equal(report.inflow,30000);
-assert.equal((report.invoices[0] as any).discount.programName,input.name);
-const saved=clone(invoice),paymentSources=clone([state.Payment,state.CashEntry]);
-const pdf=invoiceExportDocument({invoice,customer:{name:'Synthetic'},gifts:[],adjustments:[]} as any);
-assert.ok(pdf.tables[0].rows.some(row=>row[0]==='Chương trình giảm giá'&&row[1].includes(input.name)));
-const beforeStack=clone(state);
-await assert.rejects(call('invoice',{...refs,discount:{type:'AMOUNT',value:1}}),/không cộng dồn/);assert.deepEqual(state,beforeStack);
-await assert.rejects(call('invoice',{...refs,discountProgram:null}),/đã thay đổi/);assert.deepEqual(state,beforeStack);
-const oldVersion=version(created.id);
-await call('saveDiscountProgram',{...input,id:created.id,expectedUpdatedAt:oldVersion,name:'Updated program',percent:50,confirmedRunning:true});
-assert.deepEqual(state.Invoice[0],saved);assert.deepEqual([state.Payment,state.CashEntry],paymentSources);
-await assert.rejects(call('invoice',{...refs,discountProgram:{id:created.id,updatedAt:oldVersion}}),/đã thay đổi/);
-await call('invoice',refs);assert.equal(state.Invoice.at(-1).total,15000);
-await call('setDiscountProgramStatus',{id:created.id,expectedUpdatedAt:version(created.id),enabled:false,confirmedRunning:true});
-assert.deepEqual(state.Invoice[0],saved);
-await call('invoice',{...refs,discount:{type:'PERCENT',value:10}});assert.equal(state.Invoice.at(-1).total,27000);assert.equal(state.Invoice.at(-1).discount.programId,undefined);
-assert.equal(state.Audit.filter(row=>row.action==='setDiscountProgramStatus').length,1);
-const staff={...actor,role:'STAFF' as const,cashier:true};
-state.User[0].role='STAFF';state.User[0].cashier=true;
-for(const action of ['saveDiscountProgram','setDiscountProgramStatus'])await assert.rejects(operate(staff,action,action==='saveDiscountProgram'?input:{id:created.id,expectedUpdatedAt:version(created.id),enabled:true},randomUUID()),(e:any)=>e.status===403);
-await assert.rejects(readDiscountPrograms(staff,new URLSearchParams('manage=1')),(e:any)=>e.status===403);
-for(const percent of [0,100]){
- refs=reset();await call('saveDiscountProgram',{...input,percent});const sale=await call('invoice',refs);
- assert.equal(state.Invoice[0].total,percent===0?30000:0);assert.equal(state.Invoice[0].discount.amount,percent===0?0:30000);assert.equal(state.Payment.length,0);
-}
-refs=reset();await call('saveDiscountProgram',{...input,startsOn:today});
-await call('invoice',{...refs,issuedOn:oldDay});assert.equal(state.Invoice[0].discount,undefined);
-await call('invoice',{...refs,total:0});assert.equal(state.Invoice.at(-1).discount,undefined);
-// Corrupt historical overlaps fail closed rather than picking a program by DB order.
-add(DiscountProgram,{...input,code:'GG_CORRUPT'});const beforeOverlap=clone(state);
-await assert.rejects(call('invoice',refs),/chồng lấn/);assert.deepEqual(state,beforeOverlap);
-await assert.rejects(readDiscountPrograms(actor,new URLSearchParams('day='+today)),/chồng lấn/);
-reset();for(let index=0;index<23;index++)add(DiscountProgram,{...input,code:'GG'+index,enabled:false});
-const page=await readDiscountPrograms(actor,new URLSearchParams('manage=1&page=2'));
-assert.equal((page as any).total,23);assert.equal((page as any).rows.length,3);assert.equal((page as any).page,2);
+assert.equal((report.invoices.find((row:any)=>String(row._id)===historical._id) as any).discount.programName,program.name);

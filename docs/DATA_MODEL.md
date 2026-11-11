@@ -1,10 +1,18 @@
 # SpaCare — Data Model
 
-## DiscountProgram và snapshot — 11/11/2026
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED: giữ model DiscountProgram, collection discountprograms và toàn bộ indexes/bản ghi hiện có để bảo toàn dữ liệu. Invoice.discount.programId/programCode/programName cùng type/value/amount và subtotal giữ nguyên để đọc lịch sử. Không migration/backfill/xóa dữ liệu hoặc viết lại hóa đơn, Payment, CashEntry hay audit.
+
+PROPOSED kỹ thuật: bỏ reader cấu hình và logic quản lý/tự áp dụng khỏi runtime. Hóa đơn mới lưu snapshot giảm thủ công theo model hiện hành, không thêm tham chiếu chương trình. Schema cũ vẫn hiện diện trong allModels cho kiểm tra tương thích; điều này không cấp lại API ghi chương trình.
+
+## [Lịch sử — đã được thay thế] DiscountProgram và snapshot — 11/11/2026
 
 PROPOSED kỹ thuật cho BR-DISCOUNT-PROGRAM-001: collection discountprograms qua model DiscountProgram {spaId,code,name,startsOn,endsOn,percent,enabled,scope:ALL_NEW_SALES,createdAt,updatedAt}. Mã ổn định GG + ObjectId in hoa; API không cho sửa code/spaId/scope. Index unique {spaId,code} và lookup {spaId,enabled,startsOn,endsOn}; chồng khoảng được kiểm bởi operations trong Control transaction (unique index đơn không đủ kiểm overlap). Model thêm vào allModels để setup/preflight test biết schema; không tự chạy setup/migration lên production.
 
-Invoice.discount giữ type/value/amount hiện có, thêm optional programId:ObjectId/programCode:String/programName:String. value là phần trăm snapshot, amount là số giảm thực tế; Invoice.subtotal/total/paid vẫn là nguồn tiền cũ. Không join cấu hình hiện tại để hiển thị lịch sử, không backfill invoice cũ. Audit saveDiscountProgram/setDiscountProgramStatus giữ yêu cầu, before/after, actor/thời điểm; audit invoiceDiscount chứa snapshot chương trình trong transaction tạo. Không xóa cứng programme hoặc tài chính. Không đổi index hóa đơn, Payment, CashEntry, Treatment hoặc hoa hồng.
+Invoice.discount giữ type/value/amount hiện có, thêm optional programId:ObjectId/programCode:String/programName:String. value là phần trăm snapshot, amount là số giảm thực tế; Invoice.subtotal/total/paid vẫn là nguồn tiền cũ. Không join cấu hình hiện tại để hiển thị lịch sử, không backfill invoice cũ. Audit saveDiscountProgram/setDiscountProgramStatus giữ yêu cầu, before/after, actor/thời điểm; audit invoiceDiscount chứa snapshot chương trình trong transaction tạo. Chỉ được xóa cứng chương trình chưa dùng theo yêu cầu mới; không xóa chương trình đã áp dụng hoặc lịch sử tài chính. Không đổi index hóa đơn, Payment, CashEntry, Treatment hoặc hoa hồng.
+
+PROPOSED kỹ thuật bổ sung: deleteDiscountProgram lưu bản cấu hình đầy đủ vào Audit.details.before và after=null trong cùng transaction. Guard kiểm programId dạng ObjectId/string trong Invoice.discount, documentHistory.snapshot.discount/documentHistory.discount, InvoiceAdjustment.before/after.discount và Audit invoiceDiscount.details.discount. Không thêm schema/index hoặc migration cho thao tác xóa; không xóa các tham chiếu để cho phép xóa cấu hình.
 
 ## Hạn thanh toán tùy chọn — 11/11/2026
 

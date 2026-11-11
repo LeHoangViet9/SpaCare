@@ -272,3 +272,43 @@ form {
 .invoice-detail-signatures { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
 .invoice-detail-signatures .invoice-signature:last-child { margin-bottom:0; }
 @media (max-width:480px) { .invoice-detail-summary { padding:12px; } .invoice-detail-summary .invoice-detail-money { grid-template-columns:1fr; gap:8px; } .invoice-detail-money > span { flex-direction:row; justify-content:space-between; align-items:baseline; gap:12px; } }
+
+.discount-program-manager .section-head { align-items:center; gap:16px; }
+.discount-program-manager h2 { margin:0 0 4px; }
+.discount-program-manager .program-description { margin:0; color:var(--muted,#65716b); font-size:13px; }
+.program-card-list { display:grid; gap:12px; margin-top:18px; }
+.program-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:20px; padding:16px; border:1px solid var(--line,#dde4dc); border-radius:14px; background:#fff; }
+.program-card-content { min-width:0; }
+.program-card-title { display:flex; align-items:baseline; flex-wrap:wrap; gap:10px; }
+.program-card-title h3 { margin:0; font-size:16px; overflow-wrap:anywhere; }
+.program-percent { font-weight:700; color:#285d49; background:#edf4ed; border-radius:8px; padding:3px 9px; }
+.program-dates { margin:8px 0 4px; color:#56665c; font-size:13px; }
+.program-code { display:block; color:#768179; overflow-wrap:anywhere; font-size:11px; }
+.program-row-actions,.program-form-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.program-switch { display:inline-flex; align-items:center; gap:8px; border:0; border-radius:8px; background:transparent; padding:4px; min-height:44px; font-weight:600; color:#506258; }
+.program-switch:hover { background:#f0f4ef; }
+.program-switch:focus-visible,.program-icon-button:focus-visible { outline:3px solid #5d9f83; outline-offset:3px; }
+.program-switch-track { position:relative; display:block; width:48px; height:28px; border-radius:20px; background:#87928c; flex:none; }
+.program-switch-thumb { position:absolute; left:2px; top:2px; width:24px; height:24px; background:white; border-radius:50%; box-shadow:0 1px 3px #0003; transition:transform .15s ease; }
+.program-switch[aria-checked="true"] .program-switch-track { background:#327957; }
+.program-switch[aria-checked="true"] .program-switch-thumb { transform:translateX(20px); }
+.program-icon-button { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; padding:0; border-radius:10px; flex:none; }
+.program-delete-button { color:#a3433e; }
+.program-editor { padding:18px; margin:18px 0; border:1px solid var(--line,#dde4dc); border-radius:14px; background:#f8faf6; }
+.program-editor fieldset { min-width:0; padding:0; border:0; margin:0; }
+.program-editor legend { font-size:16px; font-weight:700; padding:0; margin-bottom:14px; }
+.program-form-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 16px; }
+.program-form-fields label { margin:0; min-width:0; }
+.program-field-wide { grid-column:1/-1; }
+.program-state-field { display:flex; flex-direction:column; align-items:flex-start; gap:5px; font-size:13px; }
+.program-running-confirm { display:flex; flex-direction:row; align-items:flex-start; gap:9px; margin:16px 0; font-size:13px; }
+.program-running-confirm input { flex:none; width:auto; margin-top:3px; }
+.program-running-confirm label { margin:0; }
+.program-form-actions { margin-top:16px; }
+.program-confirm-dialog { border:1px solid #dce4da; border-radius:18px; padding:24px; width:min(440px,calc(100vw - 32px)); max-height:calc(100dvh - 40px); overflow:auto; color:#253d37; box-sizing:border-box; box-shadow:0 20px 70px #10281c40; }
+.program-confirm-dialog::backdrop { background:#15271f66; }
+.program-confirm-dialog h3 { font-size:19px; margin:0 0 16px; }
+.program-confirm-dialog p { line-height:1.55; }
+.program-confirm-delete { background:#a3433e; border-color:#a3433e; color:#fff; }
+@media (max-width:640px) { .discount-program-manager .section-head { flex-wrap:wrap; } .program-card { grid-template-columns:1fr; gap:12px; padding:14px; } .program-row-actions { justify-content:flex-end; } .program-row-actions .program-switch { margin-right:auto; } .program-editor { padding:14px; } .program-form-fields { grid-template-columns:1fr; } }
+@media (prefers-reduced-motion:reduce) { .program-switch-thumb { transition:none; } }

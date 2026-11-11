@@ -16,8 +16,10 @@ test('mobile groups resolve every desktop page, including nested administration 
 });
 test('distinct payroll pages are available to owner and staff', () => {
  const keys = pageKeys();
- assert.equal(keys.length, 22);
- assert.equal(canViewPage('discount_programs',{role:'OWNER'}),true);
+ assert.equal(keys.length, 21);
+ assert.equal(keys.includes('discount_programs'),false);
+ assert.deepEqual(menuPath('discount_programs'),[]);
+ assert.equal(canViewPage('discount_programs',{role:'OWNER'}),false);
  assert.equal(canViewPage('discount_programs',{role:'STAFF',cashier:true}),false);
  assert.equal(new Set(keys).size, keys.length);
  for (const role of ['OWNER', 'STAFF']) for (const key of ['salary', 'commission']) assert.equal(canViewPage(key, { role, cashier: true }), true);

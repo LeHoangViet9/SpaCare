@@ -1,6 +1,4 @@
 import {optionalInvoiceDeadline} from './invoice-deadline';
-import {discountProgramInput,discountProgramStatusInput,programActive,selectDiscountProgram,discountProgramSnapshot} from './discount-program-rules';
-import {DiscountProgram} from './models';
 import { invoiceDiscount } from './invoice-discount';
 import { ensureGroupedPackageIndex } from './package-invoice-indexes';
 import {receiptDayInput} from './receipt-day';
@@ -91,8 +89,6 @@ const discountInput=z.object({type:z.enum(['AMOUNT','PERCENT']),value:z.number()
 const invoiceCreationActions=new Set(['invoice','serviceInvoice','sellPackage','sellProduct','productInvoice','checkout']);
 
 const schemas = {
-  saveDiscountProgram:discountProgramInput,
-  setDiscountProgramStatus:discountProgramStatusInput,
   previewInvoiceAdjustment: invoiceAdjustmentInput,
   applyInvoiceAdjustment: invoiceAdjustmentInput,
   refundInvoiceAdjustment: invoiceAdjustmentRefundInput,
@@ -219,7 +215,6 @@ const schemas = {
 export type Operation = keyof typeof schemas;
 
 const ownerActions = new Set<Operation>([
-  'saveDiscountProgram','setDiscountProgramStatus',
   'previewInvoiceAdjustment','applyInvoiceAdjustment','refundInvoiceAdjustment',
   'updateCustomerTreatment',
   'previewPackageAdvisorReplacement', 'replacePackageAdvisor',
@@ -260,15 +255,13 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
   const data = {...schemas[op].parse(raw), ...(invoiceCreationActions.has(op) ? {
     issuedOn:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().parse((raw as Record<string,unknown>)?.issuedOn),
     discount:discountInput.optional().parse((raw as Record<string,unknown>)?.discount),
-    discountProgram:z.object({id:objectId,updatedAt:date}).strict().nullable().optional().parse((raw as Record<string,unknown>)?.discountProgram),
     payments:creationPaymentsInput.optional().parse((raw as Record<string,unknown>)?.payments),
   } : {})};
-  if(op==='completeAppointment')(data as any).discountProgram=z.object({id:objectId,updatedAt:date}).strict().nullable().optional().parse((raw as Record<string,unknown>)?.discountProgram);
   const fingerprint = sha(JSON.stringify({ action, data }));
   await connect();
   return mongoose.connection.transaction(
     async session => {
-      // A per-spa write guard serializes competing writes, including interval checks and day closure.
+      // A per-spa write guard serializes competing writes, including day closure.
       // withTransaction retries transient conflicts with a fresh snapshot.
       const control = await Control.findOneAndUpdate(
         { spaId: initial.spaId },
@@ -300,9 +293,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       }
       let groupedPackageSale = false;
       const today=spaDay();
-      const discountDay=data.issuedOn||today;
-      const applicablePrograms=(invoiceCreationActions.has(op)||op==='completeAppointment')
-        ? await DiscountProgram.find({...scope,enabled:true,startsOn:{$lte:discountDay},endsOn:{$gte:discountDay}}).limit(2).session(session) : [];
       let packageInvoice: any;
       let checkoutAppointmentId: string | undefined;
       const createdInvoiceIds: string[] = [];
@@ -335,15 +325,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           (['SERVICE','PACKAGE','PRODUCT'].includes(invoice.kind) ||
            (invoice.kind === 'SESSION' && invoice.total > 0));
         if(!eligible){ensure(!data.discount,'Chứng từ này không hỗ trợ giảm giá.');return;}
-        const invoiceDay=spaDay(invoice.createdAt);
-        const programs=invoiceDay===discountDay?applicablePrograms:await DiscountProgram.find({...scope,enabled:true,startsOn:{$lte:invoiceDay},endsOn:{$gte:invoiceDay}}).limit(2).session(session);
-        const program=invoice.total>0?selectDiscountProgram(programs,invoiceDay):null;
-        if(data.discountProgram!==undefined && invoice.total>0){
-          ensure(program ? data.discountProgram?.id===String(program._id)&&data.discountProgram.updatedAt===program.updatedAt.toISOString() : data.discountProgram===null,
-            'Chương trình giảm giá đã thay đổi. Tải lại form để đối chiếu trước khi lưu.',409);
-        }
-        ensure(!program||!data.discount,'Chương trình tự động không cộng dồn với giảm giá thủ công. Bỏ giảm thủ công và xem lại tổng.',409);
-        const selected=program?discountProgramSnapshot(program):data.discount;
+        const selected=data.discount;
         if(!selected)return;
         ensure(invoice.paid === 0, 'Phải áp dụng giảm giá trước thanh toán.', 409);
         Object.assign(invoice, invoiceDiscount(invoice.total, selected));
@@ -716,23 +698,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
       const execute = async (op:Operation,data:any): Promise<any> => {
       target=undefined;appointmentBefore=undefined;linkedInvoiceId=undefined;treatmentUseId=undefined;replacementAppointmentId=undefined;financialBefore=undefined;
       switch (op) {
-        case 'saveDiscountProgram':
-        case 'setDiscountProgramStatus': {
-          const d=op==='saveDiscountProgram'?schemas.saveDiscountProgram.parse(data):schemas.setDiscountProgramStatus.parse(data);
-          const existing=d.id?await get(DiscountProgram,d.id):null;
-          if(existing){
-            ensure(existing.updatedAt.toISOString()===d.expectedUpdatedAt,'Chương trình đã thay đổi. Tải lại trước khi lưu.',409);
-            ensure(!programActive(existing,today)||d.confirmedRunning===true,'Cần xác nhận trước khi sửa/tắt chương trình đang chạy; chỉ ảnh hưởng hóa đơn tạo sau.',409);
-            appointmentBefore=existing.toObject();
-          }
-          const values=op==='saveDiscountProgram'?{name:(d as any).name,startsOn:(d as any).startsOn,endsOn:(d as any).endsOn,percent:(d as any).percent,enabled:d.enabled}:{enabled:d.enabled};
-          const next={...(existing?.toObject()||{}),...values};
-          if(next.enabled)ensure(!await DiscountProgram.exists({...scope,enabled:true,...(existing?{_id:{$ne:existing._id}}:{}),startsOn:{$lte:next.endsOn},endsOn:{$gte:next.startsOn}}).session(session),
-            'Chương trình đang bật có thời gian chồng lấn. Điều chỉnh ngày hoặc tắt chương trình khác.',409);
-          if(existing){Object.assign(existing,values);await existing.save({session});target=existing;}
-          else {const id=new mongoose.Types.ObjectId();target=await create(DiscountProgram,{...values,_id:id,code:'GG'+String(id).toUpperCase(),scope:'ALL_NEW_SALES'});}
-          break;
-        }
         case 'previewInvoiceAdjustment':
         case 'applyInvoiceAdjustment':
           return adjustInvoice(actor,schemas.applyInvoiceAdjustment.parse(data),session,op==='applyInvoiceAdjustment');
@@ -2096,7 +2061,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const total=money(invoices.reduce((sum,item)=>sum+item.total,0),true);
         result={id:invoices[0].id,invoiceId:invoices[0].id,invoiceIds:invoices.map(item=>item.id),invoices,total,message:'Đã lưu '+invoices.length+' hóa đơn trong cùng lần thu ngân.'};
       }else result=await execute(op,data);
-      if (op === 'checkout' && (data.discount||applicablePrograms.length||data.discountProgram)) {
+      if (op === 'checkout' && data.discount) {
         ensure(!data.discount||result.invoiceIds.length === 1, 'Chỉ giảm giá thủ công khi giỏ tạo một hóa đơn chung.',409);
         const invoices=[];
         for(const id of result.invoiceIds){const invoice=await get(Invoice,id);await applyNewDiscount(invoice);invoices.push({id:String(invoice._id),code:invoice.code,total:invoice.total});}

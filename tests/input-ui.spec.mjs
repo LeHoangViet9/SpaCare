@@ -1,32 +1,22 @@
 import {test,expect} from '@playwright/test';
 
-test('discount program: cashier previews automatic percent, preserves prices and returns to manual before the period',async({page})=>{
- await page.goto('/repeated-services?program=active');await page.getByRole('button',{name:/Nhóm QA.*1 dịch vụ/}).click();await page.getByRole('button',{name:/^Massage nhóm/}).click();
- await page.getByRole('button',{name:/Chọn kĩ thuật viên/}).click();await page.getByRole('checkbox',{name:'Kỹ thuật viên An',exact:true}).check();await page.getByRole('button',{name:/Kỹ thuật viên An/}).click();
- await expect(page.getByRole('region',{name:'Chương trình giảm giá áp dụng'})).toContainText('Ưu đãi fixture');
- await expect(page.getByRole('region',{name:'Chương trình giảm giá áp dụng'})).toContainText('25% · Giảm 87.500 đ');
- await expect(page.getByRole('combobox',{name:'Loại giảm giá',exact:true})).toHaveCount(0);
- await expect(page.locator('.cashier-total').first()).toContainText('262.500 đ');
- await page.getByRole('button',{name:'Lưu toàn bộ giỏ',exact:true}).click();
- const saved=JSON.parse(await page.locator('#saved-cashier').textContent());expect(saved.values.discount).toBeUndefined();expect(saved.values.discountProgram.id).toBe('8'.repeat(24));expect(saved.values.items[0].total).toBe(350000);
- await page.getByLabel('Ngày hóa đơn (để trống: hôm nay)',{exact:true}).fill('2026-10-21');
- await expect(page.getByRole('combobox',{name:'Loại giảm giá',exact:true})).toBeVisible();await expect(page.locator('.cashier-total').first()).toContainText('350.000 đ');
+for(const form of ['commercial','cashier'])for(const mode of ['active','error'])test(`retired programs: ${form} ${mode} still allows manual discount without API reads`,async({page})=>{
+ await page.goto((form==='commercial'?'/pre-service':'/repeated-services')+'?program='+mode);
+ if(form==='commercial')await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ else {await page.getByRole('button',{name:'Sản phẩm',exact:true}).click();await page.getByRole('button',{name:/^Dầu gội QA/}).click();}
+ await expect(page.getByRole('region',{name:'Chương trình giảm giá áp dụng'})).toHaveCount(0);
+ await page.getByRole('combobox',{name:'Loại giảm giá',exact:true}).selectOption('PERCENT');
+ await page.getByRole('spinbutton',{name:'Phần trăm giảm giá (0–100)',exact:true}).fill('10');
+ await page.getByRole('button',{name:form==='commercial'?'Lưu thông tin':'Lưu toàn bộ giỏ',exact:true}).click();
+ const saved=JSON.parse(await page.locator(form==='commercial'?'#saved-advance':'#saved-cashier').textContent());const values=form==='commercial'?saved:saved.values;
+ expect(values.discount).toEqual({type:'PERCENT',value:10});expect(values.discountProgram).toBeUndefined();
+ expect(await page.evaluate(()=>window.__programRequests)).toBe(0);
 });
-test('discount program: commercial creation sends preview identity and blocks unavailable program reads',async({page})=>{
- await page.goto('/pre-service?program=active');await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
- await expect(page.getByRole('region',{name:'Chương trình giảm giá áp dụng'})).toContainText('Giảm 25.000 đ');
- await page.getByRole('button',{name:'Lưu thông tin',exact:true}).click();const saved=JSON.parse(await page.locator('#saved-advance').textContent());expect(saved.discount).toBeUndefined();expect(saved.discountProgram.id).toBe('8'.repeat(24));
- await page.goto('/pre-service?program=error');await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
- await expect(page.getByRole('alert')).toContainText('Không tải được');await expect(page.getByRole('button',{name:'Lưu thông tin',exact:true})).toBeDisabled();await expect(page.locator('#saved-advance')).toHaveText('');
+test('retired programs: management navigation and screen are absent',async({page})=>{
+ await page.goto('/workspace/discount_programs');await expect(page.getByRole('button',{name:'Chương trình giảm giá',exact:true})).toHaveCount(0);
+ await expect(page.locator('.discount-program-manager')).toHaveCount(0);expect(await page.evaluate(()=>window.__programRequests)).toBe(0);
 });
-test('discount program: running edits and disabling require explicit confirmation',async({page})=>{
- await page.goto('/workspace/discount_programs');await page.getByRole('button',{name:'Sửa / bật / tắt',exact:true}).click();
- await page.getByRole('spinbutton',{name:'Phần trăm giảm',exact:true}).fill('30');await page.getByRole('checkbox',{name:'Bật chương trình',exact:true}).uncheck();
- const save=page.getByRole('button',{name:'Lưu chương trình',exact:true});await expect(save).toBeDisabled();
- await page.getByRole('checkbox',{name:/Xác nhận sửa\/tắt chương trình đang chạy/}).check();await save.click();
- await expect.poll(()=>page.evaluate(()=>window.__programOperations.length)).toBe(1);
- const op=await page.evaluate(()=>window.__programOperations[0]);expect(op.data.confirmedRunning).toBe(true);expect(op.data.enabled).toBe(false);expect(op.data.percent).toBe(30);
-});
+
 test('discount program: invoice detail displays the saved historical program',async({page})=>{
  await page.goto('/invoice-detail?programSnapshot=1');await expect(page.getByText(/Chương trình giảm giá: Chương trình cũ/)).toContainText('GG_OLD');await expect(page.getByText(/Chương trình giảm giá: Chương trình cũ/)).toContainText('500.000 đ');
 });

@@ -1,5 +1,5 @@
 'use client';
-import {InvoiceProgramDiscount,useInvoiceProgram} from './invoice-program-discount';
+import InvoiceDiscountFields from './invoice-discount-fields';
 import {invoiceDiscount,type InvoiceDiscountInput} from '@/lib/invoice-discount';
 import { TreatmentConfirmations } from './treatment-selection';
 import { packageLabel, timedPackage, treatmentAvailable, treatmentDay } from '@/lib/treatment-rules';
@@ -10,10 +10,10 @@ import SaleParticipants from './sale-participants';
 import { FormFields } from './validated-form';
 import { parseMoney } from '@/lib/currency';
 import MoneyInput from './money-input';
-import { useEffect,useState } from 'react';
+import { useState } from 'react';
 import { saleablePackageTemplates } from '@/lib/package-catalog';
 type Row = Record<string, any>;
-export default function CommercialFields({ action, data, disabled, customerId, issuedOn,onProgramBlockedChange }: { action: string; data: Row; disabled: boolean; customerId?: string; issuedOn?:string;onProgramBlockedChange?:(blocked:boolean)=>void }) {
+export default function CommercialFields({ action, data, disabled, customerId, issuedOn }: { action: string; data: Row; disabled: boolean; customerId?: string; issuedOn?:string }) {
   const packageSale = action === 'sellPackage';
   const [participantIds,setParticipantIds] = useState<string[]>([data.user?.id || '']);
   const [category,setCategory]=useState('');
@@ -32,10 +32,7 @@ export default function CommercialFields({ action, data, disabled, customerId, i
   const treatments = data.treatments.filter((t: Row) => t.customerId === customerId && t.serviceId && treatmentAvailable(t));
   const selectedTreatments=treatmentIds.map(id=>treatments.find((t:Row)=>t._id===id)).filter(Boolean);
   const treatment=selectedTreatments[0];
-  const programState=useInvoiceProgram(issuedOn||data.today,subtotal>0&&!treatment);
-  useEffect(()=>{onProgramBlockedChange?.(programState.loading||!!programState.error);return ()=>onProgramBlockedChange?.(false);},[programState.loading,programState.error,onProgramBlockedChange]);
-  const selectedDiscount=programState.program?{type:'PERCENT' as const,value:programState.program.percent}:discount;
-  try{receiptTotal=invoiceDiscount(subtotal,selectedDiscount).total;}catch{}
+  try{receiptTotal=invoiceDiscount(subtotal,discount).total;}catch{}
   const templates = saleablePackageTemplates<Row>(data.packageTemplates || [],data.services);
   const options = (packageSale ? templates : data.services.filter((s: Row) => s.active)).filter((r:Row)=>!category || (packageSale ? data.services.find((service:Row)=>service._id===r.serviceId)?.category : r.category)===category);
   return <fieldset disabled={disabled} className="commercial-fields">
@@ -52,7 +49,7 @@ export default function CommercialFields({ action, data, disabled, customerId, i
     <label>Giá bán (VNĐ)<MoneyInput name="total" required min={treatment ? 0 : 1} max={1_000_000_000_000} value={treatment ? '0' : total} readOnly={!!treatment} onValueChange={setTotal} /></label>
     <label>Hạn thanh toán<input name="dueDate" type="date"/></label>
     <small>Hạn thanh toán không bắt buộc. Để trống nếu chưa có hạn.</small>
-    {!treatment && <InvoiceProgramDiscount state={programState} subtotal={subtotal} value={discount} onChange={setDiscount} disabled={disabled}/>}
+    {!treatment && <InvoiceDiscountFields subtotal={subtotal} value={discount} onChange={setDiscount} disabled={disabled}/>}
     {!packageSale && !treatment && customerId && selection && <InvoiceCardPayment key={customerId+selection+total+receiptTotal} customerId={customerId} total={receiptTotal} disabled={disabled} onAppliedChange={setAppliedCard} defaultReceivedOn={issuedOn||data.today}/>}
     {appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={receiptTotal} disabled={disabled}/>}
     {treatment && <TreatmentConfirmations key={treatmentIds.join(',')} treatments={selectedTreatments} disabled={disabled} staffOptions={data.staff || []}/>}

@@ -1,6 +1,16 @@
 # SpaCare — Business Rules
 
-## BR-DISCOUNT-PROGRAM-001 — Chương trình theo ngày — 11/11/2026
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED — BR-DISCOUNT-PROGRAM-RETIRED-001: ngừng toàn bộ quản lý và tự áp dụng chương trình, kể cả bản ghi enabled=true hoặc chồng ngày còn lưu. invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/checkout chỉ dùng discount tiền/% nhập trực tiếp; completeAppointment không tra hoặc áp chương trình, không bổ sung giảm thủ công vào luồng này. Thanh toán hóa đơn cũ không tính lại giảm giá.
+
+Giữ nguyên collection, bản ghi và các snapshot programId/programCode/programName/type/value/amount/subtotal. Detail/PDF/báo cáo đọc snapshot đã lưu, không join chương trình để tính lại tiền. Lịch sử audit quản lý chương trình tiếp tục đọc được. Quyết định này thay thế BR-DISCOUNT-PROGRAM-001 về quản lý, xóa cấu hình và tự áp dụng. Giữ các quy tắc giảm thủ công và transaction/idempotency/audit hiện có.
+
+## [Lịch sử — đã được thay thế] BR-DISCOUNT-PROGRAM-001 — Chương trình theo ngày — 11/11/2026
+
+CONFIRMED bổ sung: chỉ active OWNER cùng spa xóa chương trình chưa được dùng, sau xác nhận. Chặn xóa khi có tham chiếu trong hóa đơn hoặc lịch sử áp dụng, kể cả chương trình đang tắt; hướng dẫn tắt thay vì xóa. Xóa không thay đổi hóa đơn, khoản thu, công nợ hay snapshot. Công tắc chương trình đã tạo lưu ngay, bật lại vẫn kiểm chồng lấn; sửa/tắt chương trình đang chạy vẫn cần xác nhận.
+
+PROPOSED kỹ thuật: deleteDiscountProgram kiểm expectedUpdatedAt và confirmDelete=true trong cùng Control transaction với kiểm tham chiếu Invoice.discount, Invoice.documentHistory, InvoiceAdjustment.before/after và audit invoiceDiscount. Chỉ xóa cấu hình chưa dùng; audit lưu toàn bộ before, after=null. Idempotency retry trả kết quả cũ sau khi bản cấu hình đã xóa; lỗi audit rollback cả xóa. Control tuần tự hóa xóa với tạo hóa đơn để tránh tham chiếu mất nguồn.
 
 CONFIRMED: chỉ active OWNER cùng spa quản lý; tên không trống, ngày lịch thực, endsOn >= startsOn, percent nguyên 0–100 (cùng Math.round tới VNĐ đang dùng cho giảm hóa đơn), enabled bắt buộc. Ngày áp dụng = spaDay(Invoice.createdAt) tại Asia/Ho_Chi_Minh; issuedOn hồi tố dùng ngày hồi tố đó. Đầu/cuối bao gồm. Không chương trình bật nào trong cùng phạm vi có startsOn <= endsOn của chương trình kia và endsOn >= startsOn của chương trình kia. Chương trình tắt được trùng; bật lại vẫn phải kiểm tra chồng lấn. Trùng ngày biên cũng là chồng lấn.
 

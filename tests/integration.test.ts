@@ -62,7 +62,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const employee: Actor = { ...actor, id: String(staff._id), role: 'STAFF', cashier: false };
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
-    await t.test('dated discount programs: overlap race, owner permissions, snapshots and net receipts',()=>discountProgramIntegration(extraSpaIds));
+    await t.test('retired programs preserve manual discounts and historical snapshots',()=>discountProgramIntegration(extraSpaIds));
     await t.test('new invoice discounts preserve charges, receipts, commissions and atomic retry',()=>invoiceDiscountIntegration(extraSpaIds));
     await t.test('new invoices record receipts on explicit actual days',test=>receiptCreationIntegration(extraSpaIds,test));
     await t.test('invoice content editing retains dated receipts and updates stock atomically',()=>invoiceContentIntegration(extraSpaIds));

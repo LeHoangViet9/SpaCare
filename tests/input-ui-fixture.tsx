@@ -48,20 +48,11 @@ function invoiceDeadlineDetail(){
  if(!variant)return detailFixture;
  return {...detailFixture,invoice:{...detailFixture.invoice,subtotal:1000000,discount:{type:'PERCENT',value:20,amount:200000},total:800000,paid:variant==='paid'?800000:300000,status:variant==='stale-paid'?'PAID':'OPEN',dueDate:variant==='missing'?undefined:'2026-12-01'}};
 }
-let programRows=[{_id:'8'.repeat(24),code:'GG_FIXTURE',name:'Ưu đãi fixture',startsOn:'2026-10-22',endsOn:'2026-10-24',percent:25,enabled:true,updatedAt:'2026-10-20T00:00:00.000Z'}];
-(window as any).__programOperations=[];
+(window as any).__programRequests=0;
 window.fetch=async(input:any,options:any)=>{
  await new Promise(resolve=>setTimeout(resolve,35));
  if(String(input).startsWith('/api/discount-programs')){
-  const params=new URL(String(input),location.origin).searchParams;
-  if(params.get('manage'))return Response.json({rows:programRows,page:1,total:programRows.length,today:fixture.today});
-  const mode=new URLSearchParams(location.search).get('program'),day=params.get('day')||fixture.today;
-  if(mode==='error')return Response.json({error:'Không tải được chương trình fixture'},{status:503});
-  return Response.json({program:mode==='active'&&day>='2026-10-22'&&day<='2026-10-24'?programRows[0]:null});
- }
- if(String(input)==='/api/operations'){
-  const op=JSON.parse(options.body);(window as any).__programOperations.push(op);
-  if(op.action==='saveDiscountProgram'){programRows=op.data.id?programRows.map(row=>row._id===op.data.id?{...row,...op.data,updatedAt:'2026-10-23T01:00:00.000Z'}:row):[...programRows,{...op.data,_id:'9'.repeat(24),code:'GG_NEW',updatedAt:'2026-10-23T01:00:00.000Z'}];return Response.json({id:op.data.id||'9'.repeat(24)});}
+  (window as any).__programRequests++;throw new Error('Retired program API must not be called');
  }
  return new Response(JSON.stringify(String(input).startsWith('/api/cash-cards')?{cards:[],uses:[],total:0,useTotal:0}:String(input).startsWith('/api/invoices/')?invoiceDeadlineDetail():String(input).includes('/api/workspace')?fixture:{customers:fixture.customers,total:1,page:1}),{status:200,headers:{'Content-Type':'application/json'}});
 };

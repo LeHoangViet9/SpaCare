@@ -1,6 +1,14 @@
 # Thiết kế chuyển đổi SpaCare
 
-## Chương trình giảm giá theo ngày — 11/11/2026
+## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
+
+Gỡ panel DiscountPrograms và menu Quản trị tương ứng, hook useInvoiceProgram/InvoiceProgramDiscount và endpoint cấu hình. Cashier/CommercialFields dùng trực tiếp InvoiceDiscountFields: preview tổng sau giảm theo tiền/% nhập thủ công; không chặn lưu vì tải chương trình. Form completeAppointment không có preview chương trình.
+
+PROPOSED kỹ thuật: backend không đọc DiscountProgram trong bất kỳ luồng lập hóa đơn/checkout/hoàn thành lịch; chỉ áp data.discount lên hóa đơn mới trước thanh toán theo transaction/idempotency/audit cũ. Giữ nguyên reader/render snapshot ở chi tiết/PDF/báo cáo và nhãn audit lịch sử. Không thay schema/index hoặc chạy migration.
+
+## [Lịch sử — đã được thay thế] Chương trình giảm giá theo ngày — 11/11/2026
+
+Giao diện quản lý bổ sung: mỗi thẻ có công tắc role=switch/aria-checked, bật xanh nút bên phải, tắt xám bên trái; đổi trạng thái lưu ngay, lỗi giữ trạng thái server. Nút SVG bút chì và thùng rác riêng có aria-label. Form gọn hai cột desktop/một cột mobile; thẻ và thao tác xuống hàng khi màn hình hẹp. Công tắc của bản nháp mới chỉ là trạng thái tạo; bản đã có lưu ngay và giữ các trường chưa lưu cùng version vừa nhận. Dialog native xác nhận tắt chương trình đang chạy hoặc xóa, có Cancel mặc định, hỗ trợ Escape và khóa khi đang lưu; xóa bị chặn hiển thị hướng dẫn tắt. Form sửa chương trình đang chạy vẫn yêu cầu xác nhận. Đây là yêu cầu UI đã xác nhận; cách triển khai dialog/CSS là PROPOSED kỹ thuật.
 
 PROPOSED kỹ thuật: DiscountPrograms là panel riêng trong Quản trị, danh sách phân trang hiển thị phase ngày và trạng thái bật/tắt; form bắt đủ trường và xác nhận dựa source đang chạy. Các action save/status dùng Control trong operate nên quản lý và tạo hóa đơn không đua nhau qua khoảng trùng. Tài khoản active/spa/OWNER/version kiểm ở backend; không dựa việc ẩn menu.
 
