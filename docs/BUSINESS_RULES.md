@@ -1,5 +1,15 @@
 # SpaCare — Business Rules
 
+## BR-DISCOUNT-PROGRAM-001 — Chương trình theo ngày — 11/11/2026
+
+CONFIRMED: chỉ active OWNER cùng spa quản lý; tên không trống, ngày lịch thực, endsOn >= startsOn, percent nguyên 0–100 (cùng Math.round tới VNĐ đang dùng cho giảm hóa đơn), enabled bắt buộc. Ngày áp dụng = spaDay(Invoice.createdAt) tại Asia/Ho_Chi_Minh; issuedOn hồi tố dùng ngày hồi tố đó. Đầu/cuối bao gồm. Không chương trình bật nào trong cùng phạm vi có startsOn <= endsOn của chương trình kia và endsOn >= startsOn của chương trình kia. Chương trình tắt được trùng; bật lại vẫn phải kiểm tra chồng lấn. Trùng ngày biên cũng là chồng lấn.
+
+CONFIRMED: chương trình bật trong ngày tự thay giảm thủ công ở hóa đơn bán mới đủ điều kiện có tạm tính dương. Không cộng dồn, kể cả chương trình 0%; gửi thủ công khi đang có chương trình bị từ chối rõ ràng. Không có chương trình hiệu lực giữ giảm thủ công. Snapshot được chốt lúc tạo, gồm mã/tên/ID/phần trăm/số giảm; thay đổi sau đó không tính lại hóa đơn cũ. Giá dòng và hoa hồng dịch vụ cố định giữ nguyên; hoa hồng gói vẫn theo thực nhận, không theo tạm tính. Không áp chương trình vào thanh toán/cọc/thẻ/điều chỉnh hóa đơn cũ, openingBalance, GIFT hoặc buổi gói thuần 0đ.
+
+PROPOSED kỹ thuật: phạm vi duy nhất ALL_NEW_SALES mỗi spa; invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/checkout và completeAppointment thực sự tạo hóa đơn mới được áp dụng. SESSION chỉ phần bán thêm dương; gói/quà nguồn không đổi. Checkout áp phần trăm độc lập trên từng chứng từ bán mới nếu giỏ tạo nhiều chứng từ, làm tròn riêng trên từng hóa đơn; không phân bổ giảm ngược vào dòng. Guard giảm thủ công cho giỏ nhiều chứng từ giữ nguyên. Đây là lựa chọn triển khai, không mở thêm chính sách chia giảm giá giữa dòng/phạm vi.
+
+PROPOSED kỹ thuật: OWNER sửa/tắt chương trình đang bật và trong ngày chạy phải gửi confirmedRunning=true và expectedUpdatedAt đúng. Backend kiểm source trong transaction, không tin trạng thái form. Mọi quản lý qua Control/idempotency/audit; tạo hai khoảng trùng đồng thời chỉ một thành công. Reader/creator gặp dữ liệu bật chồng lấn trả 409. Preview form có discountProgram {id,updatedAt} hoặc null; nguồn thay đổi sau preview trả 409, yêu cầu tải lại form, không âm thầm đổi số tiền trước thu. Client cũ không gửi preview vẫn được server tự áp từ nguồn đã kiểm tra. Retry key cũ giữ snapshot cũ dù chương trình đã sửa/tắt.
+
 ## BR-INV-DEADLINE-001 — Hạn thanh toán tùy chọn — 11/11/2026
 
 CONFIRMED: trường Hạn thanh toán của form tạo là tùy chọn; trống/không gửi nghĩa là không có hạn, không suy từ ngày hóa đơn hoặc tự cộng số ngày. Hạn nhập phải là ngày lịch thực; giữ kiểm tra hạn gói không trước ngày bán hiện có. Khi sửa, vẫn có thể bỏ trống/xóa hạn bằng content.dueDate=null theo quy trình điều chỉnh hiện hành; không thay quyền, xác nhận hay audit.

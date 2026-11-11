@@ -25,7 +25,7 @@ export async function readWorkspace(user: Actor, query: ReturnType<typeof worksp
   const shiftStart = new Date(`${today}T00:00:00+07:00`);
   const shiftEnd = new Date(shiftStart.getTime() + 86_400_000);
   const todayShift = { $gte: shiftStart, $lt: shiftEnd };
-  if (['customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(query.section)) {
+  if (['discount_programs','customers', 'salary', 'commission', 'products', 'product_groups', 'inventory', 'cash_cards'].includes(query.section)) {
     const staff = await User.find({ ...scope, role: { $in: ['OWNER', 'STAFF'] } })
       .select(isOwner ? 'name email phone role cashier active' : 'name role cashier active').lean();
     return { user, today, todayDay: null, pages: {} as Record<string, any>, staff,

@@ -1,7 +1,7 @@
 import { ensure, money } from './rules';
 
 export type InvoiceDiscountInput = { type: 'AMOUNT' | 'PERCENT'; value: number };
-export type InvoiceDiscount = InvoiceDiscountInput & { amount: number };
+export type InvoiceDiscount = InvoiceDiscountInput & { amount: number; programId?:unknown; programCode?:string; programName?:string };
 
 // Technical choice: whole percentages, rounded to the nearest integer VND.
 export function invoiceDiscount(subtotal: number, input?: InvoiceDiscountInput) {

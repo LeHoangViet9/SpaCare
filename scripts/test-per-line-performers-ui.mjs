@@ -26,6 +26,7 @@ const server=createServer(async(req,res)=>{
   if(url.pathname==='/health'){res.writeHead(200);res.end('ok');return;}
   if(url.pathname==='/fixture.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(bundle.outputFiles[0].text);return;}
   if(url.pathname==='/fixture/data'){const row=await fixtures.findOne({suite});json(res,200,row.data);return;}
+  if(url.pathname==='/api/discount-programs'){json(res,200,{program:null});return;}
   if(url.pathname==='/api/customers'){const row=await fixtures.findOne({suite});const rows=url.searchParams.get('id')?[row.data.customers.find(c=>c._id===url.searchParams.get('id'))].filter(Boolean):row.data.customers;json(res,200,{customers:rows,total:rows.length,page:1});return;}
   if(url.pathname==='/api/appointments/checkout'){json(res,200,{appointments:[],hasMore:false});return;}
   if(url.pathname==='/fixture/submissions' && req.method==='POST'){let raw='';for await(const chunk of req)raw+=chunk;if(raw.length>100000)throw new Error('payload too large');const payload=JSON.parse(raw);const submission={suite,action:payload.action,values:payload.values,createdAt:new Date()};await submissions.insertOne(submission);json(res,200,{submission:{action:submission.action,values:submission.values}});return;}

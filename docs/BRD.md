@@ -1,5 +1,13 @@
 # SpaCare — Business Requirements
 
+## Chương trình giảm giá theo ngày — 11/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: OWNER tạo/sửa/bật/tắt chương trình có tên, ngày đầu/cuối, phần trăm nguyên 0–100 theo giảm giá hiện có, trạng thái bật/tắt. Không cho chương trình đang bật cùng phạm vi chồng ngày; tính hai đầu và ngày hóa đơn theo Việt Nam. Tự áp dụng cho hóa đơn bán mới đủ điều kiện có tổng trước giảm dương, không cộng thủ công; không có chương trình thì giữ giảm thủ công. Giữ giá dòng, hoa hồng và thu tiền/công nợ theo tổng sau giảm.
+
+CONFIRMED: lưu snapshot mã/tên/phần trăm/số giảm trong hóa đơn; sửa/tắt/hết hạn không sửa hóa đơn cũ. Chi tiết/PDF/bảng báo cáo dùng snapshot. Quản lý chỉ OWNER, audit đầy đủ, xác nhận trước sửa/tắt chương trình đang chạy. Không áp dụng cho chuyển số dư, quà, lượt gói thuần 0đ, điều chỉnh hoặc khoản thu của hóa đơn cũ.
+
+PROPOSED kỹ thuật: một phạm vi ALL_NEW_SALES chung trong mỗi spa, gồm dịch vụ/sản phẩm/gói mới và phần bán thêm có giá trên chứng từ SESSION. Không mở phân loại phạm vi riêng. Dùng transaction Control tuần tự để chống race khoảng ngày; dữ liệu chồng lấn có sẵn chặn lưu hóa đơn thay vì chọn chương trình. Không migration/backfill hóa đơn cũ hay sửa dữ liệu vận hành.
+
 ## Hạn thanh toán tùy chọn và hiển thị theo dư nợ — 11/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: form tạo hóa đơn có Hạn thanh toán, không bắt buộc, để trống không tự gán ngày. Lưu/trả đúng hạn đã chọn; giữ khả năng sửa/xóa hạn qua quy trình sửa hiện có. Chi tiết/PDF chỉ hiện Hạn thanh toán khi có ngày đã lưu và total > paid; total là tổng sau giảm giá, paid là số thanh toán được ghi nhận. Không dùng status để suy tất toán. Hóa đơn không có hạn hoặc đã trả đủ không hiện dòng hạn, nhưng không xóa hạn đã lưu chỉ vì tất toán. Không thay giá/giảm giá/khoản thu/nợ/ngày hóa đơn/lịch sử/quyền. Yêu cầu này thay cách PDF luôn hiện Hạn thanh toán/Chưa đặt trước đây.

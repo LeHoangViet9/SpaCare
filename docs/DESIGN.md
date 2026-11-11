@@ -1,5 +1,11 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Chương trình giảm giá theo ngày — 11/11/2026
+
+PROPOSED kỹ thuật: DiscountPrograms là panel riêng trong Quản trị, danh sách phân trang hiển thị phase ngày và trạng thái bật/tắt; form bắt đủ trường và xác nhận dựa source đang chạy. Các action save/status dùng Control trong operate nên quản lý và tạo hóa đơn không đua nhau qua khoảng trùng. Tài khoản active/spa/OWNER/version kiểm ở backend; không dựa việc ẩn menu.
+
+useInvoiceProgram tải preview no-store theo ngày hóa đơn, chặn submit khi đang tải/lỗi. InvoiceProgramDiscount hiện tên/%/số giảm và ẩn giảm thủ công; ngày đổi tải lại, card preview được reset theo chương trình/tỷ lệ. Cashier, CommercialFields và form completeAppointment mới dùng cùng preview; form hoàn thành lịch không mở giảm thủ công. Backend tái chọn theo Invoice.createdAt ngày Việt Nam, kiểm id/version preview, chặn cộng dồn và lưu snapshot trong transaction trước tiền. Retry không đổi snapshot theo cấu hình mới. Detail/PDF/reports chỉ dùng invoice.discount; không đọc cấu hình để tính lại hóa đơn cũ. Schema/index mới cần chuẩn bị riêng theo quy trình triển khai, không chạy migration production trong phiên này.
+
 ## Giảm giá và bill dọc — 11/11/2026
 
 PROPOSED kỹ thuật cho BR-INV-DISCOUNT-001: dùng helper invoiceDiscount chung phía client/backend; InvoiceDiscountFields chỉ đặt trong form tạo (Cashier/CommercialFields), không đưa vào form sửa. Giỏ giữ giá bán gốc từng dòng, preview tổng sau giảm cho thu tiền/thẻ; backend tính lại từ dữ liệu đã xác minh trong transaction. Checkout giảm một lần ở hóa đơn chung sau ráp gói/dòng và trước splitPayment; inline cashCard áp giảm trước redeemCard. Notification hóa đơn phát sau hoàn tất tổng để không gửi số trước giảm. Không ghi song song trong transaction.

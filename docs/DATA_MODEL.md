@@ -1,5 +1,11 @@
 # SpaCare — Data Model
 
+## DiscountProgram và snapshot — 11/11/2026
+
+PROPOSED kỹ thuật cho BR-DISCOUNT-PROGRAM-001: collection discountprograms qua model DiscountProgram {spaId,code,name,startsOn,endsOn,percent,enabled,scope:ALL_NEW_SALES,createdAt,updatedAt}. Mã ổn định GG + ObjectId in hoa; API không cho sửa code/spaId/scope. Index unique {spaId,code} và lookup {spaId,enabled,startsOn,endsOn}; chồng khoảng được kiểm bởi operations trong Control transaction (unique index đơn không đủ kiểm overlap). Model thêm vào allModels để setup/preflight test biết schema; không tự chạy setup/migration lên production.
+
+Invoice.discount giữ type/value/amount hiện có, thêm optional programId:ObjectId/programCode:String/programName:String. value là phần trăm snapshot, amount là số giảm thực tế; Invoice.subtotal/total/paid vẫn là nguồn tiền cũ. Không join cấu hình hiện tại để hiển thị lịch sử, không backfill invoice cũ. Audit saveDiscountProgram/setDiscountProgramStatus giữ yêu cầu, before/after, actor/thời điểm; audit invoiceDiscount chứa snapshot chương trình trong transaction tạo. Không xóa cứng programme hoặc tài chính. Không đổi index hóa đơn, Payment, CashEntry, Treatment hoặc hoa hồng.
+
 ## Hạn thanh toán tùy chọn — 11/11/2026
 
 PROPOSED kỹ thuật thực hiện BR-INV-DEADLINE-001 CONFIRMED: tái dùng Invoice.dueDate?: String YYYY-MM-DD hiện có, không schema/index/migration/backfill mới. Input tạo rỗng được chuẩn hóa thành undefined; ngày được kiểm hợp lệ trước lưu, không gán mặc định. Nhánh invoice dùng buổi gói kèm bán thêm cũng lưu hạn đã gửi trên chứng từ mới. Gộp gói giữ hạn chung đã chọn; không mất hạn khi dòng gói đầu thiếu hạn và dòng sau có hạn hợp lệ. Reader trả dueDate đã lưu kể cả đã tất toán; UI/PDF ẩn theo total−paid <= 0. Không thay đổi dữ liệu lịch sử hoặc số dư; chỉnh hạn tiếp tục qua InvoiceAdjustment hiện có.

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { operate } from '../src/lib/operations';
 import {
-  SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product,
+  DiscountProgram, SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product,
   StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission,
   ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse,
   Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service
@@ -58,6 +58,7 @@ function doc(name: string, row: any): any {
 
 function query(value: any): any {
   return {
+    limit(){return this;},
     distinct: (key: string) => query([...new Set((value || []).map((row: any) => row[key]).filter(Boolean))]),
     session: async () => value,
     then: (resolve: any, reject: any) => Promise.resolve(value).then(resolve, reject)
@@ -66,7 +67,7 @@ function query(value: any): any {
 
 let failModel = '';
 for (const model of [
-  SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product,
+  DiscountProgram, SaleCommission, SharedSaleCommission, InvoiceLineCommission, Product,
   StockMovement, TreatmentUse, ActivityNotification, Appointment, Commission,
   ServiceGroup, User, Control, Customer, Invoice, CashEntry, CashCard, CashCardUse,
   Payment, Day, Audit, Idempotency, Treatment, PackageTemplate, Service

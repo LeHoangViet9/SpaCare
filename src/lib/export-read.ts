@@ -32,6 +32,7 @@ export function invoiceExportDocument(data: Awaited<ReturnType<typeof readInvoic
         ['Mã hóa đơn', invoiceCode(bill)], ['Ngày tạo', date(bill.createdAt)],
         ['Khách hàng', data.customer?.name || '-'], ['Số điện thoại', data.customer?.phone || '-'],
         ['Người lập', bill.creatorName || 'Chưa ghi nhận'],
+        ...(bill.discount?.programId ? [['Chương trình giảm giá',`${bill.discount.programName} · ${bill.discount.programCode} · ${bill.discount.value}%`]] : []),
         ...(bill.kind === 'PACKAGE' ? [['Tư vấn bán gói', bill.saleParticipants?.length ? bill.saleParticipants.map((p:{staffName:string})=>p.staffName).join(', ') : bill.sellerName || 'Chưa ghi nhận']] : []),
       ] },
       { heading: 'Dịch vụ / gói / sản phẩm', columns: ['Nội dung', 'Thành tiền'], widths: [0.72, 0.28], rows: [

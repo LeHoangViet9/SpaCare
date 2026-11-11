@@ -1,5 +1,21 @@
 # SpaCare — Kế hoạch và hướng dẫn kiểm thử (SWT)
 
+## Chương trình giảm giá theo ngày — kiểm chứng 11/11/2026
+
+Nhánh feature/invoice-replacement, working tree sạch trước khi sửa. Bộ mới gồm tests/discount-programs.test.mjs (biên ngày Việt Nam, phần trăm, dữ liệu bắt buộc), discount-program-fixture.ts (model doubles: quyền, overlap, snapshot, nợ/report, hoa hồng, đọc phân trang) và discount-program-integration.ts (MongoDB thật: race tạo trùng, quyền STAFF/inactive, rollback lỗi audit, idempotency sau đổi cấu hình, thanh toán, lịch hoàn thành mới, gộp gói/quà/SESSION, snapshot chi tiết/PDF/báo cáo). Chương trình tắt/0%/100%, trước ngày đầu và hết ngày cuối được kiểm theo rule, không dùng dữ liệu production.
+
+Kết quả cuối:
+
+- `npm.cmd test`: 272 pass, 0 fail. Log outputs/discount-program-tests-verified.log.
+- `npm.cmd run typecheck`: đạt. `npm.cmd run build`: đạt, chỉ cảnh báo middleware → proxy sẵn có. next-env.d.ts phát sinh do build đã trả về nội dung trước phiên sửa.
+- Với SPACARE_TEST_CHROME trỏ Chrome local, `npm.cmd run test:ui -- --reporter=line`: 86 pass, 0 fail trên desktop/mobile. Log outputs/discount-program-ui-complete.log. Ngoài ca chương trình mới, sửa các selector test cũ để khớp nút Thanh toán trực tiếp, nhãn Còn 8/10 buổi và date picker; phân biệt hai ô tiền với ô ngày thực nhận, kiểm thêm ngày trong payload; không bỏ kiểm tiền/phân bổ.
+- Trên Windows, runner có lúc chờ dọn fixture sau khi test hoàn tất. Có thể chạy `node scripts/test-input-ui.mjs` riêng, đặt SPACARE_UI_EXTERNAL_SERVER=1 rồi chạy cùng lệnh UI; runner không quản lý vòng đời server ở chế độ này. Dừng fixture riêng sau kiểm tra. playwright.config.mjs vẫn giữ chế độ tự mở fixture khi không đặt biến.
+- `node --import tsx scripts/test-invoice-discount-pdf.ts` với Chrome local: PASS, một trang bill 80mm chứa snapshot tên/mã/% chương trình và số giảm; đã xem PNG, không cắt/chồng chữ. Artifact tổng hợp trong outputs/invoice-discount-pdf, gitignored.
+- `npm.cmd run test:integration`: BLOCKED [DOCKER_CLI], không tìm thấy Docker trong PATH; runner không khởi chạy test. Không ghi nhận lệnh npm này là đạt.
+- MongoDB spacare_test local có sẵn: chuẩn bị collection/index mới bằng prepareIntegrationDatabase(INTEGRATION_ENV) sau guard môi trường/server; không drop/reset hoặc xóa volume. Sau đó chạy trực tiếp harness với INTEGRATION_ENV: 77 pass, 0 fail, 0 skip. Log outputs/discount-program-integration-final.log. Lệnh chạy cuối: `node --import tsx --input-type=module -e "import {INTEGRATION_ENV} from './tests/integration-safety.ts'; import {spawnSync} from 'node:child_process'; const result=spawnSync(process.execPath,['--import','tsx','--test','tests/integration.test.ts'],{env:{...process.env,...INTEGRATION_ENV},stdio:'inherit'}); process.exitCode=result.status??1;"`. Không nạp env-file hoặc URI production; harness giữ kiểm tra danh tính server/schema trước tạo fixture và chỉ dọn fixture của lần chạy.
+
+Không checkout/commit/push/merge/deploy hoặc migration production. Collection/index DiscountProgram mới được khai báo trong code; việc chuẩn bị trên môi trường vận hành thuộc bước triển khai riêng, chưa thực hiện trong phiên này. Phạm vi ALL_NEW_SALES và chi tiết contract/rounding xem BR-DISCOUNT-PROGRAM-001, API và DATA_MODEL.
+
 ## Hạn thanh toán tùy chọn — kiểm chứng 11/11/2026
 
 `tests/invoice-deadline-fixture.ts` kiểm trống/không gửi, ngày lịch thực/ngày sai; dòng hạn PDF có/không theo số dư sau giảm, kể cả status cũ, render không sửa dữ liệu. `tests/invoice-amount-cash-flow-fixture.ts` kiểm lưu hạn cho dịch vụ/sản phẩm/gói và SESSION kèm bán thêm qua operate. `tests/invoice-discount-integration.ts` kiểm API tạo/GET/PDF theo từng luồng và checkout, bỏ trống, tất toán vẫn lưu hạn nhưng ẩn PDF, sửa/xóa hạn qua preview/apply hiện có giữ tiền/ngày gốc.

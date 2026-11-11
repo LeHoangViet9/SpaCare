@@ -1,5 +1,5 @@
 'use client';
-import InvoiceDiscountFields from './invoice-discount-fields';
+import {InvoiceProgramDiscount,useInvoiceProgram} from './invoice-program-discount';
 import {invoiceDiscount,type InvoiceDiscountInput} from '@/lib/invoice-discount';
 import GroupedCartLines from './grouped-cart-lines';
 import AppointmentCheckoutPicker from './appointment-checkout-picker';
@@ -90,8 +90,10 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  const packageAmount=packageItems.reduce((n,item)=>n+amountOf(item.total),0);
  const subtotal=serviceAmount+productAmount+packageAmount;
  const [discount,setDiscount]=useState<InvoiceDiscountInput>();
- let amount=subtotal;try{amount=invoiceDiscount(subtotal,discount).total;}catch{}
- const cardContext=JSON.stringify([customer?._id,serviceItems.map(item=>[item._id,item.total]),discount]);
+ const programState=useInvoiceProgram(issuedOn||data.today,subtotal>0);
+ const selectedDiscount:InvoiceDiscountInput|undefined=programState.program?{type:'PERCENT',value:programState.program.percent}:discount;
+ let amount=subtotal;try{amount=invoiceDiscount(subtotal,selectedDiscount).total;}catch{}
+ const cardContext=JSON.stringify([customer?._id,serviceItems.map(item=>[item._id,item.total]),selectedDiscount,programState.program?._id]);
  const cardEligible=serviceItems.length===1 && !sessionItems.length && !productItems.length && !packageItems.length;
  const previewCard=useCallback((value:number)=>setCardPreview({context:cardContext,amount:value}),[cardContext]);
  const appliedCard=cardEligible && cardPreview.context===cardContext ? cardPreview.amount:0;
@@ -123,6 +125,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    event.preventDefault();setError('');
    try{
      if(!customer)throw new Error('Chọn khách hàng trước khi lưu.');
+     if(programState.loading||programState.error)throw new Error('Chưa kiểm tra được chương trình giảm giá. Tải lại form trước khi lưu.');
      const fd=new FormData(event.currentTarget);
      const rawSignature=fd.get('signature');
      const signature=rawSignature ? JSON.parse(String(rawSignature)):undefined;
@@ -130,8 +133,8 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      const cardValue=fd.get('cashCard');
      const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate,signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
      if(discount && subtotal===0 && !serviceItems.length && !productItems.length && !packageItems.length)throw new Error('Bỏ giảm giá khi giỏ không có khoản bán mới.');
-     invoiceDiscount(subtotal,discount);
-     const date={...(issuedOn?{issuedOn}:{}),...(discount?{discount}:{})};
+     invoiceDiscount(subtotal,selectedDiscount);
+     const date={...(issuedOn?{issuedOn}:{}),...(!programState.program&&discount?{discount}:{}),...(programState.eligible?{discountProgram:programState.program?{id:programState.program._id,updatedAt:programState.program.updatedAt}:null}:{})};
      const rawPayments=fd.get('payments'),payments=rawPayments?{payments:JSON.parse(String(rawPayments))}:{};
      if(appointment)onSubmit('checkout',{customerId:customer._id,appointmentId:appointment.appointment._id,actions,...date,...payments});
      else if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date,...payments});
@@ -191,7 +194,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={Math.max(0,serviceAmount-(subtotal-amount))} disabled={busy} onAppliedChange={previewCard} defaultReceivedOn={issuedOn||data.today}/></section>}
    {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ hoặc thanh toán số còn nợ.</p>}
    </fieldset>
-   {(serviceItems.length>0 || productItems.length>0 || packageItems.length>0) && <InvoiceDiscountFields subtotal={subtotal} value={discount} onChange={setDiscount} disabled={busy}/>}
+   {(serviceItems.length>0 || productItems.length>0 || packageItems.length>0) && <InvoiceProgramDiscount state={programState} subtotal={subtotal} value={discount} onChange={setDiscount} disabled={busy}/>}
    <div className="cashier-total"><span>Tổng thanh toán sau giảm</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
    <label>Ngày hóa đơn (để trống: hôm nay)<input type="date" max={data.today} value={issuedOn} disabled={busy} onChange={e=>setIssuedOn(e.target.value)}/></label>
@@ -199,7 +202,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    <small>Hạn thanh toán không bắt buộc. Để trống nếu chưa có hạn.</small>
    {basketCount>0&&appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={amount} disabled={busy}/>}
    {error && <p className="negative" role="alert">{error}</p>}
-   <button type="submit" className="primary cashier-save" disabled={busy || !customer || !basketCount || !!appointment?.invoice || (!!appointment && !['CONFIRMED','COMPLETED'].includes(appointment.appointment.status))}>{busy?'Đang lưu…':appointment?'Hoàn thành lịch & lưu hóa đơn':'Lưu toàn bộ giỏ'}</button>
+   <button type="submit" className="primary cashier-save" disabled={busy || programState.loading || !!programState.error || !customer || !basketCount || !!appointment?.invoice || (!!appointment && !['CONFIRMED','COMPLETED'].includes(appointment.appointment.status))}>{busy?'Đang lưu…':appointment?'Hoàn thành lịch & lưu hóa đơn':'Lưu toàn bộ giỏ'}</button>
    <small>Tiền chưa thu có thể thanh toán trên từng hóa đơn sau khi lưu. Gói đã mua không thu lại tiền buổi.</small>
  </section>
  </ValidatedForm>;

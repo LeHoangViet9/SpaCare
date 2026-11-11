@@ -142,9 +142,16 @@ const saleParticipantSchema = new Schema({ staffId: id, staffName: { type: Strin
 const serviceItemSchema = new Schema({ lineId: optionalId, serviceId: id, name: { type: String, required: true }, total: amount, commission: amount, performerId: optionalId },
   { _id: false, versionKey: false, strict: 'throw' });
 
+export const DiscountProgram = model('DiscountProgram', {
+  code:{type:String,required:true},name:{type:String,required:true},
+  startsOn:{type:String,required:true},endsOn:{type:String,required:true},
+  percent:{type:Number,min:0,max:100,validate:Number.isSafeInteger,required:true},
+  enabled:{type:Boolean,required:true},scope:{type:String,enum:['ALL_NEW_SALES'],default:'ALL_NEW_SALES'},
+}, [[{spaId:1,code:1},{unique:true}],[{spaId:1,enabled:1,startsOn:1,endsOn:1}]]);
+
 export const Invoice = model('Invoice', {
   subtotal: { ...amount, required: false },
-  discount: { type: new Schema({type:{type:String,enum:['AMOUNT','PERCENT'],required:true},value:{type:Number,min:0,required:true},amount:amount},{_id:false,versionKey:false,strict:'throw'}), default:undefined },
+  discount: { type: new Schema({type:{type:String,enum:['AMOUNT','PERCENT'],required:true},value:{type:Number,min:0,required:true},amount:amount,programId:optionalId,programCode:String,programName:String},{_id:false,versionKey:false,strict:'throw'}), default:undefined },
   financialRevision: Number, adjustmentCredit: {type:Number,min:0}, lastAdjustmentId: optionalId,
   // One operational invoice, immutable prior document snapshots. Replacements
   // are not new sales and never enter financial aggregates as extra invoices.
@@ -437,6 +444,7 @@ export const PushDevice = model('PushDevice', {
 }, [[{ endpoint: 1 }, { unique: true }], [{ spaId: 1, userId: 1 }]]);
 
 export const allModels = [
+  DiscountProgram,
   InvoiceAdjustment,
   ServiceGroup,
   CashCard, CashCardUse,

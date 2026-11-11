@@ -1,5 +1,16 @@
 # API nội bộ
 
+## Chương trình giảm giá theo ngày — 11/11/2026
+
+Contract PROPOSED kỹ thuật thực hiện BR-DISCOUNT-PROGRAM-001 CONFIRMED:
+
+- GET /api/discount-programs?manage=1&page=1: chỉ OWNER; phân trang 20, rows/total/page/today, sort startsOn/_id giảm. STAFF kể cả cashier nhận 403. Workspace /workspace/discount_programs nằm trong Quản trị và chỉ OWNER truy cập.
+- GET /api/discount-programs?day=YYYY-MM-DD: OWNER/STAFF active cùng spa được xem chương trình áp dụng để preview bán/hoàn thành lịch; không có chức năng quản lý. Ngày mặc định hôm nay Việt Nam; trả {program,day}, program=null khi không hiệu lực, 409 khi nhiều chương trình bật cùng ngày. Private/no-store. STAFF không được dùng endpoint này để sửa cấu hình hoặc xem danh sách quản lý.
+- POST operations saveDiscountProgram {id?,expectedUpdatedAt?,name,startsOn,endsOn,percent,enabled,confirmedRunning?}; tạo mới không id, sửa có id/phiên bản. setDiscountProgramStatus {id,expectedUpdatedAt,enabled,confirmedRunning?}. Strict objects, ngày thực, phần trăm nguyên 0–100. Chỉ active OWNER từ DB; ID cùng spa, thiếu nguồn 404, stale/overlap/thiếu xác nhận đang chạy 409; audit, transaction/idempotency/Control như action khác. Không DELETE.
+- Payload tạo mới hiện có thêm discountProgram?: {id,updatedAt}|null, chỉ để đối chiếu preview; không tin client cho tỷ lệ/tên/số giảm. Backend chọn theo ngày hóa đơn thực lưu (kể cả issuedOn), áp trước cashCard/payments và sau ráp giỏ. Có chương trình thì không nhận discount thủ công; snapshot lấy backend. Nguồn khác preview trả 409; UI yêu cầu tải lại. Checkout gửi ở cấp ngoài, không trong action con. completeAppointment hỗ trợ preview chương trình khi tạo hóa đơn mới, không thêm giảm thủ công vào luồng này, không sửa hóa đơn đã liên kết.
+
+GET invoice và báo cáo giữ discount snapshot; báo cáo Hóa đơn & doanh số hiện tên/phần trăm/số giảm trong nội dung từng hóa đơn. Aggregate doanh số/nợ giữ total/paid sau giảm, dòng tiền từ CashEntry; không cộng chương trình như doanh thu hoặc khoản chi mới. Điều chỉnh hóa đơn không nhận programme mới, không sửa snapshot giảm cũ.
+
 ## Hạn thanh toán tạo mới/hiển thị — 11/11/2026
 
 Theo BR-INV-DEADLINE-001 CONFIRMED: invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/completeAppointment nhận dueDate? YYYY-MM-DD, kiểm ngày lịch thực; '' chuẩn hóa undefined, không gửi/trống không tự chọn ngày. Giữ điều kiện ngày hạn gói hiện có. Checkout gửi cùng hạn trong data của các action con theo cashierActions, không thêm nguồn ngày mặc định hoặc payload thu tiền mới. Nhánh invoice dùng gói lưu dueDate trên hóa đơn mới, không sửa hạn hóa đơn mua gói nguồn.
