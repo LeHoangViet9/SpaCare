@@ -1,4 +1,5 @@
 'use client';
+import {invoiceDiscount} from '@/lib/invoice-discount';
 import { AppointmentSelection, TreatmentConfirmations } from './treatment-selection';
 import MobileNavigationLayer from './mobile-navigation-layer';
 import InvoiceListActions from './invoice-list-actions';
@@ -690,6 +691,7 @@ export function FormModal({ spec, busy, error, fieldErrors={}, onClose, onSubmit
     if(['invoice','sellPackage','sellProduct','serviceInvoice'].includes(spec.action)){
       if(fd.get('issuedOn'))values.issuedOn=fd.get('issuedOn');else delete values.issuedOn;
     }
+    if(['invoice','sellPackage','sellProduct','serviceInvoice'].includes(spec.action)&&fd.get('discount')){values.discount=JSON.parse(String(fd.get('discount')));invoiceDiscount(Number(values.total || 0),values.discount);}
     if(['invoice','sellPackage','sellProduct','serviceInvoice'].includes(spec.action)&&fd.get('payments'))values.payments=JSON.parse(String(fd.get('payments')));
     onSubmit(values); } catch(e) {setLocalError((e as Error).message);}
   }

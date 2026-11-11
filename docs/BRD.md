@@ -1,5 +1,13 @@
 # SpaCare — Business Requirements
 
+## Giảm giá lúc tạo và bill theo từng dịch vụ — 11/11/2026
+
+CONFIRMED theo yêu cầu mới nhất: chỉ nhập giảm giá khi tạo hóa đơn mới, theo số tiền hoặc phần trăm; lưu loại, giá trị và số tiền giảm để tra cứu/PDF. Tạm tính giữ giá bán từng dòng, tổng phải trả/công nợ dùng tổng sau giảm. Giữ giá dòng, hoa hồng hiện có, thu tiền cấp hóa đơn, quyền, transaction, idempotency và audit. Không thêm/sửa giảm giá ở hóa đơn đã tạo. Thay mô tả trước đây chưa có trường giảm giá riêng; không mở rộng chính sách sửa hóa đơn cũ.
+
+Chi tiết/PDF ghi KTV ngay dưới từng dịch vụ theo đúng người đã lưu, thiếu ghi Chưa có; không gộp người thực hiện chung. PDF giữ bill dọc hiện tại và lời cảm ơn, thêm tạm tính/giảm giá/tổng sau giảm/đã trả/còn nợ; bỏ hai cảnh báo tra cứu/thời điểm xuất và dòng Xuất lúc. Không có ảnh tham chiếu đính kèm trong phiên này; bố cục hiện có là nguồn đối chiếu.
+
+PROPOSED kỹ thuật: phần trăm nguyên 0–100, làm tròn số giảm tới VNĐ gần nhất. Áp một lần trên hóa đơn bán mới (dịch vụ, sản phẩm, gói hoặc hỗn hợp); buổi gói kèm hàng/dịch vụ bán thêm chỉ giảm phần có giá. Không nhận cho buổi gói thuần 0đ, quà tặng, chuyển số dư hoặc giỏ sinh nhiều hóa đơn chưa có quy tắc chia giảm giá. Không migration/backfill hoặc sửa dữ liệu thật.
+
 ## Một điểm Sửa hóa đơn tại chi tiết — 10/11/2026
 
 CONFIRMED theo yêu cầu mới nhất: bỏ nút riêng Đính chính dịch vụ / kỹ thuật viên. Trong Xử lý hóa đơn, OWNER dùng Sửa hóa đơn để mở form thống nhất, gồm thông tin đang được hỗ trợ và dịch vụ/KTV theo đúng từng dòng. Trước lưu phải đối chiếu trước/sau, tiền, công nợ, hoa hồng và lý do; giữ actor/thời điểm/lịch sử. Chỉ đổi KTV không đổi tiền hoặc ngày thu. Sửa dịch vụ/giá đủ điều kiện dùng nghiệp vụ chênh lệch hiện có, không tự thu hoặc hoàn; payroll đã duyệt/chi bất biến. Quyết định này thay điểm vào đính chính riêng của BR-INV-TECH-UI-001, không yêu cầu bỏ guard nguồn/lương đã chốt hoặc mở quyền sửa dòng đang bị khóa. Chỉ làm trên nhánh hiện tại, không push/merge main/deploy.

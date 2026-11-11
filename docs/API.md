@@ -1,5 +1,11 @@
 # API nội bộ
 
+## Giảm giá khi tạo hóa đơn — 11/11/2026
+
+Theo BR-INV-DISCOUNT-001 CONFIRMED; contract/làm tròn dưới đây PROPOSED kỹ thuật. invoice/serviceInvoice/sellPackage/sellProduct/productInvoice/checkout nhận discount?: {type:'AMOUNT'|'PERCENT',value:number}, object strict. AMOUNT nguyên 0–10^12, không vượt tạm tính; PERCENT nguyên 0–100. Backend tính số giảm/làm tròn VNĐ, lưu Invoice.subtotal/discount.amount/total sau giảm. Không nhận amount trong object discount. payments/cashCard áp trên tổng sau giảm trong cùng transaction/idempotency/audit. Khoản vượt nợ/thiếu xác nhận/ngày đóng tiếp tục bị chặn, rollback toàn lần tạo.
+
+Checkout chỉ nhận discount cấp ngoài, không nhận trong actions[].data; áp một lần sau khi ráp một hóa đơn chung. Giỏ nhiều chứng từ có giảm giá trả 409, không chia giảm giá. SESSION có bán thêm được giảm phần có giá; SESSION thuần 0đ/GIFT/chuyển số dư không nhận. Các action không tạo hóa đơn từ chối field discount; content patch sửa hóa đơn tiếp tục strict và không nhận trường giảm giá. GET invoice trả snapshot đã lưu; export dùng cùng snapshot và total/paid hiện hành, gồm delta điều chỉnh nếu có. Dữ liệu cũ thiếu discount/subtotal giữ tương thích, không backfill. Retry cùng key có giảm giá khác trả 409.
+
 ## Form sửa hóa đơn thống nhất — 10/11/2026
 
 Theo BR-INV-UNIFIED-EDIT-001 CONFIRMED; contract triển khai là PROPOSED kỹ thuật. Chi tiết chỉ có Xử lý hóa đơn → Sửa hóa đơn, tải GET /api/invoices/:id?edit=1 rồi dùng previewInvoiceAdjustment/applyInvoiceAdjustment như điểm sửa danh sách. Không thêm API hoặc gửi hai mutation độc lập cho nội dung và KTV. canCorrectPerformedServices giữ tương thích đọc, không còn tạo action UI riêng.

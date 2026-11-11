@@ -1,5 +1,15 @@
 # SpaCare — Business Rules
 
+## BR-INV-DISCOUNT-001 — Giảm giá lúc tạo — 11/11/2026
+
+CONFIRMED theo yêu cầu người dùng: giảm theo tiền hoặc phần trăm chỉ tại lúc tạo; không sửa/thêm trên hóa đơn cũ. Giá dòng/hoa hồng dịch vụ cố định không đổi, không phân bổ giảm giá ngược vào dòng. Invoice.total là tổng sau giảm, mọi thu/cọc/thẻ/công nợ/báo cáo giữ nguồn tổng hiện hành; hoa hồng gói vẫn 5% thực thu theo cơ chế cũ. Tổng và số giảm không âm, số giảm không vượt tạm tính. Giữ thu theo tổng hóa đơn, không tạo phân bổ dòng mới. Quy tắc này thay phần chưa có giảm giá trong BR-INV-CONTENT-001 và bổ sung phép trừ giảm giá vào BR-INV-PRICE-001.
+
+PROPOSED kỹ thuật: AMOUNT là số nguyên VNĐ 0–MAX_MONEY; PERCENT là số nguyên 0–100, amount = Math.round(subtotal × value / 100). Đây là lựa chọn về độ chính xác/làm tròn, chưa phải spa xác nhận riêng. Snapshot subtotal/discount bất biến sau tạo; điều chỉnh tổng qua quy trình cũ được hiển thị riêng là Điều chỉnh sau lập, không đổi loại/giá trị giảm hoặc tính lại phần trăm. Không tự điều chỉnh hóa đơn lịch sử.
+
+PROPOSED kỹ thuật về phạm vi: invoice/serviceInvoice/sellPackage/sellProduct/productInvoice và checkout tạo một hóa đơn chung nhận discount cấp ngoài. Giỏ nhiều chứng từ bị chặn nguyên tử khi có discount; không tự chia. SESSION chỉ hỗ trợ khi có dịch vụ/sản phẩm bán thêm có tổng dương, các buổi đã mua vẫn 0đ. GIFT, buổi gói thuần 0đ, openingBalance và các thao tác khác từ chối discount. Áp sau ráp dòng/gộp gói và trước thu/thẻ; lỗi rollback cả hóa đơn/kho/gói/hoa hồng/tiền/audit. Retry cùng key/nội dung không nhân đôi, đổi giảm giá với key cũ bị chặn.
+
+CONFIRMED về trình bày: KTV từng dòng dịch vụ ở chi tiết/PDF, thiếu ghi Chưa có, không fallback người tạo hoặc người chung vào dòng thiếu. PDF có Tạm tính, Giảm giá (loại và số tiền), Tổng thanh toán sau giảm, Đã trả, Còn nợ; giữ lời cảm ơn. Bỏ hai cảnh báo tra cứu/thời điểm xuất và dòng Xuất lúc của PDF hóa đơn; PDF báo cáo khác giữ cách xuất hiện có.
+
 ## BR-INV-UNIFIED-EDIT-001 — Một form sửa tại chi tiết — 10/11/2026
 
 CONFIRMED: chỉ OWNER sửa qua Xử lý hóa đơn → Sửa hóa đơn; bỏ nút Đính chính dịch vụ / kỹ thuật viên riêng. Dùng chung form sửa từ danh sách, điền sẵn đúng dịch vụ và KTV từng dòng, kể cả nhiều lượt trùng serviceId. Bắt lý do, xem trước giá trị trước/sau, tổng/đã thanh toán/công nợ, chênh lệch và hoa hồng trước xác nhận. Giữ đầy đủ người sửa/thời điểm/lý do/nội dung trong chứng từ và audit. Thay mô tả điểm vào riêng trong BR-INV-TECH-UI-001; không thay chính sách người tư vấn bán gói hoặc hoàn tiền thực tế.

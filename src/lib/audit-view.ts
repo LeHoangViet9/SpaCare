@@ -1,6 +1,8 @@
 import { formatCurrency } from './currency';
+import {discountLabel} from './invoice-discount';
 type Row = Record<string, any>;
 export const auditActions: Record<string, string> = {
+  invoiceDiscount:'Giảm giá khi tạo hóa đơn',
   correctInvoice:'Sửa sai hóa đơn bằng chứng từ điều chỉnh',voidInvoice:'Vô hiệu hóa hóa đơn có đối soát',refundInvoiceAdjustment:'Ghi nhận hoàn tiền điều chỉnh thực tế',
   updateCustomerTreatment: 'Sửa gói trong hồ sơ khách hàng',
   splitPayment: 'Thanh toán hóa đơn theo phương thức',
@@ -45,6 +47,7 @@ export function auditValue(key: string, value: any, data: Row): string {
 export function auditLines(details: Row | null | undefined, data: Row): string[] {
   const d = details || {};
   const lines: string[] = [];
+  if(d.discount)lines.push(`Giảm giá (${discountLabel(d.discount)}): ${formatCurrency(d.discount.amount)}`);
   const changed = new Set<string>();
   if (d.before && d.after) for (const key of Object.keys(fields)) {
     if (JSON.stringify(d.before[key]) !== JSON.stringify(d.after[key]) && (key in d.before || key in d.after)) {

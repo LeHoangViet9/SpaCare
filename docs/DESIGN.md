@@ -1,5 +1,11 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Giảm giá và bill dọc — 11/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-DISCOUNT-001: dùng helper invoiceDiscount chung phía client/backend; InvoiceDiscountFields chỉ đặt trong form tạo (Cashier/CommercialFields), không đưa vào form sửa. Giỏ giữ giá bán gốc từng dòng, preview tổng sau giảm cho thu tiền/thẻ; backend tính lại từ dữ liệu đã xác minh trong transaction. Checkout giảm một lần ở hóa đơn chung sau ráp gói/dòng và trước splitPayment; inline cashCard áp giảm trước redeemCard. Notification hóa đơn phát sau hoàn tất tổng để không gửi số trước giảm. Không ghi song song trong transaction.
+
+invoiceSummary đọc snapshot gốc hoặc fallback legacy, hiển thị delta điều chỉnh riêng để không sửa discount khi OWNER chỉnh tổng qua luồng cũ. Export giữ canvas 680px/80mm và bảng hai cột, thêm KTV xuống dòng trong cùng ô dịch vụ; dòng gói/sản phẩm và dịch vụ đều được giữ trong hóa đơn hỗn hợp. Chỉ PDF hóa đơn bỏ Xuất lúc; header Ngày in và lời cảm ơn giữ nguyên. Không có ảnh tham chiếu đính kèm nên đối chiếu bố cục bill đang có.
+
 ## Điểm sửa chi tiết thống nhất — 10/11/2026
 
 CONFIRMED: InvoiceDetail bỏ nút Đính chính dịch vụ / kỹ thuật viên riêng; InvoiceHandlingMenu dùng nhóm/nút Sửa hóa đơn. Cùng callback Workspace tải editContext đầy đủ và mở InvoiceAdjustmentDialog. Không có lựa chọn luồng thứ hai hoặc chuỗi ghi nội dung rồi ghi KTV. Các trường bị khóa tiếp tục theo nguồn backend hiện hành.

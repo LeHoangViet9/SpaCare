@@ -97,7 +97,7 @@ for (const model of allModels) {
   m.find = (filter: any) => query(state[name].filter(row => matches(row, filter)).map(row => document(name, row)), filter);
   m.findOne = (filter: any) => query(document(name, state[name].find(row => matches(row, filter))), filter);
   m.exists = (filter:any) => query(state[name].find(row=>matches(row,filter)) || null,filter);
-  m.countDocuments = (filter: any) => Promise.resolve(state[name].filter(row => matches(row, filter)).length);
+  m.countDocuments = (filter: any) => query(state[name].filter(row => matches(row, filter)).length,filter);
   m.aggregate = async (pipeline: any[]) => aggregate(clone(state[name]), pipeline);
   m.findOneAndUpdate = (filter: any, update: any) => {
     const row = state[name].find(row => matches(row, filter));
@@ -303,4 +303,98 @@ for(const condition of ['staff','inactive','shared','foreign','future','line-all
   if(condition==='replaced')state.Invoice[0].activeDocumentId=objectId();
   const data=correctionData(300000,condition==='future'?spaDay(new Date(Date.now()+86400000)):oldDay),before=clone(state);
   await assert.rejects(call('previewInvoiceAdjustment',data));assert.deepEqual(state,before,condition+' must fail without side effects');
+}
+
+// New-invoice discounts: model doubles exercise real operate/payment/report paths.
+function discountSetup(){
+  setup(0);state.Invoice=[];state.Payment=[];state.CashEntry=[];
+  const service=state.Service[0];service.commission=1000;
+  return {customerId:state.Customer[0]._id,serviceId:service._id};
+}
+const creationReceipt=(amount:number,method='CASH')=>({amount,method,receivedConfirmation:true,receivedOn:today});
+for(const discount of [{type:'AMOUNT',value:3000},{type:'PERCENT',value:10}]){
+  const {customerId,serviceId}=discountSetup(),key=randomUUID();
+  const data={customerId,serviceId,discount,payments:[creationReceipt(10000),creationReceipt(5000,'BANK_TRANSFER')]};
+  const result=await call('invoice',data,key);assert.deepEqual(await call('invoice',data,key),result);
+  assert.equal(state.Invoice.length,1);assert.equal(state.Invoice[0].subtotal,30000);assert.equal(state.Invoice[0].total,27000);
+  assert.deepEqual(state.Invoice[0].discount,{...discount,amount:3000});
+  assert.equal(state.Invoice[0].paid,15000);assert.equal(state.Invoice[0].status,'PARTIALLY_PAID');
+  assert.equal(state.Invoice[0].serviceItems[0].total,30000);assert.equal(state.Invoice[0].serviceItems[0].commission,1000);
+  assert.equal(state.Payment.length,2);assert.equal(state.Audit.filter(row=>row.action==='invoiceDiscount').length,1);
+  assert.equal(state.ActivityNotification.length,1);assert.match(state.ActivityNotification[0].body,/27.000/);
+  const report=await readReport(actor,makeQuery('reports',today,today));
+  assert.equal(report.inflow,15000);assert.equal(report.summary.debt,12000);
+  const overview=await readWorkspace(actor,makeQuery('overview'));assert.equal(overview.totals.debt,12000);assert.equal(overview.totals.inflow,15000);
+  const before=clone(state);await assert.rejects(call('payment',{invoiceId:result.id,...creationReceipt(12001)}),/vượt công nợ/);assert.deepEqual(state,before);
+  await call('payment',{invoiceId:result.id,...creationReceipt(12000)});assert.equal(state.Invoice[0].status,'PAID');
+  await assert.rejects(call('invoice',{...data,discount:{type:'AMOUNT',value:1}},key),/Mã yêu cầu/);
+}
+{
+  const {customerId,serviceId}=discountSetup();
+  await call('serviceInvoice',{customerId,items:[{serviceId,performerId:ownerId},{serviceId,performerId:ownerId}],discount:{type:'PERCENT',value:25}});
+  assert.equal(state.Invoice[0].total,45000);assert.equal(state.Invoice[0].subtotal,60000);
+  assert.equal(state.InvoiceLineCommission.length,2);assert.deepEqual(state.InvoiceLineCommission.map(row=>row.amount),[1000,1000]);
+}
+for(const action of ['sellProduct','productInvoice']){
+  const {customerId}=discountSetup();
+  const product=add(allModels.find(model=>model.modelName==='Product'),{name:'Synthetic product',sku:'DISC',unit:'chai',price:5000,stock:10,active:true});
+  const data=action==='sellProduct'?{productId:product._id,quantity:2}:{items:[{productId:product._id,quantity:2,unitPrice:5000}]};
+  await call(action,{customerId,...data,discount:{type:'AMOUNT',value:1000},payments:[creationReceipt(9000)]});
+  assert.equal(state.Invoice[0].total,9000);assert.equal(state.Invoice[0].subtotal,10000);assert.equal(state.Invoice[0].paid,9000);assert.equal(state.Product[0].stock,8);
+}
+{
+  const {customerId,serviceId}=discountSetup();
+  const template=add(allModels.find(model=>model.modelName==='PackageTemplate'),{name:'Synthetic package',serviceId,price:10000,totalSessions:3,packageType:'SESSIONS',active:true});
+  await call('sellPackage',{customerId,templateId:template._id,discount:{type:'PERCENT',value:20},payments:[creationReceipt(8000)]});
+  assert.equal(state.Invoice[0].total,8000);assert.equal(state.Invoice[0].subtotal,10000);assert.equal(state.Treatment.length,1);
+  assert.equal(state.SaleCommission.reduce((n,row)=>n+row.amount,0),400,'package commission retains 5% of actual receipt');
+}
+for(const discount of [{type:'AMOUNT',value:-1},{type:'AMOUNT',value:30001},{type:'PERCENT',value:101},{type:'PERCENT',value:1.5}]){
+  const {customerId,serviceId}=discountSetup(),before=clone(state);
+  await assert.rejects(call('invoice',{customerId,serviceId,discount}));assert.deepEqual(state,before);
+}
+const modelByName=(name:string)=>allModels.find(model=>model.modelName===name)!;
+(modelByName('Treatment').collection as any).indexes=async()=>[{name:'synthetic_lookup',key:{spaId:1,invoiceId:1}}];
+for(const mixed of [false,true]){
+  const {customerId,serviceId}=discountSetup();
+  const template=add(modelByName('PackageTemplate'),{name:'Grouped synthetic package',serviceId,price:10000,totalSessions:3,packageType:'SESSIONS',active:true});
+  const actions=[{action:'sellPackage',data:{templateId:template._id,cartId:'a'}},{action:'sellPackage',data:{templateId:template._id,cartId:'b'}}];
+  if(mixed)actions.unshift({action:'invoice',data:{serviceId}} as any);
+  const subtotal=mixed?50000:20000,key=randomUUID(),data={customerId,actions,discount:{type:'PERCENT',value:10},payments:[creationReceipt(1000)]};
+  const result=await call('checkout',data,key);assert.deepEqual(await call('checkout',data,key),result);
+  assert.equal(state.Invoice.length,1);assert.equal(state.Treatment.length,2);assert.equal(state.Invoice[0].packageItems.length,2);
+  assert.equal(state.Invoice[0].subtotal,subtotal);assert.equal(state.Invoice[0].total,subtotal*0.9);
+  assert.equal(result.total,subtotal*0.9);assert.equal(result.invoices[0].total,subtotal*0.9);
+  assert.equal(state.Payment.length,1);assert.equal(state.Audit.filter(row=>row.action==='invoiceDiscount').length,1);
+}
+{
+  const {customerId,serviceId}=discountSetup();
+  const card=add(modelByName('CashCard'),{customerId,amount:50000,balance:50000,origin:'GIFT',actorId:ownerId});
+  await call('invoice',{customerId,serviceId,discount:{type:'AMOUNT',value:3000},cashCard:{cardId:card._id,amount:20000,additionalAmount:7000,method:'CASH',receivedConfirmation:true,receivedOn:today}});
+  assert.equal(state.Invoice[0].total,27000);assert.equal(state.Invoice[0].paid,27000);assert.equal(state.CashCard[0].balance,30000);
+  assert.equal(state.CashEntry[0].amount,7000);assert.equal(state.CashCardUse.length,1);
+}
+{
+  const {customerId,serviceId}=discountSetup();
+  const purchase=add(Invoice,{customerId,serviceId,description:'Paid synthetic package',kind:'PACKAGE',total:10000,paid:10000,status:'PAID'});
+  const plan=add(modelByName('Treatment'),{customerId,serviceId,invoiceId:purchase._id,name:'Synthetic existing package',totalSessions:3,remaining:3,status:'ACTIVE',packageType:'SESSIONS'});
+  const data={customerId,serviceId,treatmentId:plan._id,remainingBefore:3,staffId:ownerId,discount:{type:'PERCENT',value:10}};
+  const before=clone(state);await assert.rejects(call('invoice',data),/không hỗ trợ giảm giá/);assert.deepEqual(state,before);
+  const result=await call('invoice',{...data,additionalServices:[{serviceId,total:30000,performerId:ownerId}]});
+  const session=state.Invoice.find(row=>row._id===result.invoiceId);
+  assert.equal(session.kind,'SESSION');assert.equal(session.total,27000);assert.equal(session.subtotal,30000);
+  assert.equal(session.serviceItems[0].total,0);assert.equal(state.Treatment[0].remaining,2);
+}
+for(const failure of ['overpaid','audit','receipt']){
+  const {customerId,serviceId}=discountSetup(),before=clone(state);
+  failCreate=failure==='audit'?'Audit':failure==='receipt'?'CashEntry':'';
+  try{await assert.rejects(call('invoice',{customerId,serviceId,discount:{type:'AMOUNT',value:3000},payments:[creationReceipt(failure==='overpaid'?27001:10000)]}));}
+  finally{failCreate='';}
+  assert.deepEqual(state,before,'creation discount failure rolls back the whole operation');
+}
+{
+  const {customerId,serviceId}=discountSetup();
+  const result=await call('checkout',{customerId,actions:[{action:'invoice',data:{serviceId}}],discount:{type:'PERCENT',value:100}});
+  assert.equal(result.total,0);assert.equal(result.invoices[0].total,0);assert.equal(state.Invoice[0].status,'PAID');assert.equal(state.Payment.length,0);
+  await assert.rejects(call('payment',{invoiceId:result.id,...creationReceipt(1),discount:{type:'AMOUNT',value:0}}),/Chỉ nhập giảm giá/);
 }

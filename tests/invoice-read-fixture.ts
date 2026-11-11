@@ -41,7 +41,7 @@ await readInvoice({ ...owner, role: 'STAFF' }, id);
 assert.deepEqual(queried.$and[1], { $or: [{ actorId }, { staffId: actorId }] });
 const pdf = await invoiceExport(owner, id);
 assert.ok(pdf.tables[0].rows.some(row => row.includes('0329357116')));
-assert.deepEqual(pdf.tables[2].rows.slice(0,4).map(row=>row[1].replace(/[^\d]/g,'')),['2000000','1500000','100000','500000']);
+assert.deepEqual(pdf.tables[2].rows.slice(0,6).map(row=>row[1].replace(/[^\d]/g,'')),['2000000','0','2000000','1500000','100000','500000']);
 invoice.total=0; invoice.paid=0; invoice.refunded=0;
 const free=await invoiceExport(owner,id);
 assert.equal(free.tables[2].rows[0][1].replace(/[^\d]/g,''),'0');

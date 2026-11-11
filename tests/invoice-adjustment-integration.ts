@@ -136,6 +136,9 @@ export async function invoiceAdjustmentIntegration(extraSpaIds:mongoose.Types.Ob
   assert.equal(await TreatmentUse.countDocuments({...scope,treatmentId:exhausted._id}),exhaustedCount);
  });
  await t.test('invoice-date-only corrections preserve actual receipt days, adjustment history and reversal access',async()=>{
+  // Raw MongoDB finds have no ordering contract. Compare complete records by ID,
+  // independently of create() input order and the detail API's createdAt/_id sort.
+  const ledgerSnapshot=(rows:unknown[])=>snapshot(rows).sort((a:{_id:string},b:{_id:string})=>a._id.localeCompare(b._id));
   const bill=await Invoice.create({...scope,customerId:customer._id,serviceId:service._id,kind:'SERVICE',description:'Date-only receipt test',total:500000,paid:500000,status:'PAID'});
   const today=spaDay(),priorDay=spaDay(new Date(Date.now()-86400000)),earlierDay=spaDay(new Date(Date.now()-2*86400000));
   const receipts=await CashEntry.create([
@@ -146,8 +149,8 @@ export async function invoiceAdjustmentIntegration(extraSpaIds:mongoose.Types.Ob
    {...scope,invoiceId:bill._id,receiptId:receipts[0]._id,amount:200000},
    {...scope,invoiceId:bill._id,receiptId:receipts[1]._id,amount:300000},
   ]);
-  const cashSnapshot=snapshot(await CashEntry.find({...scope,_id:{$in:receipts.map((receipt:{_id:mongoose.Types.ObjectId})=>receipt._id)}}).lean());
-  const paymentSnapshot=snapshot(payments.map((payment:{toObject:()=>unknown})=>payment.toObject()));
+  const cashSnapshot=ledgerSnapshot(await CashEntry.find({...scope,_id:{$in:receipts.map((receipt:{_id:mongoose.Types.ObjectId})=>receipt._id)}}).lean());
+  const paymentSnapshot=ledgerSnapshot(payments.map((payment:{toObject:()=>unknown})=>payment.toObject()));
   const updateDate=async(issuedOn:string)=>{
    const current=(await Invoice.findById(bill._id))!;
    const input={id:String(bill._id),expectedUpdatedAt:current.updatedAt.toISOString(),mode:'CORRECT',total:current.total,issuedOn,reason:'Date-only correction'};
@@ -160,15 +163,20 @@ export async function invoiceAdjustmentIntegration(extraSpaIds:mongoose.Types.Ob
   assert.equal((await Invoice.findById(bill._id))!.financialRevision,undefined);
   await updateDate(earlierDay);
   assert.equal((await Invoice.findById(bill._id))!.financialRevision,undefined);
-  assert.deepEqual(snapshot(await CashEntry.find({...scope,_id:{$in:receipts.map((receipt:{_id:mongoose.Types.ObjectId})=>receipt._id)}}).lean()),cashSnapshot);
-  assert.deepEqual(snapshot(await Payment.find({...scope,invoiceId:bill._id}).lean()),paymentSnapshot);
+  assert.deepEqual(ledgerSnapshot(await CashEntry.find({...scope,_id:{$in:receipts.map((receipt:{_id:mongoose.Types.ObjectId})=>receipt._id)}}).lean()),cashSnapshot);
+  assert.deepEqual(ledgerSnapshot(await Payment.find({...scope,invoiceId:bill._id}).lean()),paymentSnapshot);
   assert.equal(await InvoiceAdjustment.countDocuments({...scope,invoiceId:bill._id}),2);
   await call('reverseCash',{id:String(receipts[0]._id),reason:'Verify reversal remains available'});
   const reversed=(await CashEntry.findOne({...scope,kind:'REVERSAL',originalId:receipts[0]._id}).lean());
   assert.ok(reversed);
-  const afterReversal=snapshot(await CashEntry.find({...scope,_id:{$in:[receipts[0]._id,receipts[1]._id,reversed._id]}}).lean());
+  const afterReversal=ledgerSnapshot(await CashEntry.find({...scope,_id:{$in:[receipts[0]._id,receipts[1]._id,reversed._id]}}).lean());
+  const paymentsAfterReversal=ledgerSnapshot(await Payment.find({...scope,invoiceId:bill._id}).lean());
+  assert.equal(paymentsAfterReversal.find((payment:{receiptId:string})=>payment.receiptId===String(receipts[0]._id)).reversed,true);
+  assert.equal(paymentsAfterReversal.find((payment:{receiptId:string})=>payment.receiptId===String(receipts[1]._id)).reversed,false);
   await updateDate(spaDay(new Date(Date.now()-3*86400000)));
-  assert.deepEqual(snapshot(await CashEntry.find({...scope,_id:{$in:[receipts[0]._id,receipts[1]._id,reversed._id]}}).lean()),afterReversal);
+  assert.deepEqual(ledgerSnapshot(await CashEntry.find({...scope,_id:{$in:[receipts[0]._id,receipts[1]._id,reversed._id]}}).lean()),afterReversal);
+  assert.deepEqual(ledgerSnapshot(await Payment.find({...scope,invoiceId:bill._id}).lean()),paymentsAfterReversal);
+  assert.equal(await InvoiceAdjustment.countDocuments({...scope,invoiceId:bill._id}),3);
  });
  await t.test('mixed checkout package invoice is classified by lines and blocks total changes',async()=>{
   const template=await call('packageTemplate',{name:'Mixed sale '+randomUUID(),serviceId:String(service._id),totalSessions:3,price:250000});

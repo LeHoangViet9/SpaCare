@@ -80,6 +80,40 @@ test('technician requirement: advance invoice saves without a technician',async(
  const saved=JSON.parse(await page.locator('#saved-advance').textContent());expect(saved.staffId).toBeUndefined();expect(saved.serviceId).toBe('c'.repeat(24));
 });
 
+for(const type of ['AMOUNT','PERCENT'])test(`new invoice ${type} discount previews net amount and saves its input`,async({page},testInfo)=>{
+ await page.goto('/pre-service');await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));
+ await page.getByRole('combobox',{name:'Loại giảm giá',exact:true}).selectOption(type);
+ if(type==='AMOUNT')await page.getByRole('textbox',{name:'Số tiền giảm (VNĐ)',exact:true}).fill('20.000');
+ else await page.getByRole('spinbutton',{name:'Phần trăm giảm giá (0–100)',exact:true}).fill('20');
+ await expect(page.locator('.invoice-discount-fields')).toContainText('Tạm tính: 100.000 đ');
+ await expect(page.locator('.invoice-discount-fields')).toContainText('Tổng thanh toán sau giảm: 80.000 đ');
+ await page.getByRole('textbox',{name:'Tiền mặt',exact:true}).fill('50000');
+ await page.getByRole('checkbox',{name:'Đã thực nhận tiền mặt',exact:true}).check();
+ await page.getByRole('button',{name:'Lưu thông tin',exact:true}).click();
+ const saved=JSON.parse(await page.locator('#saved-advance').textContent());
+ expect(saved.discount).toEqual({type,value:type==='AMOUNT'?20000:20});expect(saved.total).toBe(100000);
+ expect(saved.payments[0].amount).toBe(50000);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('invoice-discount.png'),fullPage:true});
+});
+
+test('covered package form has no discount input',async({page})=>{
+ await page.goto('/pre-service');await page.getByRole('checkbox',{name:/Gói chăm sóc da/}).check();
+ await expect(page.getByRole('combobox',{name:'Loại giảm giá',exact:true})).toHaveCount(0);
+});
+
+test('cashier discount preserves repeated line prices and is sent once',async({page})=>{
+ await repeatedCart(page,2);
+ await assignOccurrence(page,0,'Kỹ thuật viên An');await assignOccurrence(page,1,'Kỹ thuật viên Bình');
+ await page.getByRole('combobox',{name:'Loại giảm giá',exact:true}).selectOption('PERCENT');
+ await page.getByRole('spinbutton',{name:'Phần trăm giảm giá (0–100)',exact:true}).fill('10');
+ await expect(page.locator('.invoice-discount-fields')).toContainText('Tổng thanh toán sau giảm: 630.000 đ');
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ',exact:true}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
+ expect(saved.values.discount).toEqual({type:'PERCENT',value:10});expect(saved.values.items.map(row=>row.total)).toEqual([350000,350000]);
+ expect(saved.values.items.map(row=>row.performerId)).toEqual(['1'.repeat(24),'2'.repeat(24)]);
+});
+
 test('technician requirement: recording a package in the invoice form requires an explicit line technician',async({page},testInfo)=>{
  await page.goto('/pre-service');await page.getByRole('checkbox',{name:/Gói chăm sóc da/}).check();
  const technician=page.getByRole('combobox',{name:'Kỹ thuật viên lượt dùng gói 1 (Gói chăm sóc da)',exact:true});
@@ -196,7 +230,7 @@ test('invoice detail keeps per-service staff, separate receipts and totals on de
  await expect(services.nth(2)).toContainText('Kỹ thuật viên: Chưa có');
  const payments = dialog.getByRole('region', {name:'Phương thức thanh toán'}).getByRole('listitem');
  await expect(payments).toHaveText(['Chuyển khoản:500.000 đ', 'Tiền mặt:600.000 đ', 'Tiền mặt:400.000 đ']);
- await expect(dialog.locator('.invoice-detail-money > span')).toHaveText(['Tổng tiền1.500.000 đ', 'Đã thanh toán1.500.000 đ', 'Còn nợ0 đ']);
+ await expect(dialog.locator('.invoice-detail-money > span')).toHaveText(['Tạm tính1.500.000 đ', 'Giảm giá (Không áp dụng)0 đ', 'Tổng thanh toán sau giảm1.500.000 đ', 'Đã thanh toán1.500.000 đ', 'Còn nợ0 đ']);
  await expect(dialog.getByText('Người tạo:', {exact:false})).toContainText('Chủ spa kiểm thử');
  await expect(dialog.getByText(/hệ thống sẽ kiểm tra và chặn|Nhân viên đã ghi nhận|Đã thực hiện:/)).toHaveCount(0);
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);

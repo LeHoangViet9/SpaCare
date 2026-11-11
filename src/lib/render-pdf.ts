@@ -119,7 +119,7 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
     y += 30; await paragraph('Cảm ơn và hẹn gặp lại Quý khách!', true);
   }
   for (const note of doc.notes) await paragraph(note);
-  await paragraph(`Xuất lúc: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);
+  if (!receipt) await paragraph(`Xuất lúc: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);
   finish();
   return new File([imagePdf(pages) as Uint8Array<ArrayBuffer>], doc.filename, { type: 'application/pdf' });
 }

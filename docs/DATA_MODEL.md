@@ -1,5 +1,11 @@
 # SpaCare — Data Model
 
+## Snapshot giảm giá hóa đơn mới — 11/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-DISCOUNT-001: Invoice thêm subtotal?: integer VND 0–MAX_MONEY và discount?: {type: AMOUNT|PERCENT, value: number, amount: integer VND}. Input chỉ nhận type/value; backend tính amount và total=subtotal−amount, lưu cùng transaction hiện có. Không nhận subtotal/amount/tổng sau giảm do client tính. Dòng serviceItems/packageItems/productItems giữ nguyên giá bán trước giảm; paid/debt ở cấp Invoice dùng total sau giảm. Không index/collection/migration/backfill mới. Hóa đơn cũ thiếu field được đọc là không giảm giá, subtotal=total.
+
+Audit invoiceDiscount lưu invoiceId/subtotal/discount/total cùng actorId/thời điểm trong transaction tạo, idempotency bao cả giảm giá và thu tiền. Snapshot giảm giá giữ nguyên qua các luồng chỉnh nội dung/tổng/VOID hiện có; UI/PDF thêm delta Điều chỉnh sau lập = total hiện hành − (subtotal gốc − discount.amount) khi khác 0. Không tạo chức năng cập nhật discount; InvoiceAdjustment trước/sau vẫn giữ đầy đủ snapshot. performerName đã được reader resolve cùng spa theo performerId từng dòng; PDF dùng đúng projection này, không dùng performer chung thay dòng trống.
+
 ## Nhận diện dòng trong form sửa thống nhất — 10/11/2026
 
 PROPOSED kỹ thuật cho BR-INV-UNIFIED-EDIT-001 CONFIRMED: không đổi schema/collection/index hoặc migration. reconciliation.content.serviceCorrections[] bổ sung lineNumber (sourceIndex + 1 tại lần sửa) cạnh lineId, serviceName, before/after. Preview, InvoiceAdjustment và audit lưu số dòng cùng lịch sử hiện có; số dòng chỉ để hiển thị, không làm khóa liên kết. Lịch sử cũ thiếu lineNumber vẫn đọc được. Bút toán hoa hồng giữ originalLedgerIds/adjustmentId; không sửa nguồn thu hay snapshot payroll đã chốt khi đổi KTV. canCorrectPerformedServices trong GET giữ tương thích nhưng giao diện không dùng để dựng nút riêng.

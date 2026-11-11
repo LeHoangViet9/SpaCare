@@ -1,5 +1,31 @@
 # SpaCare — Kế hoạch và hướng dẫn kiểm thử (SWT)
 
+## Bổ sung kiểm thử giảm giá — 11/11/2026
+
+`tests/invoice-discount-fixture.ts` kiểm tiền/phần trăm, 0/100%, âm/lẻ/vượt tạm tính/giới hạn tiền, làm tròn, schema snapshot, công nợ, mọi dòng hỗn hợp/KTV và pipeline vẽ PDF không còn các dòng đã bỏ. `tests/invoice-amount-cash-flow-fixture.ts` dùng model doubles, gọi operate để kiểm tạo/thu hai phương thức, nợ/báo cáo, giá/hoa hồng dịch vụ, gói 5% thực thu, sản phẩm/tồn kho, idempotency và rollback khi lỗi tiền/audit. Đây không thay integration MongoDB thật.
+
+`tests/invoice-discount-integration.ts` được gọi trong harness integration có guard chỉ spacare_test: kiểm snapshot đọc lại, thu từng phần/tất toán, gói gộp/hỗn hợp, sản phẩm, dùng thẻ sau giảm, 100%, retry và rollback đầu vào sai. Chỉ ghi Pass khi thực sự chạy trên MongoDB test; thiếu Docker/kết nối phải ghi Blocked. Không dùng dữ liệu vận hành. UI fixture dùng dữ liệu tổng hợp, kiểm desktop/mobile theo `tests/input-ui.spec.mjs`.
+
+Kiểm tra PDF trình duyệt: đặt `SPACARE_TEST_CHROME` tới Chrome local nếu chưa có Chromium của Playwright, chạy `node --import tsx scripts/test-invoice-discount-pdf.ts`. Script chỉ dựng bill tổng hợp từ invoiceExportDocument và vẽ bằng renderPdf thật, xuất PDF/PNG vào `outputs/invoice-discount-pdf/` (gitignored) để xem bố cục/tiếng Việt. Không gọi API hoặc kết nối MongoDB. UI: `npm run test:ui -- --grep "new invoice|invoice detail keeps|covered package form"`, cùng biến Chrome nếu cần. Playwright config hỗ trợ biến này và lưu ảnh vào outputs/input-ui.
+
+Kết quả local 11/11/2026 trên nhánh feature/invoice-replacement (working tree sạch trước khi sửa):
+
+- `npm.cmd test`: PASS 268/268, gồm các ca mới qua model doubles, grouped checkout, dùng thẻ/thu thêm, SESSION 0đ bị chặn và SESSION bán thêm được giảm.
+- `npm.cmd run typecheck`: PASS.
+- `npm.cmd run build`: PASS; còn cảnh báo Next.js hiện có về middleware → proxy.
+- Với `SPACARE_TEST_CHROME` trỏ Chrome local, `npm.cmd run test:ui -- --grep "new invoice|invoice detail keeps|covered package form|cashier discount"`: PASS 10/10 desktop/mobile. Lần thử Chromium mặc định thiếu browser runtime; đã chạy lại thành công bằng Chrome. Trên Windows, tiến trình fixture cần được dừng sau khi các ca hoàn tất để Playwright kết thúc teardown; lần cuối runner exit 0, 10 passed.
+- `node --import tsx scripts/test-invoice-discount-pdf.ts` với Chrome local: PASS, một trang PDF/PNG 80mm, đã xem PNG xác nhận tiếng Việt, bảng, KTV từng dòng, tổng kết và lời cảm ơn không bị cắt/chồng. Các kiểm tra nội dung cũng xác nhận không có ba dòng yêu cầu bỏ. Dùng bill tổng hợp, không có ảnh tham chiếu do người dùng đính kèm để so khớp riêng.
+- `npm.cmd run test:integration`: BLOCKED [DOCKER_CLI], không tìm thấy Docker trong PATH. Không kết nối/ghi database production; bộ integration mới đã bổ sung nhưng chưa được thực thi trên MongoDB thật.
+- `git diff --check`: PASS. Không checkout/commit/push/merge/deploy, không migration/backfill. next-env.d.ts phát sinh bởi build đã đưa về nội dung ban đầu.
+
+Danh sách file thay đổi trong đợt này:
+
+- Backend/model/helper: `src/lib/operations.ts`, `src/lib/models.ts`, `src/lib/invoice-discount.ts`, `src/lib/audit-view.ts`.
+- UI tạo/chi tiết: `src/components/cashier.tsx`, `src/components/commercial-fields.tsx`, `src/components/invoice-discount-fields.tsx`, `src/components/workspace.tsx`, `src/components/invoice-detail.tsx`.
+- PDF: `src/lib/export-read.ts`, `src/lib/render-pdf.ts`.
+- Kiểm thử: `tests/invoice-discount.test.mjs`, `tests/invoice-discount-fixture.ts`, `tests/invoice-discount-integration.ts`, `tests/invoice-amount-cash-flow-fixture.ts`, `tests/invoice-read-fixture.ts`, `tests/integration.test.ts`, `tests/input-ui.spec.mjs`, `scripts/test-invoice-discount-pdf.ts`, `playwright.config.mjs`.
+- Tài liệu: `docs/BRD.md`, `docs/BUSINESS_RULES.md`, `docs/DATA_MODEL.md`, `docs/API.md`, `docs/DESIGN.md`, `docs/TESTING.md`.
+
 Phiên bản: 1.0 — 20/10/2026. Đối tượng: MVP Next.js + MongoDB hiện tại.
 
 ## 1. Mục tiêu và phạm vi (Test Plan)

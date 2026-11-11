@@ -1,3 +1,4 @@
+import { invoiceDiscount } from './invoice-discount';
 import { ensureGroupedPackageIndex } from './package-invoice-indexes';
 import {receiptDayInput} from './receipt-day';
 import {adjustInvoice, refundInvoiceAdjustment} from './invoice-adjustment';
@@ -83,6 +84,7 @@ const phone = z.string().trim().transform(value => value.replace(/[\s().-]/g, ''
 const paymentInput = z.object({ invoiceId: objectId, amount: moneySchema, method, note, transferReference: z.string().trim().max(500).optional(), receivedConfirmation: z.literal(true, 'Cần xác nhận đã thực nhận tiền.'), receivedOn:receiptDayInput.optional(), lineAllocations: ignoredLineAllocations });
 const creationPaymentsInput=z.array(paymentInput.omit({invoiceId:true}).extend({receivedOn:receiptDayInput}).strict()).min(1).max(2)
   .refine(payments=>new Set(payments.map(payment=>payment.method)).size===payments.length,'Không lặp phương thức trong cùng lần thanh toán.');
+const discountInput=z.object({type:z.enum(['AMOUNT','PERCENT']),value:z.number().int().min(0).max(MAX_MONEY)}).strict().refine(d=>d.type!=='PERCENT'||d.value<=100,'Phần trăm giảm giá phải từ 0 đến 100.');
 const invoiceCreationActions=new Set(['invoice','serviceInvoice','sellPackage','sellProduct','productInvoice','checkout']);
 
 const schemas = {
@@ -248,8 +250,10 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
   ensure(Object.hasOwn(schemas, action), 'Thao tác không hợp lệ.');
   ensure(/^[a-zA-Z0-9-]{16,100}$/.test(key), 'Cần Idempotency-Key hợp lệ.');
   const op = action as Operation;
+  ensure(invoiceCreationActions.has(op) || !raw || typeof raw !== 'object' || !Object.hasOwn(raw,'discount'), 'Chỉ nhập giảm giá khi tạo hóa đơn mới.');
   const data = {...schemas[op].parse(raw), ...(invoiceCreationActions.has(op) ? {
     issuedOn:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().parse((raw as Record<string,unknown>)?.issuedOn),
+    discount:discountInput.optional().parse((raw as Record<string,unknown>)?.discount),
     payments:creationPaymentsInput.optional().parse((raw as Record<string,unknown>)?.payments),
   } : {})};
   const fingerprint = sha(JSON.stringify({ action, data }));
@@ -310,6 +314,21 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if(model === Invoice && doc.activeDocumentId && !doc.financialRevision && ['payment','splitPayment','allocate','reverseAllocation','reverseCash','refundPackage','updateInvoice','cancelInvoice','correctInvoiceDate','treatment'].includes(op))
           ensure(false,'Chứng từ đã thay thế: phiên bản này chưa hỗ trợ thay đổi tài chính hoặc nội dung tiếp theo.',409);
         return doc;
+      };
+      const discountedIds = new Set<string>();
+      const applyNewDiscount = async (invoice: any) => {
+        if (!data.discount || discountedIds.has(String(invoice._id))) return;
+        ensure(createdInvoiceIds.includes(String(invoice._id)), 'Chỉ giảm giá hóa đơn mới trong lần tạo này.', 409);
+        ensure(!invoice.openingBalance && !invoice.giftOfInvoiceId &&
+          (['SERVICE','PACKAGE','PRODUCT'].includes(invoice.kind) ||
+           (invoice.kind === 'SESSION' && invoice.total > 0)), 'Chứng từ này không hỗ trợ giảm giá.');
+        ensure(invoice.paid === 0, 'Phải áp dụng giảm giá trước thanh toán.', 409);
+        Object.assign(invoice, invoiceDiscount(invoice.total, data.discount));
+        invoice.status = invoiceState(invoice.total, invoice.paid);
+        await invoice.save({session});
+        discountedIds.add(String(invoice._id));
+        await create(Audit,{actorId:actor.id,action:'invoiceDiscount',targetId:invoice._id,
+          details:{invoiceId:String(invoice._id),subtotal:invoice.subtotal,discount:invoice.discount,total:invoice.total}});
       };
       const checkTreatmentUse = async (treatment: any, day = today) => {
         const purchase = await Invoice.findOne({ ...scope, _id: treatment.invoiceId }).session(session);
@@ -1568,7 +1587,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             if (item.performerId && item.commission) await accrueCommission(target, String(item.performerId), 'INVOICE', String(item.lineId), target.performedAt, item.commission, item);
           }
           if(d.additionalProducts?.length){ensure(!d.cashCard,'Thẻ tiền chỉ dùng cho hóa đơn chỉ có dịch vụ lẻ.',409);await addProducts(target,d.additionalProducts);}
-          if (d.cashCard) await redeemCard({ ...d.cashCard, invoiceId: String(target._id) });
+          if (d.cashCard) { await applyNewDiscount(target); await redeemCard({ ...d.cashCard, invoiceId: String(target._id) }); }
           linkedInvoiceId = String(target._id);
           break;
         }
@@ -1619,7 +1638,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             total: line.total, serviceItems: [line],
             paid: 0, ...(performer ? {performedBy:performer._id,performedAt:new Date()} : {}),
           });
-          if (cashCard) await redeemCard({ ...cashCard, invoiceId: String(target._id) });
+          if (cashCard) { await applyNewDiscount(target); await redeemCard({ ...cashCard, invoiceId: String(target._id) }); }
           if (performer && line.commission) await accrueCommission(target, String(performer._id), 'INVOICE', String(line.lineId), new Date(), line.commission, line);
           break;
         }
@@ -1924,7 +1943,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           break;
         }
       }
-      if(action!=='checkout') for (const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
+      if (action !== 'checkout' && invoiceCreationActions.has(op)) await applyNewDiscount(await get(Invoice,linkedInvoiceId || String(target._id)));
       const details = { ...data } as Record<string, unknown>;
       // Deprecated input fields are accepted for old clients/idempotency fingerprints only.
       // Do not describe ignored line assignments as applied in a new operation's audit.
@@ -2012,6 +2031,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         if(groupedPackageSale) await ensureGroupedPackageIndex();
         const orderedActions=mixedPackageCheckout ? [...baseLines,...packageLines] : batch.actions;
         for(const line of orderedActions){
+          ensure(line.data.discount===undefined,'Giảm giá của giỏ phải gửi ở cấp checkout.');
           ensure(line.data.payments===undefined,'Các khoản thu của giỏ phải gửi ở cấp checkout để thanh toán đúng hóa đơn chung.');
           ensure(line.data.customerId===undefined || line.data.customerId===batch.customerId,'Mọi mục trong giỏ phải cùng khách.');
           const values=schemas[line.action].parse({...line.data,customerId:batch.customerId});
@@ -2035,12 +2055,18 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
         const total=money(invoices.reduce((sum,item)=>sum+item.total,0),true);
         result={id:invoices[0].id,invoiceId:invoices[0].id,invoiceIds:invoices.map(item=>item.id),invoices,total,message:'Đã lưu '+invoices.length+' hóa đơn trong cùng lần thu ngân.'};
       }else result=await execute(op,data);
+      if (op === 'checkout' && data.discount) {
+        ensure(result.invoiceIds.length === 1, 'Chỉ giảm giá khi giỏ tạo một hóa đơn chung; không tự chia giảm giá giữa chứng từ.',409);
+        const invoice = await get(Invoice,result.invoiceId);
+        await applyNewDiscount(invoice);
+        result = {...result,total:invoice.total,invoices:[{id:String(invoice._id),code:invoice.code,total:invoice.total}]};
+      }
       if(invoiceCreationActions.has(op)&&data.payments?.length){
         ensure(!result.invoiceIds||result.invoiceIds.length===1,'Chỉ ghi khoản thu tạo cùng một hóa đơn chung. Thanh toán riêng từng hóa đơn nếu giỏ tạo nhiều chứng từ.',409);
         const collected=await execute('splitPayment',{invoiceId:result.invoiceId||result.id,payments:data.payments});
         result={...result,paymentIds:collected.paymentIds};
       }
-      if(op==='checkout') for(const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
+      for(const id of createdInvoiceIds.splice(0)) await queueInvoiceNotifications(await get(Invoice,id),session);
       await create(Idempotency, { userId: actor.id, key, fingerprint, result });
       return result;
     },

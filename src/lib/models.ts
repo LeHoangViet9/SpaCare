@@ -143,6 +143,8 @@ const serviceItemSchema = new Schema({ lineId: optionalId, serviceId: id, name: 
   { _id: false, versionKey: false, strict: 'throw' });
 
 export const Invoice = model('Invoice', {
+  subtotal: { ...amount, required: false },
+  discount: { type: new Schema({type:{type:String,enum:['AMOUNT','PERCENT'],required:true},value:{type:Number,min:0,required:true},amount:amount},{_id:false,versionKey:false,strict:'throw'}), default:undefined },
   financialRevision: Number, adjustmentCredit: {type:Number,min:0}, lastAdjustmentId: optionalId,
   // One operational invoice, immutable prior document snapshots. Replacements
   // are not new sales and never enter financial aggregates as extra invoices.

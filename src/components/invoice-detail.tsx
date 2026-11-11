@@ -4,6 +4,7 @@ import {InvoiceContentComparison,InvoiceTechnicianChanges} from './invoice-conte
 import TreatmentEdit, { TreatmentComparison } from './treatment-edit';
 import { InvoiceDocumentHistory } from './invoice-replacement';
 import InvoiceHandlingMenu from './invoice-handling-menu';
+import { invoiceSummary, discountLabel } from '@/lib/invoice-discount';
 import { invoiceCode } from '@/lib/invoice-code';
 import CashCards from './cash-cards';
 import { packageLabel } from '@/lib/treatment-rules';
@@ -57,7 +58,7 @@ export default function InvoiceDetail({ replacementStaff, onTreatmentChanged, on
           {data.invoice.packageItems?.length>0 && <section className="invoice-service-lines"><h3>Gói liệu trình trong hóa đơn</h3>{data.invoice.packageItems.map((item:Row)=><p key={item.lineId || item.treatmentId}><span>{item.name}{item.promotion ? ' · '+item.promotion : ''}</span><strong>{money(item.total)}</strong></p>)}</section>}
           {serviceLines.length > 0 && <section className="invoice-service-lines"><h3>Dịch vụ trong hóa đơn</h3>{serviceLines.map((item: Row, index: number) => <p key={item.lineId || `${item.serviceId || item.treatmentUseId}:${index}`}><span className="invoice-service-info"><span>{index + 1}. {item.name}</span><small>Kỹ thuật viên: {item.performerName || 'Chưa có'}</small></span><strong>{money(item.total)}</strong></p>)}</section>}
           {data.invoice.productItems?.length>0 && <section className="invoice-service-lines"><h3>Sản phẩm mua thêm</h3>{data.invoice.productItems.map((item:Row)=><p key={item.lineId || item.productId}><span>{item.name} · {item.quantity} {item.unit} × {money(item.unitPrice)}</span><strong>{money(item.total)}</strong></p>)}</section>}
-          <div className="invoice-detail-money"><span>Tổng tiền<strong>{money(data.invoice.total)}</strong></span><span>Đã thanh toán<strong>{money(data.invoice.paid)}</strong></span><span>Còn nợ<strong>{money(data.invoice.total - data.invoice.paid)}</strong></span></div>
+          <div className="invoice-detail-money"><span>Tạm tính<strong>{money(invoiceSummary(data.invoice).subtotal)}</strong></span><span>Giảm giá ({discountLabel(data.invoice.discount)})<strong>{money(invoiceSummary(data.invoice).discountAmount)}</strong></span>{invoiceSummary(data.invoice).adjustment!==0&&<span>Điều chỉnh sau lập<strong>{money(invoiceSummary(data.invoice).adjustment)}</strong></span>}<span>Tổng thanh toán sau giảm<strong>{money(data.invoice.total)}</strong></span><span>Đã thanh toán<strong>{money(data.invoice.paid)}</strong></span><span>Còn nợ<strong>{money(data.invoice.total - data.invoice.paid)}</strong></span></div>
         </section>
         {data.invoice.openingBalance && <p className="invoice-import-note"><span className="invoice-import-badge">Nhập ban đầu</span>{' '}Chuyển từ sổ cũ · Ngày nguồn {data.invoice.openingDate}. {data.invoice.kind==='PACKAGE'?'Đã thanh toán đủ trước chuyển đổi; chưa có giá mua gốc. Số 0 là không thu thêm, không phải gói tặng. Buổi mới được đánh số từ lúc chuyển đổi.':'Công nợ cũ; chưa ghi nhận bán hàng hoặc xuất kho mới.'}</p>}
         {!!data.invoice.cardPaid && <p>Trong số đã trả: dùng thẻ tiền {money(data.invoice.cardPaid)} (không phải khoản thu mới).</p>}

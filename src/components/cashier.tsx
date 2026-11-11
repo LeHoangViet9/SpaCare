@@ -1,4 +1,6 @@
 'use client';
+import InvoiceDiscountFields from './invoice-discount-fields';
+import {invoiceDiscount,type InvoiceDiscountInput} from '@/lib/invoice-discount';
 import GroupedCartLines from './grouped-cart-lines';
 import AppointmentCheckoutPicker from './appointment-checkout-picker';
 import {useCallback,useEffect,useRef,useState} from 'react';
@@ -85,13 +87,16 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
  const serviceAmount=serviceItems.reduce((n,item)=>n+amountOf(item.total),0);
  const productAmount=productItems.reduce((n,item)=>n+amountOf(item.unitPrice)*Number(item.quantity),0);
  const packageAmount=packageItems.reduce((n,item)=>n+amountOf(item.total),0);
- const amount=serviceAmount+productAmount+packageAmount;
- const cardContext=JSON.stringify([customer?._id,serviceItems.map(item=>[item._id,item.total])]);
- const cardEligible=serviceItems.length===1 && !sessionItems.length && !productItems.length;
+ const subtotal=serviceAmount+productAmount+packageAmount;
+ const [discount,setDiscount]=useState<InvoiceDiscountInput>();
+ let amount=subtotal;try{amount=invoiceDiscount(subtotal,discount).total;}catch{}
+ const cardContext=JSON.stringify([customer?._id,serviceItems.map(item=>[item._id,item.total]),discount]);
+ const cardEligible=serviceItems.length===1 && !sessionItems.length && !productItems.length && !packageItems.length;
  const previewCard=useCallback((value:number)=>setCardPreview({context:cardContext,amount:value}),[cardContext]);
  const appliedCard=cardEligible && cardPreview.context===cardContext ? cardPreview.amount:0;
  const basketCount=serviceItems.length+sessionItems.length+productItems.length+packageItems.length;
- function resetSelection(){setAppointment(null);setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
+ useEffect(()=>{if(!serviceItems.length && !productItems.length && !packageItems.length)setDiscount(undefined);},[serviceItems.length,productItems.length,packageItems.length]);
+ function resetSelection(){setDiscount(undefined);setAppointment(null);setServiceItems([]);setSessionItems([]);setProductItems([]);setPackageItems([]);setPerformerId('');setParticipantIds([data.user.id || data.user._id]);setError('');}
  useEffect(()=>{if(initialCustomer){setCustomer(initialCustomer);resetSelection();setCatalogPage(1);}},[initialCustomer?._id]);
  const allCatalog=cashierCatalog({services:data.services,products:data.products || [],packageTemplates:data.packageTemplates || [],treatments:data.treatments},browseMode,customer?._id || '',search);
  const categoryOf=(row:Row)=>browseMode==='product' ? data.productGroups?.find((group:Row)=>group._id===row.groupId)?.name : browseMode==='service' ? row.category || 'Chưa phân nhóm' : data.services.find((service:Row)=>service._id===row.serviceId)?.category;
@@ -123,7 +128,9 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
      if(signature && !isValidSignature(signature))throw new Error('Chữ ký chưa hợp lệ. Ký lại hoặc xóa nét ký để bỏ qua.');
      const cardValue=fd.get('cashCard');
      const actions=cashierActions({customerId:customer._id,services:serviceItems,sessions:sessionItems,products:productItems,packages:packageItems,staffId:performerId,participantIds,dueDate:'',signature,...(cardValue?{cashCard:JSON.parse(String(cardValue))}:{})});
-     const date=issuedOn?{issuedOn}:{};
+     if(discount && subtotal===0 && !serviceItems.length && !productItems.length && !packageItems.length)throw new Error('Bỏ giảm giá khi giỏ không có khoản bán mới.');
+     invoiceDiscount(subtotal,discount);
+     const date={...(issuedOn?{issuedOn}:{}),...(discount?{discount}:{})};
      const rawPayments=fd.get('payments'),payments=rawPayments?{payments:JSON.parse(String(rawPayments))}:{};
      if(appointment)onSubmit('checkout',{customerId:customer._id,appointmentId:appointment.appointment._id,actions,...date,...payments});
      else if(actions.length===1)onSubmit(actions[0].action,{...actions[0].data,...date,...payments});
@@ -180,10 +187,11 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    }}/>
    {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy} showPreview={false}/></>}
    {sessionItems.length>0 && !sessionItems.some(item=>item.recipientName?.trim()) && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
-   {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={serviceAmount} disabled={busy} onAppliedChange={previewCard} defaultReceivedOn={issuedOn||data.today}/></section>}
+   {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={Math.max(0,serviceAmount-(subtotal-amount))} disabled={busy} onAppliedChange={previewCard} defaultReceivedOn={issuedOn||data.today}/></section>}
    {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ hoặc thanh toán số còn nợ.</p>}
    </fieldset>
-   <div className="cashier-total"><span>Tổng giỏ</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
+   {(serviceItems.length>0 || productItems.length>0 || packageItems.length>0) && <InvoiceDiscountFields subtotal={subtotal} value={discount} onChange={setDiscount} disabled={busy}/>}
+   <div className="cashier-total"><span>Tổng thanh toán sau giảm</span><strong>{money(Number.isFinite(amount)?amount:0)}</strong></div>
    {appliedCard>0 && <div className="cashier-total"><span>Còn phải trả sau khi trừ thẻ</span><strong>{money(Math.max(0,amount-appliedCard))}</strong></div>}
    <label>Ngày hóa đơn (để trống: hôm nay)<input type="date" max={data.today} value={issuedOn} disabled={busy} onChange={e=>setIssuedOn(e.target.value)}/></label>
    {basketCount>0&&appliedCard===0&&<CreationPayments issuedOn={issuedOn} today={data.today} total={amount} disabled={busy}/>}
