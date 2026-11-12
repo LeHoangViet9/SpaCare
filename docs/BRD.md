@@ -1,4 +1,4 @@
-# SpaCare — Business Requirements
+# SpaCare — Yêu cầu nghiệp vụ
 
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
@@ -493,7 +493,7 @@ Action `deleteInvoice` được giữ tên để tương thích client nhưng ch
 
 
 ## Flexible invoice line pricing — 03/11/2026
-CONFIRMED by the latest user request: newly sold standalone services, packages and products may use an actual integer VND price of zero or more, defaulting to catalog prices. Existing purchased-package uses remain covered at zero. Service performer commission stays at the configured catalog amount, independent of actual price. Customer charges, debt and revenue use actual amounts; zero does not create a receipt. Existing package commissions, inventory and historical invoices are preserved.
+ĐÃ XÁC NHẬN theo yêu cầu mới nhất: dịch vụ lẻ, gói và sản phẩm bán mới được phép có giá thực tế là số nguyên VNĐ từ 0 trở lên; mặc định lấy giá trong danh mục. Lượt sử dụng gói đã mua tiếp tục có giá 0. Hoa hồng KTV thực hiện dịch vụ giữ theo mức đã cấu hình trong danh mục, không phụ thuộc giá thực tế. Tiền khách phải trả, công nợ và doanh thu dùng số tiền thực tế; giá 0 không tạo khoản thu. Hoa hồng gói, tồn kho và hóa đơn lịch sử được giữ nguyên.
 
 
 ## Lương nháp và quản lý ngày nghỉ — 04/11/2026 (ưu tiên mới nhất)
