@@ -851,7 +851,7 @@ STAFF thường: phạm vi khách lấy từ lịch đã giao hoặc buổi mìn
 - Khởi tạo số lượng bản ghi `Treatment` tương ứng cho từng dòng gói.
 - Giữ vững tính bất biến Idempotency: retry cùng `Idempotency-Key` trả về đúng hóa đơn ban đầu và không nhân đôi số lượng `Treatment` hay hoa hồng tư vấn 5%.
 
-2026-11-02: sellPackage.dueDate is optional. Blank input is normalized to undefined; no default deadline is assigned. Supplied dates retain calendar and sale-day validation. Applies equally inside checkout.
+02/11/2026: `sellPackage.dueDate` là tùy chọn. Giá trị trống được chuẩn hóa thành undefined; không tự gán hạn mặc định. Ngày được gửi lên vẫn phải hợp lệ và không trước ngày bán. Quy tắc này cũng áp dụng trong checkout.
 
 
 ### Kiểm chứng đảo khác ngày và sổ CLOSED — 02/11/2026
@@ -860,7 +860,7 @@ BR-OPEN-005 vẫn PARTIALLY ANSWERED: spa chưa chốt quy trình xử lý sai s
 
 
 ## Giá dòng hóa đơn mới (03/11/2026)
-CONFIRMED: POST /api/operations creation actions accept nonnegative integer VND (maximum MAX_MONEY): invoice.total, serviceInvoice.items[].total, invoice.additionalServices[].total, sellPackage.total, sellProduct.unitPrice, productInvoice.items[].unitPrice and additionalProducts[].unitPrice. Omitted service/package/sellProduct prices retain catalog defaults; cashier initializes every editable price from its catalog. completeAppointment.total accepts zero for a newly created standalone-service invoice; purchased-package usage stays covered at zero. Negative/fractional/out-of-range input returns 400; payment/deposit/card amounts still must be positive. Totals/debt use actual prices; fixed service commission and package receipt-based commission remain unchanged. No receipt is created by saving a zero-price sale. Existing edit/permission/transaction/idempotency guards remain.
+ĐÃ XÁC NHẬN: các thao tác tạo qua `POST /api/operations` chấp nhận số nguyên VNĐ không âm (tối đa MAX_MONEY) ở các trường `invoice.total`, `serviceInvoice.items[].total`, `invoice.additionalServices[].total`, `sellPackage.total`, `sellProduct.unitPrice`, `productInvoice.items[].unitPrice` và `additionalProducts[].unitPrice`. Nếu không gửi giá dịch vụ/gói/sellProduct thì vẫn lấy giá mặc định trong danh mục; Thu ngân khởi tạo mọi giá có thể sửa từ danh mục tương ứng. `completeAppointment.total` chấp nhận 0 khi tạo hóa đơn dịch vụ lẻ mới; lượt dùng gói đã mua vẫn có giá 0. Giá âm/thập phân/vượt giới hạn trả 400; khoản thanh toán/cọc/thẻ vẫn phải dương. Tổng và công nợ dùng giá thực tế; hoa hồng cố định dịch vụ và hoa hồng gói theo khoản thu không đổi. Lưu giao dịch bán giá 0 không tạo khoản thu. Các chốt sửa/quyền/giao dịch/idempotency hiện có vẫn giữ nguyên.
 
 
 ## Lương nháp và quản lý ngày nghỉ — 04/11/2026 (ưu tiên mới nhất)
