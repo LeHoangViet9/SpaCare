@@ -425,7 +425,7 @@ Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn
 
 API bổ sung / mở rộng (spaId/actorId lấy từ phiên, luôn kiểm tra user active backend):
 - POST /api/operations action recordStaffLeave {id?,staffId,startDay,endDay,period,type,paid?,note?}; day cũ vẫn nhận cho tương thích. OWNER hoặc STAFF chính mình, không cho STAFF chọn paid=true.
-- reviewStaffLeave {id,status:APPROVED|REJECTED,paid?}: OWNER; recordWorkday {staffId,day,period,note?}, setSalaryPolicy {staffId,standardDays,paidLeaveDays,mode}: OWNER.
+- `reviewStaffLeave {id,status:APPROVED|REJECTED,paid?}`: chỉ OWNER; `recordWorkday {staffId,day,period,note?}` và `setSalaryPolicy {staffId,standardDays,paidLeaveDays,mode}`: chỉ OWNER.
 - sellPackage thêm sellerId tùy chọn (mặc định actor, không mặc định consultant), check nhân sự active cùng spa. payment/allocate/reversePayment qua reverseCash/reverseAllocation tự đồng bộ SaleCommission.
 - refundPackage {invoiceId,amount,method,reason,receivedConfirmation:true,exceptionApproved:true,transferReference?}: OWNER, khoản còn được hoàn = paid-refunded; sổ hôm nay OPEN, kiểm tra bằng chứng chuyển khoản; REFUND OUT riêng.
 - savePayroll thêm attendanceConfirmed:boolean, advance:number. readPayroll thêm salaryPolicy vào people, workdays/workSummary/workTotal/workPage, leaves và leaveSummary đếm theo đơn vị ngày (0.5), summary.serviceCommission/saleCommission; view=commission hợp nhất hai ledger trước phân trang và tổng hợp. Chặn STAFF xem nhân viên khác.
