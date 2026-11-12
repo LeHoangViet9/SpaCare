@@ -155,7 +155,7 @@ Danh sách đã có phân trang giao diện: desktop mặc định 10 dòng, đi
 Xem [docs/IMPORT_CATALOG.md](docs/IMPORT_CATALOG.md). Lịch mới chỉ ghi giờ khách đến, không bắt thời lượng dịch vụ.
 
 
-### Local Atlas DNS workaround
+### Khắc phục DNS Atlas trên máy local
 Nếu DNS trên máy không phân giải được bản ghi SRV của Atlas, chạy `npm run dev:atlas`. Lệnh tùy chọn này nạp trước `scripts/local-dns.mjs` vào các tiến trình Node/Next với máy chủ DNS công khai, sau đó khởi động Next dev bằng Webpack. Next vẫn đọc `.env.local` như bình thường; URI và cơ sở dữ liệu không bị thay đổi. Không truyền `--env-file` cho Next CLI vì tùy chọn này có thể bị đưa vào `NODE_OPTIONS`, khiến Node từ chối. Trình hỗ trợ này bị chặn trên Vercel; các lệnh dev/build/start thông thường không đổi.
 
 
