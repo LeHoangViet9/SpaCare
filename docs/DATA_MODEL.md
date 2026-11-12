@@ -468,11 +468,11 @@ CONFIRMED: Yến Thương giữ 1 buổi Mặt cơ bản và 11 buổi Gội đ�
 PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng và chuẩn hóa thành undefined; duplicate detection chỉ kiểm số có thật. Khách thiếu SĐT không tự gộp với bất kỳ hồ sơ thiếu số khác, cùng tên có sẵn hoặc trùng tên trong nguồn phải đối chiếu riêng; tạo Customer không có field phone. Mã batch vẫn bảo vệ retry. Treatment input thêm gift/benefitNote tùy chọn, giữ quyền lợi mặt nạ thêm kèm trong tên liệu trình/chứng từ và audit, không cộng thành buổi gội hay tự đặt giá. Gói GD+CVG giữ nhãn kết hợp và phải ánh xạ với danh mục thực tế trước ghi. Gộp ngoại tuyến ra imports/opening-combined.review.json: 84 khách, 93 dòng quyền lợi/319 buổi, 6 thẻ số dư 14.310.000đ, riêng nợ mỹ phẩm 7.000.000đ; 3 khách chưa có số. Loại 3 dòng quyền lợi lặp và 1 thẻ lặp; lưu provenance hai nguồn trong file review bị Git bỏ qua. Chưa đối chiếu/ghi live.
 
 
-## Optional appointment performer (2026-10-25)
+## KTV thực hiện lịch hẹn có thể để trống (2026-10-25)
 ĐÃ XÁC NHẬN theo yêu cầu người dùng: khi đặt lịch có thể để trống `staffId` (chưa phân công); nếu có chọn thì phải là OWNER/STAFF đang hoạt động trong spa của phiên đăng nhập. `Appointment.staffId` là tùy chọn. `CompleteAppointment` và `completeTreatmentAppointment` nhận `staffId` tùy chọn để phân công lịch chưa có KTV trước khi ghi nhận thực hiện, hoa hồng hoặc sử dụng liệu trình có xác nhận; mọi bước nằm trong giao dịch hiện có cùng idempotency và audit. Lịch đã phân công giữ nguyên KTV. ĐỀ XUẤT kỹ thuật: lịch chưa phân công vẫn hiển thị và quản lý được theo phạm vi quyền hiện có của chủ spa/thu ngân; phạm vi của nhân viên thường không đổi. Khi đổi lịch vẫn cần có KTV.
 
 
-## Multi-service cashier invoice (2026-10-25)
+## Hóa đơn Thu ngân gồm nhiều dịch vụ (2026-10-25)
 ĐÃ XÁC NHẬN theo yêu cầu người dùng: Thu ngân có thể chọn nhiều dịch vụ lẻ trên cùng một hóa đơn.
 `serviceInvoice` (chỉ OWNER/thu ngân): nhận `customerId`, `staffId`, `items [{serviceId,total?}]`, `dueDate?`, `cashCard?`. Backend xác minh tài khoản hiện tại và từng tham chiếu thuộc spa đã xác thực; từ chối dịch vụ/KTV ngừng hoạt động, dịch vụ trùng, danh sách rỗng, quá 30 dòng, giá không dương hoặc tổng tiền vượt giới hạn. Giá mặc định lấy từ dịch vụ hiện tại. Thao tác này không gộp gói, sản phẩm hoặc lượt liệu trình.
 `Invoice.serviceItems` lưu snapshot bất biến của `serviceId/name/total/fixed-commission`. Backend tính tổng hóa đơn và hoa hồng. Hóa đơn nhiều dịch vụ không có `serviceId` ở cấp hóa đơn; hóa đơn một dòng vẫn giữ trường này để tương thích. Cả hai có `kind=SERVICE`. Hóa đơn cũ vẫn đọc được mà không cần migration.
@@ -480,7 +480,7 @@ PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng 
 Giao dịch hiện có ghi đồng thời hóa đơn, hoa hồng, khoản trừ thẻ tiền mặt/khoản thu thêm (nếu có), audit và idempotency. Các thao tác ghi trong giao dịch vẫn chạy tuần tự. Thẻ tiền mặt có thể thanh toán các dòng dịch vụ lẻ; các giới hạn hiện có với gói/sản phẩm/lượt liệu trình vẫn giữ nguyên. Thanh toán và cọc thông thường áp dụng lên số dư tổng của hóa đơn. Chi tiết và PDF hiển thị riêng từng dịch vụ/số tiền. Hạn chế sửa hóa đơn đã hoàn thành không đổi.
 
 
-## Product origin and dates (2026-10-25)
+## Nơi sản xuất và ngày tháng của sản phẩm (2026-10-25)
 Yêu cầu người dùng: form tạo/sửa sản phẩm có thêm nơi sản xuất, ngày sản xuất và ngày hết hạn (`origin`, `manufacturedOn`, `expiresOn`). Các trường này không bắt buộc với dữ liệu cũ hoặc chưa rõ thông tin. Nơi sản xuất được cắt khoảng trắng, tối đa 200 ký tự; ngày phải đúng lịch theo định dạng YYYY-MM-DD; nếu có cả hai ngày thì hạn dùng không thể trước ngày sản xuất (kiểm tra kỹ thuật). Schema Product, thao tác `product/updateProduct` và danh sách sản phẩm cung cấp các trường này theo quyền sửa hiện tại của OWNER và phạm vi spa. Để trống trên form sẽ xóa metadata. Ngày hiện mô tả sản phẩm trong danh mục, không phải từng lô tồn kho. Không tự điều chỉnh tồn, chặn bán hoặc gửi cảnh báo theo hạn.
 
 
@@ -671,7 +671,7 @@ CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua c�
 
 Invoice.packageItems?: [{templateId?,treatmentId,serviceId,name,total,promotion,giftCashCardAmount}] là snapshot từng gói; tổng total bằng tổng dòng. Treatment.invoiceId trở thành nhiều-một; giữ nguyên tham chiếu cũ. Migration chỉ tạo index nonunique (spaId,invoiceId) tên treatment_invoice_lookup trước, rồi bỏ đúng index unique cũ cùng key. Không xóa/sửa documents; không dùng syncIndexes. Invoice.serviceId giữ dòng đầu để tương thích ledger 5% cũ; description gom tên các gói. Chưa di chuyển hóa đơn lịch sử.
 
-## STAFF security release policy — 28/10/2026
+## Chính sách phát hành bảo vệ quyền STAFF — 28/10/2026
 
 CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF cashier được openDay; chỉ OWNER được closeDay/reopenDay và xem Reports hoặc tổng tài chính toàn spa. Ca trong release này là ngày Việt Nam; không xây hệ thống ca mới. Cashier phải thu được nợ hóa đơn cũ hợp lệ cùng spa.
 
@@ -688,7 +688,7 @@ Payroll APPROVED/PAID cùng spa có line ID trong `commissionIds` hoặc `invoic
 
 Thông báo tạo lịch nội bộ tiếp tục dùng collection `notifications` và index unique hiện có `{spaId,userId,appointmentId}`; recipient là OWNER đang hoạt động cùng spa và STAFF đang hoạt động được phân công. Bản ghi được tạo cùng transaction với Appointment, không thêm field/index hoặc migration. `activitynotifications` giữ riêng reminder `APPOINTMENT_REMINDER` được sinh trong cửa sổ 10 phút.
 
-### Per-line performer and payment allocation (CONFIRMED)
+### KTV thực hiện và phân bổ thanh toán theo dòng (ĐÃ XÁC NHẬN)
 Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment lines) and `paid`. Payment and Allocation may carry `lineAllocations[]` with `{lineId, amount}`. Legacy documents without line IDs remain readable; a new line-allocation payment is rejected until the invoice has explicit line identities. No production backfill is implied.
 
 ## Cải tiến TreatmentUse và Invoice.packageItems — 01/11/2026
@@ -719,7 +719,7 @@ PROPOSED kỹ thuật, không phải xác nhận chính sách mới: báo cáo v
 BR-OPEN-005 vẫn PARTIALLY ANSWERED: spa chưa chốt quy trình xử lý sai sót ở ngày đã chốt, lựa chọn mở lại ngày cũ hay điều chỉnh ngày hiện tại, và cách đối soát chênh giữa snapshot với báo cáo tính lại. Test cash-flow-cross-day dùng định danh giả và model doubles để ghi nhận hành vi kỹ thuật hiện có của reversal, readReport, CSV và closeDay/reopenDay; không thay thế kiểm thử MongoDB thực hoặc nghiệm thu chính sách.
 
 
-## Flexible new-invoice prices (03/11/2026)
+## Giá linh hoạt cho hóa đơn mới (03/11/2026)
 CONFIRMED actual-price semantics are in BR-INV-PRICE-001. Existing Invoice.total, serviceItems.total, packageItems.total and productItems.unitPrice/total hold actual amounts, including zero; existing commission snapshots retain catalog rules. No new schema, collection, index, migration or backfill. PROPOSED technical handling: new zero-total/unpaid invoices are PAID (zero balance); grouped checkout recomputes status after adding package lines so a zero first line cannot leave a positive balance marked paid.
 
 
