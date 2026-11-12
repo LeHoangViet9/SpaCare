@@ -130,7 +130,7 @@ Cập nhật: 20/10/2026. Mô tả code `src/lib/models.ts` và `src/lib/operati
 - Number thời lượng tính phút; ngày sổ là chuỗi YYYY-MM-DD theo UTC+7; thời điểm là Date.
 - Bảng ghi tên model; Mongoose tự suy tên collection. Nguồn chính xác cho trường/default/index là models.ts; không tự đặt index dựa trên tài liệu.
 
-## Models
+## Các mô hình dữ liệu
 
 | Model | Trường chính và kiểu | Index khai báo ngoài _id |
 |---|---|---|
@@ -352,7 +352,7 @@ Chạy db:setup có kiểm soát khi triển khai để tạo collections/indexe
 Notification: spaId, userId, appointmentId, title/body/url, readAt, pushState PENDING|SENT, nextAttemptAt, attempts, timestamps. Unique (spaId,userId,appointmentId); index (spaId,userId,createdAt desc) và (pushState,nextAttemptAt). Lưu cùng transaction booking. PushDevice: spaId/userId, endpoint, keys.p256dh/auth, timestamps; endpoint unique, index (spaId,userId). Endpoint/keys là dữ liệu nhạy cảm, không trả trong danh sách/log. allModels bổ sung hai collections/indexes, không reset/backfill. Xem PUSH_NOTIFICATIONS.md.
 
 
-## User.phone — 23/10/2026
+## Số điện thoại của User — 23/10/2026
 User thêm phone tùy chọn ở schema để giữ tài khoản legacy; actions tạo/sửa STAFF bắt buộc phone đã chuẩn hóa. Email ở schema trở thành tùy chọn; OWNER seed và CUSTOMER register vẫn yêu cầu email như cũ. Unique partial indexes user_phone_present {phone:1} với phone kiểu string và user_email_present {email:1} với email kiểu string. Chạy npm run db:staff-phone trước dùng bản mới trên DB cũ: tạo indexes thay thế thành công rồi mới gỡ unique email toàn bộ tài liệu cũ; không sửa/xóa tài khoản. Script chưa chạy trong phiên này; không dùng syncIndexes/dropDatabase. setup.ts cũng gọi migration này. Nếu tạo index lỗi, giữ index cũ và dừng, xử lý trùng thủ công có đối chiếu.
 
 
@@ -504,7 +504,7 @@ Danh sách nội bộ, dòng thời gian và lịch sử khách hiển thị đ�
 ## Lời nhắc trước 10 phút và mã hóa đơn dễ đọc (2026-10-25)
 ĐÃ XÁC NHẬN theo yêu cầu người dùng: gửi nhắc lịch trước 10 phút; làm nổi bật dịch vụ, khoản thanh toán, trạng thái và số tiền trên hóa đơn; hiển thị mã hóa đơn dạng HD kèm chữ số.
 Lời nhắc lịch: ActivityNotification bổ sung `APPOINTMENT_REMINDER`, `appointmentId` và `appointmentStartAt`. Bộ lập lịch tìm lịch CONFIRMED có `now < startAt <= now+10min`, kiểm tra lại trong giao dịch Control của spa và chống trùng `eventKey` dạng `appointment:<id>:<startAt ISO>` theo từng người nhận. Lịch công khai báo cho mọi chủ spa/nhân viên đang hoạt động; lịch nội bộ chỉ báo cho chủ spa và KTV được phân công. Giờ bắt đầu mới có thể tạo lời nhắc mới; trước khi gửi, hệ thống kiểm tra lại lịch đã hủy/hoãn/hoàn thành/hết hạn hoặc đổi KTV. TTL của lời nhắc tối đa đến giờ khách đến (không quá 600 giây). Nếu khách đặt lịch cách giờ đến dưới 10 phút, gửi ở lần kiểm tra kế tiếp, không tự tạo một khoảng 10 phút giả định.
-GET /api/notifications/dispatch now queues due appointment reminders before sending; it still requires CRON_SECRET Bearer authentication. Call it once per minute from an external scheduler or configure a suitable Vercel plan. Default vercel.json keeps its Hobby-compatible daily closing job; it does not enable a per-minute cron that would break Hobby deployments. Inbox polling and booking/operation callbacks also check nearby appointments, but cannot guarantee background reminders when no client is open. No external scheduler has been provisioned by this code change. STAFF inbox now includes only booking notifications and APPOINTMENT_REMINDER activity events; invoice/closing activity remains owner-only, including read/readAll operations.
+`GET /api/notifications/dispatch` hiện xếp hàng lời nhắc lịch đến hạn trước khi gửi; endpoint vẫn cần xác thực Bearer `CRON_SECRET`. Gọi endpoint mỗi phút từ bộ lập lịch bên ngoài hoặc cấu hình gói Vercel phù hợp. `vercel.json` mặc định giữ tác vụ chốt sổ hằng ngày tương thích Hobby; không bật cron mỗi phút có thể làm hỏng triển khai Hobby. Việc hộp thư kiểm tra định kỳ và callback đặt lịch/thao tác cũng rà các lịch sắp đến, nhưng không bảo đảm gửi nền khi không có khách nào đang mở. Thay đổi mã nguồn này chưa thiết lập bộ lập lịch bên ngoài. Hộp thư STAFF chỉ gồm thông báo đặt lịch và sự kiện APPOINTMENT_REMINDER; thông báo hóa đơn/chốt sổ chỉ dành cho OWNER, kể cả thao tác read/readAll.
 ĐỀ XUẤT quy tắc mã kỹ thuật: `Invoice.code` có tiền tố HD và số thứ tự riêng theo spa, thêm số 0 ở đầu để đủ sáu chữ số; dùng partial unique index `(spaId,code)`. `Control.invoiceSequence` tăng trong giao dịch tạo hóa đơn hiện có, được hoàn tác nếu giao dịch lỗi và không tăng khi phát lại yêu cầu idempotent. MongoDB ObjectId trong URL và tham chiếu không đổi. Metadata hóa đơn cũ được bổ sung bằng `npm run db:invoice-codes`; lệnh tạo index và tuần tự hóa migration theo từng spa dưới khóa Control, giữ mã/số liệu tài chính hiện có và tiếp tục sau số thứ tự lớn nhất đã cấp. Trước khi bổ sung xong, hệ thống hiển thị ObjectId dạng số đầy đủ, xác định ổn định, không cắt ngắn. Các thay đổi mã nguồn này chưa chạy bổ sung dữ liệu trực tiếp. Danh sách, chi tiết, PDF và thông báo hóa đơn mới dùng chung bộ định dạng; có thể tìm theo mã trong danh sách hóa đơn.
 
 
