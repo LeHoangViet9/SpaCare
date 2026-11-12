@@ -50,7 +50,7 @@ Kết quả local 11/11/2026 trên nhánh feature/invoice-replacement (working t
 
 Danh sách file thay đổi trong đợt này:
 
-- Backend/model/helper: `src/lib/operations.ts`, `src/lib/models.ts`, `src/lib/invoice-discount.ts`, `src/lib/audit-view.ts`.
+- Backend/mô hình/hàm hỗ trợ: `src/lib/operations.ts`, `src/lib/models.ts`, `src/lib/invoice-discount.ts`, `src/lib/audit-view.ts`.
 - UI tạo/chi tiết: `src/components/cashier.tsx`, `src/components/commercial-fields.tsx`, `src/components/invoice-discount-fields.tsx`, `src/components/workspace.tsx`, `src/components/invoice-detail.tsx`.
 - PDF: `src/lib/export-read.ts`, `src/lib/render-pdf.ts`.
 - Kiểm thử: `tests/invoice-discount.test.mjs`, `tests/invoice-discount-fixture.ts`, `tests/invoice-discount-integration.ts`, `tests/invoice-amount-cash-flow-fixture.ts`, `tests/invoice-read-fixture.ts`, `tests/integration.test.ts`, `tests/input-ui.spec.mjs`, `scripts/test-invoice-discount-pdf.ts`, `playwright.config.mjs`.
