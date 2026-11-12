@@ -1,6 +1,6 @@
-# SpaCare notifications
+# SpaCare — Thông báo
 
-## Current events and recipients
+## Sự kiện và người nhận hiện tại
 
 | Event | Recipients | Preview |
 |---|---|---|
@@ -9,31 +9,31 @@
 | New operational invoice | Active owners | Customer, invoice contents, total, creator |
 | Unclosed daily book | Active owners | Day needing review, link to daily closing |
 
-The inbox works independently of device push permissions. Each phone/browser must explicitly enable push. Push uses the saved event text; preview length and display on a locked phone also depend on the operating system. Full content remains in the authenticated inbox.
+Hộp thư hoạt động độc lập với quyền gửi thông báo đẩy của thiết bị. Cần bật thông báo đẩy riêng trên từng điện thoại/trình duyệt. Nội dung đẩy dùng văn bản sự kiện đã lưu; độ dài xem trước và cách hiển thị trên màn hình khóa còn tùy hệ điều hành. Nội dung đầy đủ vẫn nằm trong hộp thư yêu cầu đăng nhập.
 
-## Deployment
+## Triển khai
 
-1. Run `npm run push:db` against the intended application database (`.env.local` for this script) to create the ActivityNotification collection and indexes. This is additive; no operational history is removed. `npm run db:setup` also includes this collection.
-2. Keep VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT configured in Vercel. Keep existing keys when subscribers already exist.
-3. Add CRON_SECRET to the Vercel production environment (a random secret of at least 16 characters; the local push setup script creates one if missing). Never put its value in documentation, logs or source control.
-4. Deploy to production. The daily schedule in vercel.json invokes `/api/notifications/daily-close` with Vercel's Bearer authorization.
-5. Enable notifications separately on each owner's/staff's phone. On iPhone use a Home Screen web app on a supported iOS version.
+1. Chạy `npm run push:db` trên cơ sở dữ liệu ứng dụng dự kiến (`.env.local` được script này sử dụng) để tạo collection ActivityNotification và các index. Thao tác chỉ bổ sung, không xóa lịch sử vận hành. `npm run db:setup` cũng tạo collection này.
+2. Cấu hình `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` và `VAPID_SUBJECT` trong Vercel. Nếu đã có người đăng ký nhận tin, hãy giữ nguyên các khóa hiện tại.
+3. Thêm `CRON_SECRET` vào môi trường production của Vercel (chuỗi bí mật ngẫu nhiên dài ít nhất 16 ký tự; script thiết lập push trên máy local sẽ tạo nếu thiếu). Không ghi giá trị này vào tài liệu, log hoặc mã nguồn.
+4. Triển khai production. Lịch chạy hằng ngày trong `vercel.json` gọi `/api/notifications/daily-close` với xác thực Bearer của Vercel.
+5. Bật thông báo riêng trên điện thoại của từng chủ spa/nhân viên. Trên iPhone, dùng ứng dụng web đã thêm vào Màn hình chính trên phiên bản iOS được hỗ trợ.
 
-Schedule: `0 15 * * *` UTC = 22:00 Vietnam time. On Vercel Hobby the request may run anywhere during 22:00-22:59. A suitable external scheduler or paid plan is required for minute-level scheduling. This endpoint accepts the same authenticated request from an external scheduler; never place the secret in the URL. See [Vercel cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing).
+Lịch: `0 15 * * *` UTC tương ứng 22:00 giờ Việt Nam. Trên gói Vercel Hobby, yêu cầu có thể chạy vào bất kỳ thời điểm nào trong khoảng 22:00–22:59. Muốn chạy chính xác theo từng phút cần bộ lập lịch bên ngoài phù hợp hoặc gói trả phí. Endpoint này nhận cùng yêu cầu đã xác thực từ bộ lập lịch ngoài; tuyệt đối không đặt secret trong URL. Xem [giới hạn cron của Vercel](https://vercel.com/docs/cron-jobs/usage-and-pricing).
 
-Reminders only notify; they never close the daily book. Repeated invocations do not duplicate a day/owner event. Already closed days are skipped, and reminders queued before closing are suppressed. Invoice notifications commit in the same transaction as the invoice and are sent after commit. Only owners can read invoice and closing notifications. Staff can read public booking records but existing write/financial permissions remain enforced.
+Lời nhắc chỉ gửi thông báo, không tự chốt sổ ngày. Gọi lặp không tạo trùng sự kiện theo ngày/chủ spa. Ngày đã chốt sẽ được bỏ qua; lời nhắc đã xếp hàng trước khi chốt sẽ bị loại. Thông báo hóa đơn được ghi cùng giao dịch với hóa đơn và chỉ gửi sau khi giao dịch hoàn tất. Chỉ chủ spa đọc được thông báo hóa đơn và chốt sổ. Nhân viên đọc được lịch đặt công khai; các quyền ghi dữ liệu/tài chính hiện có vẫn được giữ nguyên.
 
-## Validation boundaries
+## Phạm vi kiểm chứng
 
-Automated tests use model doubles to verify recipient scope, local-time boundaries, duplicate prevention, rollback, encrypted push content, authorization and stale reminder suppression. They do not prove device delivery or production cron configuration. Integration tests must use only spacare_test. Confirm actual phone delivery and the deployed scheduler after rollout.
+Kiểm thử tự động dùng mô hình giả lập để xác minh phạm vi người nhận, ranh giới giờ địa phương, chống trùng, hoàn tác giao dịch, mã hóa nội dung push, xác thực và loại lời nhắc đã cũ. Các kiểm thử này không chứng minh thông báo đã đến thiết bị hoặc cron production đã được cấu hình đúng. Chỉ chạy integration test trên `spacare_test`. Sau triển khai cần xác nhận thông báo thực tế trên điện thoại và bộ lập lịch đang dùng.
 
 
-## Appointment reminder scheduling
+## Lập lịch nhắc hẹn
 
-Use an external scheduler to call `GET /api/notifications/dispatch` once per minute with the header `Authorization: Bearer <CRON_SECRET>`. Keep the secret in the scheduler's secret/header configuration, never in the URL. This source change does not create an external account or activate such a job. Vercel Hobby does not support per-minute cron; the default vercel.json remains compatible with its once-daily limit. A suitable Vercel plan can add `{"path":"/api/notifications/dispatch","schedule":"* * * * *"}` to its crons list instead.
+Dùng bộ lập lịch bên ngoài gọi `GET /api/notifications/dispatch` mỗi phút với header `Authorization: Bearer <CRON_SECRET>`. Lưu secret trong cấu hình secret/header của bộ lập lịch, tuyệt đối không để trong URL. Thay đổi mã nguồn này không tạo tài khoản bên ngoài hay tự kích hoạt tác vụ. Vercel Hobby không hỗ trợ cron mỗi phút; `vercel.json` mặc định vẫn tương thích giới hạn chạy một lần mỗi ngày. Có thể thêm `{"path":"/api/notifications/dispatch","schedule":"* * * * *"}` vào danh sách crons nếu dùng gói Vercel phù hợp.
 
-When no minute scheduler is configured, an open workspace's inbox polling also checks reminders, but closed-browser/background delivery at the ten-minute threshold is not guaranteed. Booking within ten minutes of arrival produces the reminder on the next check. Messages queued for canceled, postponed, completed, past or rescheduled visits are suppressed before send; push TTL is limited to arrival. No scheduler or push network guarantees zero-second delivery delay.
+Khi chưa cấu hình bộ lập lịch mỗi phút, việc hộp thư trong workspace đang mở tự kiểm tra định kỳ cũng rà lời nhắc; không bảo đảm gửi nền đúng mốc trước 10 phút khi trình duyệt đã đóng. Nếu đặt lịch cách giờ đến dưới 10 phút, lời nhắc sẽ được gửi ở lần kiểm tra tiếp theo. Tin nhắn của lịch đã hủy, hoãn, hoàn thành, quá giờ hoặc đổi lịch bị loại trước khi gửi; thời hạn push kết thúc khi khách đến. Không bộ lập lịch hay mạng push nào bảo đảm độ trễ bằng 0 giây.
 
-## Invoice codes before deployment
+## Mã hóa đơn trước khi triển khai
 
-Run `npm run db:invoice-codes` against the intended database (.env.local for that command). It assigns missing HD000001-style metadata under a per-spa transaction, retains existing assigned codes, recovers the sequence and creates the unique code index. It does not alter ObjectIds, money, payment or commission history. New invoices allocate their codes inside their own transaction; retried requests reuse the same invoice/code. This metadata migration has not been applied to operational data by source edits.
+Chạy `npm run db:invoice-codes` trên cơ sở dữ liệu dự kiến (`.env.local` được lệnh này sử dụng). Lệnh gán mã dạng HD000001 cho hóa đơn còn thiếu mã trong giao dịch riêng theo từng spa, giữ mã đã có, khôi phục số thứ tự và tạo unique index cho mã. Lệnh không thay đổi ObjectId, tiền, thanh toán hoặc lịch sử hoa hồng. Hóa đơn mới cấp mã trong giao dịch riêng; yêu cầu thử lại dùng lại cùng hóa đơn/mã. Thay đổi mã nguồn không đồng nghĩa migration metadata này đã được áp dụng lên dữ liệu vận hành.

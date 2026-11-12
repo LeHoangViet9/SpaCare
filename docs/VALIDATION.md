@@ -154,7 +154,7 @@ Các kết quả dưới đây là lần chạy mới, thay thế giới hạn E
 - Files test mới:tests/workbook-http.ts,tests/workbook-ui-fixture.ts. Không sửa mã production để che lỗi trong lượt test này.
 
 Lệnh/exit code lần cuối: npm test=0; npm run typecheck=0; npx tsx --test tests/integration.test.ts=0; npm run build=0
-# Retest BUG-UI-001/002 — 21/10/2026
+# Kiểm thử lại BUG-UI-001/002 — 21/10/2026
 
 Phạm vi lượt này: sửa hai lỗi UI và retest TC-BILL-02, TC-BILL-10, TC-WIDTH-03, TC-REG-12. Không chạy lại toàn bộ 99 ca Excel. Kết quả Pass của các ca khác là lịch sử lượt trước.
 

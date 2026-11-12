@@ -1,4 +1,4 @@
-# SpaCare — Business Requirements
+# SpaCare — Yêu cầu nghiệp vụ
 
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
@@ -473,7 +473,7 @@ migration mới, không xóa/tạo lại hóa đơn hoặc bút toán để thay
 
 CONFIRMED theo yêu cầu mới nhất: các gói mới trong cùng lần mua của một khách gộp thành một hóa đơn PACKAGE, nhiều dòng giá và nhiều hồ sơ Treatment độc lập; thu tiền/công nợ trên tổng hóa đơn. Thay thế mô tả checkout trước đây mỗi gói có hóa đơn riêng. Không tự gộp chứng từ lịch sử. Phần dịch vụ đã làm/sản phẩm trong giỏ vẫn theo chứng từ vận hành hiện có; yêu cầu này áp dụng các gói mua mới.
 
-## STAFF security release policy — 28/10/2026
+## Chính sách phát hành bảo vệ quyền STAFF — 28/10/2026
 
 CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF cashier được openDay; chỉ OWNER được closeDay/reopenDay và xem Reports hoặc tổng tài chính toàn spa. Ca trong release này là ngày Việt Nam; không xây hệ thống ca mới. Cashier phải thu được nợ hóa đơn cũ hợp lệ cùng spa.
 
@@ -492,8 +492,8 @@ CONFIRMED theo yêu cầu mới nhất, thay thế mọi mô tả cho phép xóa
 Action `deleteInvoice` được giữ tên để tương thích client nhưng chuyển thành vô hiệu hóa: đảo các phát sinh được hỗ trợ theo quy trình hiện hành, giữ nguyên bản ghi hóa đơn/mã chứng từ, đặt trạng thái CANCELLED và lưu audit trước/sau. Không dùng `Invoice.deleteOne`. Với hóa đơn nhiều dòng/người thực hiện, sửa giá giữ `lineId`, `performerId` và mức hoa hồng snapshot; thay đổi tập dịch vụ bị chặn vì chưa có chính sách adjustment line commission. Không backfill hay sửa dữ liệu Production tự động.
 
 
-## Flexible invoice line pricing — 03/11/2026
-CONFIRMED by the latest user request: newly sold standalone services, packages and products may use an actual integer VND price of zero or more, defaulting to catalog prices. Existing purchased-package uses remain covered at zero. Service performer commission stays at the configured catalog amount, independent of actual price. Customer charges, debt and revenue use actual amounts; zero does not create a receipt. Existing package commissions, inventory and historical invoices are preserved.
+## Giá linh hoạt cho dòng hóa đơn — 03/11/2026
+ĐÃ XÁC NHẬN theo yêu cầu mới nhất: dịch vụ lẻ, gói và sản phẩm bán mới được phép có giá thực tế là số nguyên VNĐ từ 0 trở lên; mặc định lấy giá trong danh mục. Lượt sử dụng gói đã mua tiếp tục có giá 0. Hoa hồng KTV thực hiện dịch vụ giữ theo mức đã cấu hình trong danh mục, không phụ thuộc giá thực tế. Tiền khách phải trả, công nợ và doanh thu dùng số tiền thực tế; giá 0 không tạo khoản thu. Hoa hồng gói, tồn kho và hóa đơn lịch sử được giữ nguyên.
 
 
 ## Lương nháp và quản lý ngày nghỉ — 04/11/2026 (ưu tiên mới nhất)
