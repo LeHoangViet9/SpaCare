@@ -551,11 +551,11 @@ Cần xác nhận trước dùng tính lương thực tế: công chuẩn, hạn
 Hóa đơn quà tặng/buổi liệu trình 0đ theo nghiệp vụ đã xác nhận: total=paid=0 có trạng thái PAID. Vẫn từ chối số âm, không nguyên và thanh toán vượt tổng. Không thay đổi dữ liệu hay tạo giao dịch thu tiền. Lỗi tải workspace phải hiển thị màn hình thử lại; chỉ phản hồi 401 mới hiển thị đăng nhập.
 
 
-## BR-NOTIFY-001 — 23/10/2026
+## BR-NOTIFY-001 — Quy tắc thông báo — 23/10/2026
 CONFIRMED: chủ spa nhận thông báo web/push khi khách đặt lịch online. PROPOSED: mỗi OWNER active cùng spa nhận một bản ghi/lịch trong transaction; retry cùng idempotency không ghi trùng. Backend xác thực active/role và scope người nhận/spa; chỉ đăng ký thiết bị khi người dùng chủ động cấp quyền. Push ngoài màn hình không chứa thông tin khách. Không suy thêm SMS/email/nhắc lịch. Chi tiết và giới hạn giao nhận: PUSH_NOTIFICATIONS.md.
 
 
-## BR-STAFF-PHONE-001 — 23/10/2026
+## BR-STAFF-PHONE-001 — Số điện thoại nhân viên — 23/10/2026
 CONFIRMED: OWNER tạo nhân viên bằng họ tên, số điện thoại và mật khẩu; không yêu cầu email. Nhân viên dùng số điện thoại để đăng nhập. Quy tắc này thay yêu cầu email bắt buộc khi tạo nhân viên trước đây. Giữ kiểm tra OWNER/active/cùng spa, transaction/idempotency/audit và không ghi mật khẩu vào audit.
 PROPOSED kỹ thuật: chuẩn hóa +84 về 0, bỏ khoảng trắng/dấu chấm/gạch/ngoặc; nhận 10–11 chữ số bắt đầu bằng 0. Phone unique toàn hệ thống tài khoản để đăng nhập không mơ hồ; không so với điện thoại hồ sơ Customer. Mật khẩu nhân viên giữ giới hạn hiện có 12–128 ký tự. Email tài khoản cũ vẫn đăng nhập được, không tự suy số điện thoại từ hồ sơ khách. Người dùng cũ chưa có số phải được OWNER nhập khi sửa.
 
@@ -683,11 +683,11 @@ PROPOSED kỹ thuật: openingInput.phone cho phép thiếu/null/chuỗi rỗng 
 Xác nhận đã cung cấp ngày 24/10/2026 (được người dùng nhắc lại): Meso nám → Tranacix, Meso phục hồi → Exocode; bảng ghép ngang Mặt cơ bản/CSD cơ bản → Chăm sóc da thư giãn, Nặn mụn cơ bản → Chăm sóc da mụn cơ bản, GD cổ vai gáy/GD collagen + CVG → Gội Massage CVG 1, Laser Carbon → Lazer cacbon đã được xác nhận. Chỉ chuẩn hóa nguồn nhập, không sửa danh mục hoặc quyền lợi có sẵn trong database.
 
 
-## Optional appointment performer (2026-10-25)
+## KTV thực hiện lịch hẹn có thể để trống (2026-10-25)
 ĐÃ XÁC NHẬN theo yêu cầu người dùng: khi đặt lịch có thể để trống `staffId` (chưa phân công); nếu có chọn thì phải là OWNER/STAFF đang hoạt động trong spa của phiên đăng nhập. `Appointment.staffId` là tùy chọn. `CompleteAppointment` và `completeTreatmentAppointment` nhận `staffId` tùy chọn để phân công lịch chưa có KTV trước khi ghi nhận thực hiện, hoa hồng hoặc sử dụng liệu trình có xác nhận; mọi bước nằm trong giao dịch hiện có cùng idempotency và audit. Lịch đã phân công giữ nguyên KTV. ĐỀ XUẤT kỹ thuật: lịch chưa phân công vẫn hiển thị và quản lý được theo phạm vi quyền hiện có của chủ spa/thu ngân; phạm vi của nhân viên thường không đổi. Khi đổi lịch vẫn cần có KTV.
 
 
-## Multi-service cashier invoice (2026-10-25)
+## Hóa đơn Thu ngân gồm nhiều dịch vụ (2026-10-25)
 ĐÃ XÁC NHẬN theo yêu cầu người dùng: Thu ngân có thể chọn nhiều dịch vụ lẻ trên cùng một hóa đơn.
 `serviceInvoice` (chỉ OWNER/thu ngân): nhận `customerId`, `staffId`, `items [{serviceId,total?}]`, `dueDate?`, `cashCard?`. Backend xác minh tài khoản hiện tại và từng tham chiếu thuộc spa đã xác thực; từ chối dịch vụ/KTV ngừng hoạt động, dịch vụ trùng, danh sách rỗng, quá 30 dòng, giá không dương hoặc tổng tiền vượt giới hạn. Giá mặc định lấy từ dịch vụ hiện tại. Thao tác này không gộp gói, sản phẩm hoặc lượt liệu trình.
 `Invoice.serviceItems` lưu snapshot bất biến của `serviceId/name/total/fixed-commission`. Backend tính tổng hóa đơn và hoa hồng. Hóa đơn nhiều dịch vụ không có `serviceId` ở cấp hóa đơn; hóa đơn một dòng vẫn giữ trường này để tương thích. Cả hai có `kind=SERVICE`. Hóa đơn cũ vẫn đọc được mà không cần migration.
@@ -695,7 +695,7 @@ Xác nhận đã cung cấp ngày 24/10/2026 (được người dùng nhắc l�
 Giao dịch hiện có ghi đồng thời hóa đơn, hoa hồng, khoản trừ thẻ tiền mặt/khoản thu thêm (nếu có), audit và idempotency. Các thao tác ghi trong giao dịch vẫn chạy tuần tự. Thẻ tiền mặt có thể thanh toán các dòng dịch vụ lẻ; các giới hạn hiện có với gói/sản phẩm/lượt liệu trình vẫn giữ nguyên. Thanh toán và cọc thông thường áp dụng lên số dư tổng của hóa đơn. Chi tiết và PDF hiển thị riêng từng dịch vụ/số tiền. Hạn chế sửa hóa đơn đã hoàn thành không đổi.
 
 
-## Product origin and dates (2026-10-25)
+## Nơi sản xuất và ngày tháng của sản phẩm (2026-10-25)
 Yêu cầu người dùng: form tạo/sửa sản phẩm có thêm nơi sản xuất, ngày sản xuất và ngày hết hạn (`origin`, `manufacturedOn`, `expiresOn`). Các trường này không bắt buộc với dữ liệu cũ hoặc chưa rõ thông tin. Nơi sản xuất được cắt khoảng trắng, tối đa 200 ký tự; ngày phải đúng lịch theo định dạng YYYY-MM-DD; nếu có cả hai ngày thì hạn dùng không thể trước ngày sản xuất (kiểm tra kỹ thuật). Schema Product, thao tác `product/updateProduct` và danh sách sản phẩm cung cấp các trường này theo quyền sửa hiện tại của OWNER và phạm vi spa. Để trống trên form sẽ xóa metadata. Ngày hiện mô tả sản phẩm trong danh mục, không phải từng lô tồn kho. Không tự điều chỉnh tồn, chặn bán hoặc gửi cảnh báo theo hạn.
 
 
@@ -891,7 +891,7 @@ Giữ ngày bắt đầu/hạn/số buổi và khuyến mãi từng gói; quỹ 
 
 CONFIRMED theo phản hồi người dùng: gói đã hủy do hóa đơn nhập nhầm không còn xuất hiện trong Gói của khách hoặc tab liệu trình của hồ sơ khách. Lọc tại backend trước đếm/phân trang, kể cả khi tìm theo khách hoặc lọc quà tặng. Giữ bản ghi nội bộ và audit để đối chiếu điều chỉnh tài chính; không xóa lịch sử liên quan hoặc khôi phục quyền lợi đã hủy. Công cụ bổ sung Hương Lan KL chỉ kiểm trùng các gói chưa CANCELLED, nên gói nhập nhầm đã hủy không chặn việc thêm quyền lợi lịch sử đúng; không sửa hoặc xóa gói đã hủy. Gói còn ACTIVE/PAUSED/COMPLETED khác ngày vẫn chặn để đối soát. Không migration hay sửa dữ liệu thật.
 
-## STAFF security release policy — 28/10/2026
+## Chính sách phát hành bảo vệ quyền STAFF — 28/10/2026
 
 CONFIRMED theo chính sách đã chốt trong phiên release: OWNER và STAFF cashier được openDay; chỉ OWNER được closeDay/reopenDay và xem Reports hoặc tổng tài chính toàn spa. Ca trong release này là ngày Việt Nam; không xây hệ thống ca mới. Cashier phải thu được nợ hóa đơn cũ hợp lệ cùng spa.
 
