@@ -629,15 +629,8 @@ PROPOSED kỹ thuật: sellPackage.gifts đổi thành [{serviceId}] strict, kh�
 
 ## Chốt tải Workspace — 26/10/2026
 
-Technical behavior: the initial workspace request starts immediately; only subsequent
-same-section filter requests retain the 250 ms debounce. Workspace fetch and JSON
-body parsing share a 20-second client deadline and cancellation on obsolete views.
-A stalled request exits the initial loading state with the existing retry UI; it
-is not reported as successful data loading. This does not change authorization,
-schemas, actions, or business policy. Production Selenium observed intermittent
-workspace-fetch loading despite separate diagnostic API reads returning 200; that
-observation alone does not establish which original request stalled. No production
-root-cause resolution or deployment is claimed by this guard.
+Thiết kế kỹ thuật: yêu cầu Workspace đầu tiên bắt đầu ngay; chỉ các yêu cầu lọc tiếp theo trong cùng mục mới giữ độ trễ 250 ms. Việc tải Workspace và phân tích body JSON cùng dùng thời hạn 20 giây ở client, đồng thời hủy yêu cầu khi giao diện đã chuyển sang trạng thái khác.
+Yêu cầu bị treo sẽ thoát trạng thái tải ban đầu và hiện nút thử lại như hiện có; không báo nhầm là tải dữ liệu thành công. Thay đổi này không sửa quyền, schema, action hoặc chính sách nghiệp vụ. Selenium trên Production từng ghi nhận tải Workspace chập chờn dù các lần gọi API chẩn đoán riêng trả 200; riêng quan sát đó chưa xác định được yêu cầu ban đầu nào bị treo. Chốt này không tuyên bố đã tìm ra nguyên nhân gốc hoặc triển khai sửa trên Production.
 
 ## Sửa ngày hóa đơn — 26/10/2026
 
@@ -692,16 +685,8 @@ mới, không tự liên kết dữ liệu cũ hay chạy ghi dữ liệu thật
 
 ## Lớp điều hướng trên khung nhìn di động — 26/10/2026
 
-The workspace portal now owns a fixed, pointer-transparent viewport layer sized
-with 100dvh (100vh fallback). Its bottom bar, backdrop and panel are positioned
-absolutely within this layer; navigation no longer uses a transformed fixed bar.
-Interactive navigation children restore pointer events; dialogs retain their
-higher z-index. Existing safe-area padding and content bottom spacing remain.
-Chrome desktop checks on a long-page CSS fixture kept the bar at the viewport
-bottom at scroll 0/700/2500 and after viewport height changes, with no horizontal
-overflow or obstruction of content controls. Selenium's mobile case also checks
-portal placement and a shorter viewport. Physical Android/iOS browser behavior
-has not been verified; no claim of device-level acceptance is made.
+Lớp cổng điều hướng Workspace cố định, xuyên suốt khung nhìn và không chặn con trỏ; chiều cao dùng `100dvh` (dự phòng `100vh`). Thanh dưới, lớp nền và bảng được định vị tuyệt đối trong lớp này; điều hướng không còn dùng thanh cố định đã biến đổi. Các mục điều hướng tương tác khôi phục sự kiện con trỏ; hộp thoại giữ z-index cao hơn. Khoảng đệm vùng an toàn và khoảng cách cuối nội dung hiện có được giữ nguyên.
+Kiểm tra Chrome desktop trên trang CSS dài cho thấy thanh vẫn ở đáy khung nhìn tại vị trí cuộn 0/700/2500 và sau khi đổi chiều cao cửa sổ; không tràn ngang hoặc che điều khiển nội dung. Ca Selenium di động cũng kiểm tra vị trí portal và khung nhìn thấp hơn. Chưa xác minh hành vi trên trình duyệt Android/iOS thực; không tuyên bố đã nghiệm thu trên thiết bị.
 
 
 ## Điều chỉnh riêng ngày hóa đơn đã thực hiện — 26/10/2026
