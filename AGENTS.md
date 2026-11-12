@@ -30,10 +30,10 @@ Trước khi sửa nghiệp vụ, đọc theo thứ tự:
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-## This is NOT the Next.js you know
+## Lưu ý: phiên bản Next.js này có thay đổi
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+Phiên bản này có các thay đổi không tương thích — API, quy ước và cấu trúc tệp có thể khác với thông tin bạn đã biết. Trước khi viết mã, hãy đọc hướng dẫn phù hợp trong `node_modules/next/dist/docs/` (đường dẫn được tính từ thư mục của tệp này; trong monorepo, package `next` có thể không hiển thị từ thư mục gốc). Lưu ý các cảnh báo về tính năng sắp bị loại bỏ.
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+Khối này do `next dev` ghi và thêm lại — kiểm tra tại `node_modules/next/dist/server/lib/generate-agent-files.js`. Xóa khối khỏi diff chỉ khiến thay đổi chưa commit xuất hiện lại; commit khối cùng thay đổi của bạn sẽ giữ cây làm việc sạch.
 
 <!-- END:nextjs-agent-rules -->
