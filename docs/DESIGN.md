@@ -475,9 +475,9 @@ PROPOSED kỹ thuật: npm run db:import-catalog đọc XLSX trên Windows, tố
 Giá theo khoảng: thêm cột Giá mặc định (VNĐ), hoặc người chạy chủ động chọn --use-min-price. Đây là giá mặc định kỹ thuật, không chốt giá khách; khoảng gốc/ghi chú lưu trong Audit.details.source, chưa có field khoảng giá trong Service/UI. Triệt lông tạo Service giá lẻ từ cột Giá lẻ (VNĐ) hoặc ghi chú “Giá lẻ: ... đ/lần”, và PackageTemplate TIME/36 giá gói từ cột Giá từ/Giá đến. Hoa hồng 0 được giữ. Không nhập thời lượng giả. CLI không xóa/reset dữ liệu. Hướng dẫn: IMPORT_CATALOG.md.
 
 
-## Structured backend logs - 24/10/2026
-PROPOSED technical design: JSON stdout/stderr logs with timestamp, level, event, server-generated requestId, authenticated actorId/spaId, validated successful action, status and durationMs. API failure responses expose X-Request-Id; operations/login also expose it on success. Expected failures use warn, server failures error, successful operations/login info. operation.completed means the request completed after operate returned (including idempotent replay); it is not proof of a new financial entry. Transaction callbacks do not emit success logs. Existing database Audit remains the durable business history.
-No request bodies, query strings, passwords, cookies, tokens, idempotency keys, customer details, signatures, raw errors, stack traces or connection URIs are serialized. Errors use fixed classification codes. Log output failure must not change transaction/HTTP results. View locally in npm run dev terminal or in Vercel project Logs; retention follows the hosting plan. No log viewer or new database collection.
+## Log backend có cấu trúc — 24/10/2026
+ĐỀ XUẤT thiết kế kỹ thuật: log JSON ra stdout/stderr gồm thời gian, cấp độ, sự kiện, `requestId` do máy chủ tạo, `actorId/spaId` đã xác thực, thao tác thành công đã kiểm tra, trạng thái và `durationMs`. Phản hồi API lỗi có `X-Request-Id`; operations/login cũng trả trường này khi thành công. Lỗi dự kiến ghi mức warn, lỗi máy chủ mức error, thao tác/login thành công mức info. `operation.completed` nghĩa là yêu cầu hoàn tất sau khi `operate` trả kết quả (kể cả phát lại idempotent); không chứng minh đã tạo bút toán tài chính mới. Callback giao dịch không ghi log thành công. Audit trong cơ sở dữ liệu hiện tại vẫn là lịch sử nghiệp vụ lâu dài.
+Không ghi body yêu cầu, query string, mật khẩu, cookie, token, khóa idempotency, thông tin khách, chữ ký, lỗi thô, stack trace hoặc URI kết nối vào log. Lỗi dùng mã phân loại cố định. Lỗi xuất log không được làm thay đổi kết quả transaction/HTTP. Có thể xem log local trong terminal `npm run dev` hoặc mục Logs của dự án Vercel; thời hạn lưu phụ thuộc gói hosting. Không bổ sung trình xem log hoặc collection mới.
 
 
 ## Chặn liên kết khách chưa xác minh — 24/10/2026
@@ -540,7 +540,7 @@ Thu ngân và form hóa đơn có checkbox Dùng thẻ tiền mặt khi trang th
 Thiết kế kỹ thuật: History API gốc cập nhật URL của mục ngay lập tức và giữ nguyên khung Workspace đang gắn, bao gồm thao tác Back/Forward. Tuyến tài liệu ban đầu vẫn xác minh phiên; từng API dữ liệu tự xác minh tài khoản hiện tại, quyền và phạm vi spa. Điều hướng khách dùng lại khung và gọi trực tiếp `/api/customers`; phản hồi Workspace ban đầu chỉ tải danh sách nhân viên. Không lưu đệm dữ liệu tài chính hoặc loại bỏ bước xác thực.
 
 
-Performance follow-up (2026-10-25, PROPOSED technical design): salary, commission, products, product_groups, inventory and cash_cards also use lightweight workspace shells because their panels own authenticated APIs. Soft navigation mounts those panels directly. Dashboard finance totals are computed only for overview; treatment-use totals only for treatment_uses. Other response totals default to zero and are not dashboard values. Independent search reference reads run concurrently outside transactions. GET /api/workspace and /api/customers expose Server-Timing auth/data durations without request values or secrets. No cross-request account cache or authorization relaxation.
+Theo dõi hiệu năng (2026-10-25, ĐỀ XUẤT thiết kế kỹ thuật): các mục lương, hoa hồng, sản phẩm, nhóm sản phẩm, tồn kho và thẻ tiền mặt cũng dùng khung Workspace gọn vì từng bảng gọi API đã xác thực riêng. Điều hướng mềm gắn trực tiếp các bảng này. Tổng tài chính của bảng tổng quan chỉ tính cho mục overview; tổng lượt dùng liệu trình chỉ tính cho treatment_uses. Các tổng khác trong phản hồi mặc định bằng 0 và không phải số liệu bảng tổng quan. Các truy vấn tham chiếu tìm kiếm độc lập chạy đồng thời ngoài giao dịch. `GET /api/workspace` và `GET /api/customers` cung cấp thời lượng auth/data qua Server-Timing, không kèm giá trị yêu cầu hoặc bí mật. Không tạo bộ nhớ đệm tài khoản xuyên yêu cầu hoặc nới quyền xác thực.
 
 
 Measured production follow-up (2026-10-25): authenticated read samples: customers 1316ms (auth 412.5ms, data 619.9ms), invoices 2795ms (auth 422.7ms, data 1888.1ms), appointments 5401ms (auth 2148.2ms, data 2955.4ms). Single samples, not an SLA. Response routing reported hkg1::iad1; Atlas region is unverified. PROPOSED technical optimization: read page/catalogs concurrently; read package invoice metadata/customer references concurrently; customer count/rows concurrently with last-page fallback retained. Reads only; backend account/spa checks and transaction writes unchanged. Re-measure after deployment; select compute region after verifying database region.
@@ -550,7 +550,7 @@ Measured production follow-up (2026-10-25): authenticated read samples: customer
 Ảnh Atlas do người dùng cung cấp xác nhận vùng AWS Hong Kong (ap-east-1). Đo đạc cho thấy Function production được định tuyến qua iad1 (Hoa Kỳ). ĐỀ XUẤT cấu hình kỹ thuật: đặt `hkg1` (Hong Kong) trong `vercel.json` để đặt Function cùng vùng với Atlas. Cần triển khai Vercel mới. Sau triển khai, xác minh vùng Function thực tế và Server-Timing auth/data; không kết luận hiệu năng tăng trước khi đo. Việc này không di chuyển cơ sở dữ liệu hoặc sửa dữ liệu vận hành.
 
 
-## Multi-service cashier invoice (2026-10-25)
+## Hóa đơn Thu ngân gồm nhiều dịch vụ (2026-10-25)
 CONFIRMED user request: checkout can select multiple standalone services in one invoice.
 `serviceInvoice` (OWNER/cashier only): customerId, staffId, items [{serviceId,total?}], dueDate?, cashCard?. Backend validates the current account and every reference against the authenticated spa, rejects inactive services/performers, duplicate services, empty lists, more than 30 lines, nonpositive prices and aggregate money overflow. Prices default to the current service price. No packages, products, or treatment sessions are combined by this action.
 Invoice.serviceItems stores immutable serviceId/name/total/fixed-commission snapshots. Invoice total and commission are computed by the backend. A multi-service invoice omits top-level serviceId; a single-line invoice retains it for compatibility. Both are kind SERVICE. Existing invoices remain readable without migration.
@@ -575,7 +575,7 @@ Danh sách nội bộ, dòng thời gian và lịch sử khách hiển thị đ�
 `GET /api/notifications/daily-close` được bảo vệ bằng xác thực Bearer `CRON_SECRET` so sánh thời gian hằng, dùng `no-store`, xếp hàng lời nhắc còn thiếu và gửi các push đang chờ. `vercel.json` đặt lịch `0 15 * * *` (UTC), tương ứng 22:00 giờ Việt Nam. Cần cấu hình `CRON_SECRET` trong môi trường production của Vercel và triển khai production mới. Vercel Hobby không bảo đảm đúng phút: tác vụ có thể được gọi trong khoảng 22:00–22:59; muốn chạy đúng phút cần gói/bộ lập lịch phù hợp. Bộ lập lịch ngoài có thể gọi cùng endpoint đã xác thực này. Tham khảo: https://vercel.com/docs/cron-jobs/usage-and-pricing.
 
 
-## Ten-minute reminders and readable invoice codes (2026-10-25)
+## Lời nhắc trước 10 phút và mã hóa đơn dễ đọc (2026-10-25)
 CONFIRMED user request: notify ahead of appointments by ten minutes; emphasize invoice service/payment/status text and amounts; show invoice codes as HD plus digits.
 Appointment reminders: ActivityNotification adds APPOINTMENT_REMINDER, appointmentId and appointmentStartAt. The scheduler scans CONFIRMED appointments where now < startAt <= now+10min, rechecks inside the spa Control transaction, and deduplicates eventKey appointment:<id>:<startAt ISO> per recipient. Public visits notify all active owners/staff of that spa; internal visits notify owners and assigned staff only. A new start time can produce a new reminder, but canceled/postponed/completed/expired or reassigned visits are checked again before push. Reminder TTL is capped at arrival (at most 600 seconds). If booked less than ten minutes ahead, notify on the next check rather than invent a full ten-minute interval.
 GET /api/notifications/dispatch now queues due appointment reminders before sending; it still requires CRON_SECRET Bearer authentication. Call it once per minute from an external scheduler or configure a suitable Vercel plan. Default vercel.json keeps its Hobby-compatible daily closing job; it does not enable a per-minute cron that would break Hobby deployments. Inbox polling and booking/operation callbacks also check nearby appointments, but cannot guarantee background reminders when no client is open. No external scheduler has been provisioned by this code change. STAFF inbox now includes only booking notifications and APPOINTMENT_REMINDER activity events; invoice/closing activity remains owner-only, including read/readAll operations.
@@ -627,7 +627,7 @@ Thanh menu mobile cùng panel/backdrop được portal trực tiếp vào body �
 CONFIRMED theo yêu cầu mới nhất: quà khi bán gói chỉ chọn dịch vụ lẻ, không tặng nguyên gói liệu trình. Thay quy tắc trước cho chọn PackageTemplate làm quà mới; quà đã cấp giữ nguyên quyền lợi/lịch sử. Tên/ghi chú ưu đãi (promotion) mô tả chương trình áp dụng để tra cứu, không tự tạo mức giảm giá; giữ điều kiện có quà/thẻ tặng thì nhập ghi chú.
 PROPOSED kỹ thuật: sellPackage.gifts đổi thành [{serviceId}] strict, không nhận templateId/giá/số buổi từ client. Backend kiểm dịch vụ active/cùng spa và tạo chứng từ GIFT total=paid=0 liên kết hóa đơn mua. Dùng hạ tầng quyền lợi hiện có lưu một lượt dịch vụ tặng (Treatment packageType SESSIONS,totalSessions=remaining=1, không templateId/durationMonths); không cấp bảo hành/gói nhiều buổi và không tự đặt hạn. Khách có thể dùng sau qua luồng dùng quyền lợi: một lượt, chữ ký tùy chọn, hoa hồng thực hiện theo dịch vụ như trước; không sinh khoản thu/công nợ/hoa hồng bán gói cho quà. Mọi quà và gói mua cùng transaction/idempotency/audit, lỗi rollback toàn bộ. UI ghi Dịch vụ lẻ tặng 1 lần, dropdown từ Service; form cũ gửi templateId phải tải lại. Không schema/index/migration/backfill hoặc sửa dữ liệu thật.
 
-## Workspace loading guard — 26/10/2026
+## Chốt tải Workspace — 26/10/2026
 
 Technical behavior: the initial workspace request starts immediately; only subsequent
 same-section filter requests retain the 250 ms debounce. Workspace fetch and JSON
@@ -690,7 +690,7 @@ dịch vụ, liệu trình để điền giỏ. no-store; không thay endpoint �
 UI hỗ trợ phân trang, không giới hạn lịch sử ở trang đầu. Không schema/index/migration
 mới, không tự liên kết dữ liệu cũ hay chạy ghi dữ liệu thật khi triển khai code.
 
-## Mobile navigation viewport layer — 26/10/2026
+## Lớp điều hướng trên khung nhìn di động — 26/10/2026
 
 The workspace portal now owns a fixed, pointer-transparent viewport layer sized
 with 100dvh (100vh fallback). Its bottom bar, backdrop and panel are positioned
@@ -756,13 +756,13 @@ Bổ sung riêng Hương Lan KL theo xác nhận 26/10/2026: mua 17/06/2025, 3 g
 
 CONFIRMED theo phản hồi người dùng: gói đã hủy do hóa đơn nhập nhầm không còn xuất hiện trong Gói của khách hoặc tab liệu trình của hồ sơ khách. Lọc tại backend trước đếm/phân trang, kể cả khi tìm theo khách hoặc lọc quà tặng. Giữ bản ghi nội bộ và audit để đối chiếu điều chỉnh tài chính; không xóa lịch sử liên quan hoặc khôi phục quyền lợi đã hủy. Công cụ bổ sung Hương Lan KL chỉ kiểm trùng các gói chưa CANCELLED, nên gói nhập nhầm đã hủy không chặn việc thêm quyền lợi lịch sử đúng; không sửa hoặc xóa gói đã hủy. Gói còn ACTIVE/PAUSED/COMPLETED khác ngày vẫn chặn để đối soát. Không migration hay sửa dữ liệu thật.
 
-## P0 financial ledger containment — 30/10/2026
+## Khoanh vùng sổ tài chính mức P0 — 30/10/2026
 
 Payroll tách bốn danh sách ID theo collection; approval đối chiếu tập ID, gắn payrollId tuần tự và kiểm đủ matchedCount trước khi chuyển APPROVED. Commission views/PDF/report union thêm InvoiceLineCommission nhưng vẫn giữ scope spa/staff và lọc cancelledAt.
 
 Luồng xử lý hóa đơn sai giữ transaction Control/idempotency hiện có. Thay vì `Invoice.deleteOne`, backend đảo các ledger được hỗ trợ rồi tombstone Invoice thành CANCELLED và ghi audit before/after đủ bốn commission ledgers trong transaction. Snapshot liên kết từng ledger với spa, invoice, người hưởng và nguồn; amount gốc không bị mất khi ledger bị đặt về 0/cancelledAt. Mọi commission đã gắn hoặc thuộc legacy payroll APPROVED/PAID và thay đổi cấu trúc line commission chưa có adjustment policy đều fail-closed. UI dùng nhãn “Vô hiệu hóa hóa đơn nhập nhầm”, không tuyên bố xóa vĩnh viễn.
 
-## Compact invoice filters (2026-11-02)
+## Bộ lọc hóa đơn gọn (2026-11-02)
 CONFIRMED user request: the invoice list opens on today (Vietnam time). Search and status/date controls are collapsed behind “Tìm kiếm / Lọc” to keep the mobile screen compact. Searches without an explicit date selection and customer/status deep links span history; explicit date ranges remain respected. “Tất cả” uses a client URL dateScope marker so reloads retain the all-dates selection. Other lists and API defaults remain unchanged.
 
 CONFIRMED (2026-11-02): cashier's single-service browser initially shows group buttons and item counts, not service cards. Selecting a group reveals its services; “Các nhóm dịch vụ” returns to the group menu. Uncategorized services remain available under “Chưa phân nhóm”. Other cashier modes and basket contents retain their behavior.
