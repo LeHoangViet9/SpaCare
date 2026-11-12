@@ -689,7 +689,7 @@ Payroll APPROVED/PAID cùng spa có line ID trong `commissionIds` hoặc `invoic
 Thông báo tạo lịch nội bộ tiếp tục dùng collection `notifications` và index unique hiện có `{spaId,userId,appointmentId}`; recipient là OWNER đang hoạt động cùng spa và STAFF đang hoạt động được phân công. Bản ghi được tạo cùng transaction với Appointment, không thêm field/index hoặc migration. `activitynotifications` giữ riêng reminder `APPOINTMENT_REMINDER` được sinh trong cửa sổ 10 phút.
 
 ### KTV thực hiện và phân bổ thanh toán theo dòng (ĐÃ XÁC NHẬN)
-Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment lines) and `paid`. Payment and Allocation may carry `lineAllocations[]` with `{lineId, amount}`. Legacy documents without line IDs remain readable; a new line-allocation payment is rejected until the invoice has explicit line identities. No production backfill is implied.
+Các tài liệu con của dòng hóa đơn có thể chứa `lineId`, `performerId` (dòng dịch vụ/liệu trình) và `paid`. Payment và Allocation có thể chứa `lineAllocations[]` với `{lineId, amount}`. Tài liệu cũ không có ID dòng vẫn đọc được; khoản thanh toán phân bổ theo dòng mới sẽ bị từ chối cho đến khi hóa đơn có ID dòng tường minh. Không hàm ý sẽ bổ sung dữ liệu trên Production.
 
 ## Cải tiến TreatmentUse và Invoice.packageItems — 01/11/2026
 
@@ -711,7 +711,7 @@ Invoice line subdocuments may carry `lineId`, `performerId` (service/treatment l
 - `Invoice.packageItems[].sellerName?: string`: Tên nhân viên tư vấn/bán gói tương ứng cho dòng này.
 - Cho phép lưu trữ độc lập từng dòng gói khi khách mua cùng lúc từ 2 gói trở lên (kể cả cùng một mẫu `templateId`) trên cùng một hóa đơn thanh toán.
 
-2026-11-02: PACKAGE invoices may omit dueDate, as other invoice kinds already can. No migration or index change; existing deadlines remain intact. Overdue filtering continues to require an actual deadline and outstanding debt.
+02/11/2026: Hóa đơn PACKAGE được phép không có `dueDate`, tương tự các loại hóa đơn khác. Không migration hoặc thay đổi index; hạn hiện có được giữ nguyên. Bộ lọc quá hạn vẫn yêu cầu có ngày hạn thực và còn công nợ.
 
 
 ### Kiểm chứng đảo khác ngày và sổ CLOSED — 02/11/2026
@@ -720,7 +720,7 @@ BR-OPEN-005 vẫn PARTIALLY ANSWERED: spa chưa chốt quy trình xử lý sai s
 
 
 ## Giá linh hoạt cho hóa đơn mới (03/11/2026)
-CONFIRMED actual-price semantics are in BR-INV-PRICE-001. Existing Invoice.total, serviceItems.total, packageItems.total and productItems.unitPrice/total hold actual amounts, including zero; existing commission snapshots retain catalog rules. No new schema, collection, index, migration or backfill. PROPOSED technical handling: new zero-total/unpaid invoices are PAID (zero balance); grouped checkout recomputes status after adding package lines so a zero first line cannot leave a positive balance marked paid.
+Quy tắc giá thực tế ĐÃ XÁC NHẬN nằm tại BR-INV-PRICE-001. Các trường hiện có `Invoice.total`, `serviceItems.total`, `packageItems.total` và `productItems.unitPrice/total` lưu số tiền thực tế, kể cả 0; snapshot hoa hồng hiện có tiếp tục theo quy tắc danh mục. Không thêm schema, collection, index, migration hoặc backfill. ĐỀ XUẤT kỹ thuật: hóa đơn mới tổng 0/không nợ có trạng thái PAID (số dư 0); checkout gộp tính lại trạng thái sau khi thêm các dòng gói để dòng đầu giá 0 không khiến hóa đơn còn nợ bị đánh dấu đã thanh toán.
 
 
 ## Lương nháp và quản lý ngày nghỉ — 04/11/2026 (ưu tiên mới nhất)
