@@ -62,6 +62,10 @@ const mixed=cashierActions({...base,services:[{_id:'s1',total:'100',performerId:
 assert.equal(mixed[0].action,'invoice');assert.equal(mixed[0].data.additionalProducts.length,2);
 assert.equal(mixed[0].data.additionalServices.length,1);assert.equal(mixed[0].data.treatments[0].remainingBefore,3);
 assert.equal(mixed[0].data.signature,undefined,'signature remains optional');
+const staleRecipientCart=cashierActions({...base,products:[],packages:[],sessions:[
+  {_id:'t1',serviceId:'s1',remaining:3,performerId:'s',recipientName:'Old draft',recipientPhone:'0901111111',recipientCustomerId:'other',isShared:true},
+]})[0];
+assert.deepEqual(staleRecipientCart.data.treatments,[{treatmentId:'t1',remainingBefore:3,performerId:'s'}]);
 assert.equal(cashierActions({...base,services:[{_id:'s1',total:'100',performerId:'s'}]})[0].action,'serviceInvoice');
 assert.throws(()=>cashierActions({...base,services:[{_id:'s1',name:'Massage',total:'100',performerId:'a'},{_id:'s1',name:'Massage',total:'100'}]}),/dòng dịch vụ 2 \(Massage\)/);
 assert.throws(()=>cashierActions({...base,sessions:[{_id:'t1',name:'Gói Massage',remaining:3}]}),/lượt dùng gói 1 \(Gói Massage\)/);

@@ -17,13 +17,15 @@ export async function invoicePackageProgressIntegration(extraSpaIds:mongoose.Typ
   const actor={spaId:String(spaId),id:String(owner._id),name:owner.name,role:'OWNER' as const,cashier:true};
   const call=(action:string,data:any)=>operate(actor,action,data,randomUUID());
   const sale=await call('checkout',{customerId:String(customer._id),actions:[
-    {action:'sellPackage',data:{templateId:String(template._id)}},
-    {action:'sellPackage',data:{templateId:String(template._id)}},
+    {action:'sellPackage',data:{cartId:'print-package-one',templateId:String(template._id)}},
+    {action:'sellPackage',data:{cartId:'print-package-two',templateId:String(template._id)}},
   ]});
   const plans=await Treatment.find({spaId,invoiceId:sale.invoiceId}).sort({_id:1}).lean();
   assert.equal(plans.length,2);
   const rows=async(id:string)=>(await invoiceExport(actor,id)).tables[1].rows.map(row=>row[0]);
-  assert.deepEqual(await rows(sale.invoiceId),['Gói 10 buổi\nCòn lại: 10 buổi','Gói 10 buổi\nCòn lại: 10 buổi']);
+  const unusedRows=await rows(sale.invoiceId);
+  assert.equal(unusedRows.length,2);
+  assert.ok(unusedRows.every(row=>row.startsWith('Gói 10 buổi')&&row.endsWith('\nCòn lại: 10 buổi')&&!row.includes('Buổi đang thực hiện')));
   let firstSessionId='';
   for(let number=1;number<=3;number++){
     const result=await call('use',{treatmentId:String(plans[0]._id),staffId:String(owner._id)});
@@ -32,7 +34,7 @@ export async function invoicePackageProgressIntegration(extraSpaIds:mongoose.Typ
   }
   const saleRows=await rows(sale.invoiceId);
   assert.ok(saleRows.some(row=>row.includes('3/10\nCòn lại: 7 buổi')));
-  assert.ok(saleRows.some(row=>row==='Gói 10 buổi\nCòn lại: 10 buổi'));
+  assert.ok(saleRows.some(row=>row.endsWith('\nCòn lại: 10 buổi')&&!row.includes('Buổi đang thực hiện')));
   assert.ok((await rows(firstSessionId)).some(row=>row.includes('1/10\nCòn lại: 9 buổi')));
   const combined=await call('invoice',{customerId:String(customer._id),serviceId:String(service._id),treatments:[
     {treatmentId:String(plans[0]._id),remainingBefore:7,performerId:String(owner._id)},

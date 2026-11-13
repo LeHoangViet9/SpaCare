@@ -2558,7 +2558,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const visit=await operate(who,'appointment',{customerId:String(guest._id),serviceId:String(service!._id),staffId:who.id,startAt: spaDay(new Date(Date.now()+86400000))+'T22:00:00+07:00'},randomUUID());
       assert.equal((await Appointment.findById(visit.id))!.endAt,undefined);
     });
-    await t.test('multi-use and shared sessions, multi-package checkout, due date preservation, rollback and concurrency', async () => {
+    await t.test('package-owner sessions, multi-package checkout, due date preservation, rollback and concurrency', async () => {
       const spa = await Spa.create({ name: 'Multi-use integration ' + randomUUID() }); extraSpaIds.push(spa._id);
       const scope = { spaId: spa._id };
       await Control.create(scope);
@@ -2595,7 +2595,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(treatments.length, 2);
       const treatment1 = treatments[0];
 
-      // 2. Multi-use batch treatment & sharing with family in one transaction
+      // 2. Multiple explicit uses remain attributed to the package owner
       const sig1 = { version: 1 as const, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]] as [number, number][][] };
       const sig2 = { version: 1 as const, strokes: [[[0.4, 0.4], [0.5, 0.5], [0.6, 0.6]]] as [number, number][][] };
       const useBatchKey = randomUUID();
@@ -2604,15 +2604,10 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
         remainingBefore: 10,
         sessions: [
           {
-            recipientCustomerId: String(customerB._id),
-            recipientName: 'Người thân B',
-            recipientPhone: '0902222222',
             staffId: String(staff._id),
             signature: sig1,
           },
           {
-            recipientName: 'Bạn C',
-            recipientPhone: '0903333333',
             staffId: String(staff._id),
             signature: sig2,
           }
@@ -2626,22 +2621,22 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
 
       const uses = await TreatmentUse.find({ ...scope, treatmentId: treatment1._id }).sort({ createdAt: 1 });
       assert.equal(uses.length, 2);
-      assert.equal(String(uses[0].ownerCustomerId), String(customerA._id));
-      assert.equal(String(uses[0].recipientCustomerId), String(customerB._id));
-      assert.equal(uses[0].isShared, true);
-      assert.equal(uses[1].recipientName, 'Bạn C');
-      assert.equal(uses[1].isShared, true);
-
-      // 3. Signature independence: cannot use same signature for different recipients
-      await assert.rejects(callOp('use', {
-        treatmentId: String(treatment1._id),
-        remainingBefore: 8,
-        sessions: [
-          { recipientName: 'Khách 1', signature: sig1 },
-          { recipientName: 'Khách 2', signature: sig1 },
-        ]
-      }), (e: any) => e.status === 409);
-      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 8);
+      for(const use of uses){
+        assert.equal(String(use.customerId),String(customerA._id));
+        assert.equal(String(use.ownerCustomerId),String(customerA._id));
+        const stored=use.toObject(),snapshot=JSON.parse(use.snapshot!);
+        for(const field of ['recipientCustomerId','recipientName','recipientPhone','isShared']){
+          assert.equal(Object.hasOwn(stored,field),false);
+          assert.equal(Object.hasOwn(snapshot,field),false);
+        }
+      }
+      // One additional unsigned save consumes one session; retry consumes none.
+      const oneKey=randomUUID(),onePayload={treatmentId:String(treatment1._id),remainingBefore:8,staffId:String(staff._id)};
+      const one=await callOp('use',onePayload,oneKey);
+      assert.deepEqual(await callOp('use',onePayload,oneKey),one);
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining,7);
+      await assert.rejects(callOp('use',{...onePayload,recipientName:'Removed input'}));
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining,7);
 
       // 4. Concurrency: race condition between two competing batch use requests
       const sigA = { version: 1 as const, strokes: [[[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]] as [number, number][][] };
@@ -2650,24 +2645,24 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const sigD = { version: 1 as const, strokes: [[[0.4, 0.5], [0.6, 0.7], [0.8, 0.9]]] as [number, number][][] };
       const sigE = { version: 1 as const, strokes: [[[0.5, 0.6], [0.7, 0.8], [0.9, 0.1]]] as [number, number][][] };
       const competingUses1 = [
-        { recipientName: 'K1', signature: sigA }, { recipientName: 'K2', signature: sigB },
-        { recipientName: 'K3', signature: sigC }, { recipientName: 'K4', signature: sigD },
-        { recipientName: 'K5', signature: sigE }
+        { signature: sigA }, { signature: sigB },
+        { signature: sigC }, { signature: sigD },
+        { signature: sigE }
       ];
       const competingUses2 = [
-        { recipientName: 'K6', signature: sigA }, { recipientName: 'K7', signature: sigB },
-        { recipientName: 'K8', signature: sigC }, { recipientName: 'K9', signature: sigD },
-        { recipientName: 'K10', signature: sigE }
+        { signature: sigA }, { signature: sigB },
+        { signature: sigC }, { signature: sigD },
+        { signature: sigE }
       ];
       const results = await Promise.allSettled([
-        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 8, staffId:who.id, sessions: competingUses1 }),
-        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 8, staffId:who.id, sessions: competingUses2 })
+        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 7, staffId:who.id, sessions: competingUses1 }),
+        callOp('use', { treatmentId: String(treatment1._id), remainingBefore: 7, staffId:who.id, sessions: competingUses2 })
       ]);
       const fulfilled = results.filter(r => r.status === 'fulfilled');
       const rejected = results.filter(r => r.status === 'rejected');
       assert.equal(fulfilled.length, 1, 'Only one competing request succeeds');
       assert.equal(rejected.length, 1, 'Competing request exceeding quota is rejected');
-      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 3);
+      assert.equal((await Treatment.findById(treatment1._id))!.remaining, 2);
 
       // 5. Preserving due date on invoice update
       const standaloneService = await callOp('serviceInvoice', {

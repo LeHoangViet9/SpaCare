@@ -1,5 +1,9 @@
 # SpaCare — Business Requirements
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu mới nhất, màn hình ghi nhận dùng gói bỏ Người nhận dịch vụ và Số điện thoại người nhận. Dù khách tự dùng hay tặng người khác, lượt mới ghi nhận theo khách đứng tên mua gói. Các luồng dùng trực tiếp, thu ngân và hoàn thành lịch hẹn đều áp dụng. Giữ lựa chọn KTV, thời điểm thực hiện, dịch vụ, một lần trừ một buổi cho mỗi lượt, transaction/idempotency/audit và quyền hiện hành. Lịch sử người nhận đã lưu tiếp tục tra cứu được. Quyết định này thay phần phân biệt người nhận riêng của BR-TRT-003.
+
 ## Số buổi gói trên hóa đơn in — 13/11/2026
 
 CONFIRMED theo yêu cầu mới nhất, bản in hóa đơn có gói theo số buổi hiển thị dưới đúng dòng gói “Buổi đang thực hiện: X/Y” và “Còn lại: Z buổi”. X lấy từ lượt sử dụng đã lưu, Y là tổng số buổi của gói, Z là số dư sau lượt đó. Gói chỉ bán và chưa dùng chỉ hiện số buổi còn lại bằng tổng. Nhiều gói hiển thị riêng, dịch vụ lẻ và sản phẩm không có số buổi. Giữ khổ 80mm, nội dung in và dữ liệu vận hành.

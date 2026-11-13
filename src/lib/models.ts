@@ -318,7 +318,8 @@ export const TreatmentUse = model('TreatmentUse', {
   recipientCustomerId: optionalId,
   recipientName: String,
   recipientPhone: String,
-  isShared: { type: Boolean, default: false },
+  // Legacy recipient fields remain readable; new uses are recorded for the package owner.
+  isShared: Boolean,
   staffId: optionalId,
   snapshot: String,
   digest: String,

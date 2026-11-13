@@ -1,5 +1,11 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED, giỏ dùng gói bỏ hai ô Người nhận dịch vụ và Số điện thoại người nhận. Chi tiết nhóm giữ từng lượt, KTV và thao tác bỏ lượt; không hiện nhãn người nhận từ bản nháp cũ. Chữ ký tùy chọn hiện như các lượt ghi nhận theo chủ gói.
+
+PROPOSED kỹ thuật, cashierActions xây payload theo danh sách field cho phép nên không phát lại thông tin người nhận từ object/bản nháp cũ. recordUse không tra khách nhận riêng, luôn dùng chủ gói đã xác minh. Các guard chữ ký chỉ phục vụ nhiều người nhận được gỡ. Giao diện đọc lịch sử invoice-content-fields và reader invoice-content vẫn hiển thị snapshot người nhận cũ. Giữ các đường tạo/ghi buổi, transaction, audit và idempotency hiện có.
+
 ## Số buổi dưới dòng gói khi in — 13/11/2026
 
 PROPOSED kỹ thuật theo BR-INV-PACKAGE-PRINT-001, invoiceExport đọc projection qua readInvoicePackageProgress rồi truyền vào invoiceExportDocument. Dòng gói thêm hai dòng chữ bằng ký tự xuống dòng ngay trong ô tên hiện có, dùng chung wrap/pagination của renderPdf trên giấy 80mm. Gói chưa sử dụng chỉ thêm dòng số dư. Dòng buổi gói ghép theo lineId và treatmentId, bản legacy dùng tham chiếu gói tường minh. Hóa đơn bán gói dùng lượt đã lưu gần nhất khi in, SESSION dùng lượt thuộc chính hóa đơn để lần in sau giữ đúng buổi của chứng từ đó.
@@ -771,12 +777,12 @@ CONFIRMED user request: the invoice list opens on today (Vietnam time). Search a
 
 CONFIRMED (2026-11-02): cashier's single-service browser initially shows group buttons and item counts, not service cards. Selecting a group reveals its services; “Các nhóm dịch vụ” returns to the group menu. Uncategorized services remain available under “Chưa phân nhóm”. Other cashier modes and basket contents retain their behavior.
 
-CONFIRMED (2026-11-02): repeated selections of the same service, purchased treatment or package template appear as one collapsed cart group with ×quantity. Expand the group and an individual occurrence to edit/remove it. PROPOSED implementation: group by record ID within each item type, never by name alone, retaining every original line/cart ID, price, technician, recipient and gift detail in the checkout payload. Technician labels in the cashier read “Kĩ thuật viên”. No financial or session aggregation is performed by this display change.
+CONFIRMED (2026-11-02): repeated selections of the same service, purchased treatment or package template appear as one collapsed cart group with ×quantity. Expand the group and an individual occurrence to edit/remove it. PROPOSED implementation: group by record ID within each item type, never by name alone, retaining every original line/cart ID, price, technician and gift detail in the checkout payload. Technician labels in the cashier read “Kĩ thuật viên”. No financial or session aggregation is performed by this display change.
 
 2026-11-02: cashier hides the explanatory commission text and amount preview, retaining consultant selection and the existing commission calculation. Payment deadline is labelled optional and no longer required by the cashier form or package-sale API.
 Latest clarification (2026-11-02): remove the payment deadline input entirely from the cashier, rather than merely making it optional. Cashier submits no deadline for new sales. Existing invoice deadlines and the optional API field remain supported.
 
-2026-11-02 hotfix: grouped cart passes its item renderer as renderItem, not children. ValidatedForm recursively transforms children and cannot preserve function-valued children. Regression test renders empty, single and repeated selections inside the actual ValidatedForm wrapper, preserving recipient fields.
+2026-11-02 hotfix: grouped cart passes its item renderer as renderItem, not children. ValidatedForm recursively transforms children and cannot preserve function-valued children. Regression test renders empty, single and repeated selections inside the actual ValidatedForm wrapper, preserving per-occurrence technician fields. Recipient fields are historical only under BR-TRT-OWNER-USE-001.
 
 2026-11-02 cashier customer search: show one search input initially without preloading the customer list or pagination controls. Typing opens matches with phone numbers; selecting a match puts its name in the input and collapses suggestions. Search-only mode reads subsequent API pages internally so duplicate-name candidates remain selectable. Editing the query clears the prior customer selection to avoid saving against the wrong customer. Other customer pickers retain their current presentation. Selenium mobile coverage is required before publishing this follow-up.
 

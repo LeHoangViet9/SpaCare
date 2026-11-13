@@ -12,7 +12,7 @@ export default function GroupedCartLines({ items, label, renderItem }: {
         <summary><strong>{label}: {group[0].name} ×{group.length}</strong><small>Chi tiết từng lượt</small></summary>
         {group.map((item, index) => <details className="cashier-cart-unit" key={item.lineId || item.cartId || index}
           onInvalidCapture={event => { event.currentTarget.open = true; }}>
-          <summary>Lượt {index + 1}{item.recipientName ? ` · ${item.recipientName}` : ''}</summary>
+          <summary>Lượt {index + 1}</summary>
           {renderItem(item)}
         </details>)}
       </details>)}</>;

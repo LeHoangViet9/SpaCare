@@ -1,5 +1,11 @@
 # API nội bộ
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+Contract PROPOSED kỹ thuật thực hiện BR-TRT-OWNER-USE-001 CONFIRMED, use nhận treatmentId, staffId?, signature?, remainingBefore?, appointmentId? và sessions[] theo cấu trúc hiện có đã bỏ recipientCustomerId/recipientName/recipientPhone. invoice.treatments[] chỉ nhận treatmentId/remainingBefore/performerId?/signature?. completeTreatmentAppointment.treatments[] chỉ nhận treatmentId/remainingBefore?/signature?. use/sessions[] strict từ chối dữ liệu người nhận đã bỏ; invoice.treatments[] và completeTreatmentAppointment.treatments[] loại field dư theo validation hiện có. Client không gửi isShared hoặc danh tính chủ gói để thay nguồn backend.
+
+Các action mới lấy chủ gói từ Treatment đã kiểm tra cùng spa và đối chiếu khách hóa đơn/lịch hẹn. Không thay quyền, khoản tiền, thời điểm/KTV hoặc response hiện có. GET đọc lịch sử tiếp tục trả các field người nhận đã lưu khi reader hiện hành có hỗ trợ. Nội dung này thay hợp đồng người nhận riêng ở phần API ngày 01/11/2026 bên dưới.
+
 ## Số buổi gói trên bản in — 13/11/2026
 
 PROPOSED kỹ thuật thực hiện BR-INV-PACKAGE-PRINT-001, GET /api/invoices/:id/export tiếp tục kiểm quyền và phạm vi hóa đơn qua readInvoice. Projection in bổ sung số thứ tự buổi, tổng buổi và số dư ngay trong ô nội dung dòng gói hoặc lượt gói. Backend đọc Treatment cùng spa/khách và TreatmentUse thuộc các gói đã liên kết. Đây là dữ liệu đọc lúc xuất, không thêm payload ghi hoặc trường lưu trên hóa đơn. GET chi tiết và phân trang chữ ký tiếp tục dùng hợp đồng hiện có.
@@ -808,41 +814,26 @@ PROPOSED compatibility: invoices entirely lacking line IDs retain aggregate paym
 
 ## Cải tiến API nghiệp vụ — 01/11/2026
 
-### 1. Action `use` — Ghi nhận nhiều lượt dùng và chia sẻ liệu trình
-- Hỗ trợ mảng `sessions` trong payload:
+### 1. Action `use` — Ghi nhận lượt dùng theo chủ gói
+
+Payload hiện hành theo BR-TRT-OWNER-USE-001
+
 ```json
 {
   "action": "use",
   "data": {
     "treatmentId": "OBJECT_ID",
-    "remainingBefore": 5,
-    "sessions": [
-      {
-        "recipientCustomerId": "OBJECT_ID",
-        "recipientName": "Người thân B",
-        "recipientPhone": "0902222222",
-        "staffId": "STAFF_OBJECT_ID",
-        "signature": { "version": 1, "strokes": [...] }
-      },
-      {
-        "recipientName": "Khách C",
-        "recipientPhone": "0903333333",
-        "staffId": "STAFF_OBJECT_ID_2",
-        "signature": { "version": 1, "strokes": [...] }
-      }
-    ]
+    "staffId": "STAFF_OBJECT_ID",
+    "remainingBefore": 5
   }
 }
 ```
-- Quy tắc kiểm tra:
-  - `sessions.length <= treatment.remaining`: không cho phép dùng vượt quá số buổi còn lại.
-  - Mỗi lượt dùng trừ đúng 1 buổi và tạo một bản ghi `TreatmentUse` độc lập với thông tin `ownerCustomerId`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared: true`.
-  - Nghiêm cấm dùng chung một chữ ký hoặc xác nhận cho nhiều người nhận dịch vụ khác nhau; mỗi người nhận phải có chữ ký riêng biệt.
-  - Toàn bộ các lượt dùng được commit trong một transaction duy nhất; lỗi bất kỳ bước nào sẽ rollback toàn bộ.
 
-### 2. Action `completeTreatmentAppointment` — Người nhận riêng cho từng buổi trong lịch hẹn
-- Mỗi phần tử trong mảng `treatments` chấp nhận `recipientCustomerId`, `recipientName`, `recipientPhone`.
-- Cho phép nhiều buổi từ cùng một gói trong một ca hẹn (ví dụ khách đi cùng người thân), mỗi người nhận mang thông tin và xác nhận riêng.
+Mảng sessions[] vẫn nhận nhiều lượt tường minh với staffId/signature/remainingBefore/appointmentId tùy chọn theo schema hiện có. Mỗi phần tử trừ một buổi và lưu TreatmentUse độc lập cho cùng chủ gói; tổng không vượt quota. Chữ ký tùy chọn. Trường người nhận riêng không thuộc payload. Toàn bộ lượt chạy tuần tự trong một transaction, lỗi rollback và retry không trừ buổi hai lần.
+
+### 2. Action `completeTreatmentAppointment` — Hoàn thành lịch theo chủ gói
+
+Mỗi phần tử treatments[] nhận treatmentId, remainingBefore?, signature?. Khách lịch hẹn phải khớp chủ gói; KTV theo lịch/chọn hợp lệ. Ghi nhận từng lượt cho chủ gói, chữ ký chung tùy chọn theo luồng hiện có. Dữ liệu người nhận và chữ ký lịch sử giữ nguyên.
 
 ### 3. Action `updateInvoice` — Bảo toàn hạn thanh toán (`dueDate`) khi form bị ẩn
 - Khi hóa đơn đã thanh toán đủ (`total - paid <= 0`), giao diện thu ngân và sửa hóa đơn ẩn trường `dueDate`.
