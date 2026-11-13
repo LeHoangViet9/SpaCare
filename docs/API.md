@@ -1,5 +1,9 @@
 # API nội bộ
 
+## Số buổi gói trên bản in — 13/11/2026
+
+PROPOSED kỹ thuật thực hiện BR-INV-PACKAGE-PRINT-001, GET /api/invoices/:id/export tiếp tục kiểm quyền và phạm vi hóa đơn qua readInvoice. Projection in bổ sung số thứ tự buổi, tổng buổi và số dư ngay trong ô nội dung dòng gói hoặc lượt gói. Backend đọc Treatment cùng spa/khách và TreatmentUse thuộc các gói đã liên kết. Đây là dữ liệu đọc lúc xuất, không thêm payload ghi hoặc trường lưu trên hóa đơn. GET chi tiết và phân trang chữ ký tiếp tục dùng hợp đồng hiện có.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 Contract PROPOSED kỹ thuật thực hiện BR-DISCOUNT-PROGRAM-RETIRED-001 CONFIRMED: gỡ GET /api/discount-programs và section discount_programs. POST operations không còn saveDiscountProgram/setDiscountProgramStatus/deleteDiscountProgram, trả lỗi thao tác không hợp lệ. Payload discountProgram cũ không còn được xử lý hoặc dùng để chọn chương trình; trường dư vẫn theo cơ chế parse hiện có, không tạo snapshot chương trình.

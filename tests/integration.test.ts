@@ -14,6 +14,7 @@ import type { CatalogEntry } from '../src/lib/catalog-import-plan';
 import test from 'node:test';
 import {invoiceDiscountIntegration} from './invoice-discount-integration';
 import {discountProgramIntegration} from './discount-program-integration';
+import {invoicePackageProgressIntegration} from './invoice-package-progress-integration';
 const signed = { version: 1, strokes: [[[0.1, 0.6], [0.3, 0.2], [0.7, 0.8]]] }; 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -63,6 +64,7 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
     const call = (action: string, data: unknown, key = randomUUID()) => operate(actor, action, data, key);
     await call('openDay', { day: spaDay(), opening: 0 });
     await t.test('retired programs preserve manual discounts and historical snapshots',()=>discountProgramIntegration(extraSpaIds));
+    await t.test('package print reads saved sessions per package without changing stored data',()=>invoicePackageProgressIntegration(extraSpaIds));
     await t.test('new invoice discounts preserve charges, receipts, commissions and atomic retry',()=>invoiceDiscountIntegration(extraSpaIds));
     await t.test('new invoices record receipts on explicit actual days',test=>receiptCreationIntegration(extraSpaIds,test));
     await t.test('invoice content editing retains dated receipts and updates stock atomically',()=>invoiceContentIntegration(extraSpaIds));

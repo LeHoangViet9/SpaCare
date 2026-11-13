@@ -1,5 +1,9 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Số buổi dưới dòng gói khi in — 13/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-PACKAGE-PRINT-001, invoiceExport đọc projection qua readInvoicePackageProgress rồi truyền vào invoiceExportDocument. Dòng gói thêm hai dòng chữ bằng ký tự xuống dòng ngay trong ô tên hiện có, dùng chung wrap/pagination của renderPdf trên giấy 80mm. Gói chưa sử dụng chỉ thêm dòng số dư. Dòng buổi gói ghép theo lineId và treatmentId, bản legacy dùng tham chiếu gói tường minh. Hóa đơn bán gói dùng lượt đã lưu gần nhất khi in, SESSION dùng lượt thuộc chính hóa đơn để lần in sau giữ đúng buổi của chứng từ đó.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 Gỡ panel DiscountPrograms và menu Quản trị tương ứng, hook useInvoiceProgram/InvoiceProgramDiscount và endpoint cấu hình. Cashier/CommercialFields dùng trực tiếp InvoiceDiscountFields: preview tổng sau giảm theo tiền/% nhập thủ công; không chặn lưu vì tải chương trình. Form completeAppointment không có preview chương trình.

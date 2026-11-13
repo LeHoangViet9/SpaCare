@@ -1,5 +1,9 @@
 # SpaCare — Data Model
 
+## Projection số buổi khi in — 13/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-PACKAGE-PRINT-001, dùng Treatment.invoiceId/_id/customerId/packageType/totalSessions và TreatmentUse.treatmentId/sessionNumber/snapshot/checkoutInvoiceId. Invoice.packageItems[].treatmentId, treatmentSessions[].treatmentId/treatmentUseId/lineId và treatmentId/treatmentUseId legacy xác định đúng dòng. Projection InvoicePackageProgress chỉ tồn tại khi đọc để xuất, gồm treatmentId, totalSessions, sessionNumber tùy chọn và remaining. Không đổi schemas, indexes hoặc dữ liệu đã lưu.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED: giữ model DiscountProgram, collection discountprograms và toàn bộ indexes/bản ghi hiện có để bảo toàn dữ liệu. Invoice.discount.programId/programCode/programName cùng type/value/amount và subtotal giữ nguyên để đọc lịch sử. Không migration/backfill/xóa dữ liệu hoặc viết lại hóa đơn, Payment, CashEntry hay audit.

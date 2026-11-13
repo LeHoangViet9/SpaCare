@@ -4,6 +4,7 @@ import { historicalInvoiceCode, invoiceCode } from './invoice-code';
 import type { Actor } from './auth';
 import type { ExportDocument } from './export-document';
 import { readInvoice } from './invoice-read';
+import { readInvoicePackageProgress, packageProgressText, type InvoicePackageProgress } from './invoice-package-progress';
 import { payrollStaffScope, commissionPipeline, commissionCustomers } from './payroll-read';
 import { monthBounds } from './payroll-rules';
 import { Commission, User } from './models';
@@ -14,13 +15,21 @@ const date = (value: unknown) => value ? new Date(String(value)).toLocaleString(
 export async function invoiceExport(user: Actor, id: string): Promise<ExportDocument> {
   ensure(['OWNER', 'STAFF'].includes(user.role), 'Không có quyền xuất hóa đơn.', 403);
   const data = await readInvoice(user, id);
-  return invoiceExportDocument(data);
+  const progress = await readInvoicePackageProgress(user.spaId, data.invoice);
+  return invoiceExportDocument(data, progress);
 }
-export function invoiceExportDocument(data: Awaited<ReturnType<typeof readInvoice>>): ExportDocument {
+export function invoiceExportDocument(data: Awaited<ReturnType<typeof readInvoice>>, progress: InvoicePackageProgress[] = []): ExportDocument {
   const bill = data.invoice;
   const summary=invoiceSummary(bill);
   const services=[...(bill.serviceItems || []),...(bill.treatmentSessions || []).filter((session:any)=>!bill.serviceItems?.some((item:any)=>item.lineId && String(item.lineId)===String(session.lineId) && item.total===0 && session.total===0))];
-  const serviceRow=(item:{name?:string;total:number;performerName?:string|null})=>[`${item.name || 'Dịch vụ'}\nKỹ thuật viên: ${item.performerName || 'Chưa có'}`,money(item.total)];
+  const forTreatment = (id: unknown) => progress.find(plan => plan.treatmentId === String(id));
+  const serviceRow=(item:{lineId?:unknown;name?:string;total:number;performerName?:string|null})=>{
+    const session = bill.treatmentSessions?.find((line: any) => item.lineId && String(line.lineId) === String(item.lineId));
+    const legacySession = bill.kind === 'SESSION' && !bill.treatmentSessions?.length && services.length <= 1;
+    const plan = forTreatment(session?.treatmentId || (legacySession ? bill.treatmentId : undefined));
+    return [`${item.name || 'Dịch vụ'}\nKỹ thuật viên: ${item.performerName || 'Chưa có'}${packageProgressText(plan)}`,money(item.total)];
+  };
+  const legacyPackage = bill.kind === 'PACKAGE' && progress.length === 1 ? packageProgressText(progress[0]) : '';
   const replacementNotes = bill.activeDocumentId && !bill.financialRevision ? [`Chứng từ thay thế hiện hành. Chứng từ trước đã hết hiệu lực: ${(bill.documentHistory || []).map(historicalInvoiceCode).join(', ')}. Giữ nguyên khoản thu và quyền lợi; không thu tiền lần nữa.`] : [];
   return {
     filename: `${invoiceCode(bill)}.pdf`, title: bill.status === 'CANCELLED' ? 'HÓA ĐƠN ĐÃ HỦY' : bill.openingBalance ? 'CHỨNG TỪ CHUYỂN SỐ DƯ' : 'HÓA ĐƠN BÁN HÀNG',
@@ -36,10 +45,10 @@ export function invoiceExportDocument(data: Awaited<ReturnType<typeof readInvoic
         ...(bill.kind === 'PACKAGE' ? [['Tư vấn bán gói', bill.saleParticipants?.length ? bill.saleParticipants.map((p:{staffName:string})=>p.staffName).join(', ') : bill.sellerName || 'Chưa ghi nhận']] : []),
       ] },
       { heading: 'Dịch vụ / gói / sản phẩm', columns: ['Nội dung', 'Thành tiền'], widths: [0.72, 0.28], rows: [
-        ...(bill.packageItems || []).map((item:any)=>[item.name || 'Gói',money(item.total)]),
+        ...(bill.packageItems || []).map((item:any)=>[(item.name || 'Gói')+packageProgressText(forTreatment(item.treatmentId)),money(item.total)]),
         ...services.map(serviceRow),
         ...(!bill.packageItems?.length && !services.length && !bill.productItems?.length ?
-          (!bill.kind || ['SERVICE','SESSION','GIFT'].includes(bill.kind) ? [serviceRow({name:bill.description,total:summary.subtotal,performerName:bill.performerName})] : [[bill.description || 'Nội dung',money(summary.subtotal)]]) : []),
+          (!bill.kind || ['SERVICE','SESSION','GIFT'].includes(bill.kind) ? [serviceRow({name:bill.description,total:summary.subtotal,performerName:bill.performerName})] : [[(bill.description || 'Nội dung')+legacyPackage,money(summary.subtotal)]]) : []),
         ...(bill.productItems || []).map((item:any)=>[`${item.name} · ${item.quantity} ${item.unit} × ${money(item.unitPrice)}`,money(item.total)]),
         ...data.gifts.map(gift => [`Quà tặng: ${gift.description || 'Gói tặng'}`, money(0)]),
       ] },

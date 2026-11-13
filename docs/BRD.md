@@ -1,5 +1,9 @@
 # SpaCare — Business Requirements
 
+## Số buổi gói trên hóa đơn in — 13/11/2026
+
+CONFIRMED theo yêu cầu mới nhất, bản in hóa đơn có gói theo số buổi hiển thị dưới đúng dòng gói “Buổi đang thực hiện: X/Y” và “Còn lại: Z buổi”. X lấy từ lượt sử dụng đã lưu, Y là tổng số buổi của gói, Z là số dư sau lượt đó. Gói chỉ bán và chưa dùng chỉ hiện số buổi còn lại bằng tổng. Nhiều gói hiển thị riêng, dịch vụ lẻ và sản phẩm không có số buổi. Giữ khổ 80mm, nội dung in và dữ liệu vận hành.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED theo yêu cầu mới nhất: gỡ Chương trình giảm giá theo ngày khỏi menu, màn hình, form tạo/sửa, bật/tắt/xóa và API/backend quản lý. Không tự áp dụng chương trình khi lập hóa đơn, checkout hoặc hoàn thành lịch hẹn. Hóa đơn mới chỉ nhận giảm giá tiền/% người dùng nhập trong form lập hóa đơn; giữ giảm giá thủ công, hạn thanh toán, KTV, PDF, thanh toán và báo cáo.

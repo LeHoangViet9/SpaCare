@@ -1,5 +1,11 @@
 # SpaCare — Business Rules
 
+## BR-INV-PACKAGE-PRINT-001 — Số buổi trên bản in — 13/11/2026
+
+CONFIRMED theo yêu cầu người dùng, bản in gói theo số buổi hiển thị “Buổi đang thực hiện: X/Y” và “Còn lại: Z buổi”. Chỉ dùng quyền lợi gói và lượt sử dụng đã lưu. Chưa dùng buổi thì chỉ hiện số còn lại bằng tổng số buổi. Mỗi gói có số liệu riêng, dịch vụ lẻ và sản phẩm giữ nội dung hiện có.
+
+PROPOSED kỹ thuật, hóa đơn bán gói đọc lượt gần nhất của Treatment, hóa đơn SESSION đọc lượt liên kết với chính hóa đơn bằng treatmentUseId hoặc checkoutInvoiceId. X lấy sessionNumber đã lưu, Y lấy Treatment.totalSessions, Z lấy snapshot.remainingBefore trừ 1 và dùng totalSessions trừ sessionNumber khi snapshot cũ thiếu số dư. Đọc toàn bộ lượt liên quan, độc lập phân trang chữ ký. Gói TIME, gói chuyển sổ thiếu tổng gốc và dữ liệu thiếu nguồn định danh không được tự gán X/Y.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED — BR-DISCOUNT-PROGRAM-RETIRED-001: ngừng toàn bộ quản lý và tự áp dụng chương trình, kể cả bản ghi enabled=true hoặc chồng ngày còn lưu. invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/checkout chỉ dùng discount tiền/% nhập trực tiếp; completeAppointment không tra hoặc áp chương trình, không bổ sung giảm thủ công vào luồng này. Thanh toán hóa đơn cũ không tính lại giảm giá.
