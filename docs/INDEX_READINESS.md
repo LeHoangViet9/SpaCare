@@ -1,16 +1,16 @@
-# InvoiceLineCommission index readiness
+# Mức độ sẵn sàng của index InvoiceLineCommission
 
-`InvoiceLineCommission` is additive. The legacy `Commission` collection and its unique `invoiceId` index are not changed by this procedure.
+Collection `InvoiceLineCommission` được bổ sung thêm. Quy trình này không thay đổi collection `Commission` kiểu cũ hoặc index `invoiceId` duy nhất của collection đó.
 
-The checked-in manifest is [invoice-line-commission-index-manifest.json](../scripts/invoice-line-commission-index-manifest.json). It defines collection `invoicelinecommissions` and exactly three application indexes: two unique indexes and one staff/earnedAt lookup index.
+Danh sách khai báo trong repo là [invoice-line-commission-index-manifest.json](../scripts/invoice-line-commission-index-manifest.json). Tệp này định nghĩa collection `invoicelinecommissions` và đúng ba index ứng dụng: hai index duy nhất và một index tra cứu theo nhân viên/thời điểm ghi nhận.
 
-## Local test only
+## Chỉ dùng cho cơ sở dữ liệu kiểm thử local
 
-The local script is read-only by default and accepts only:
+Mặc định script local chỉ đọc và chỉ chấp nhận:
 
 `mongodb://127.0.0.1:27018/spacare_test?replicaSet=rs0&directConnection=true`
 
-Dry-run:
+Chạy thử:
 
 ```powershell
 $env:MONGODB_URI='mongodb://127.0.0.1:27018/spacare_test?replicaSet=rs0&directConnection=true'
@@ -18,7 +18,7 @@ $env:SPACARE_ENV='test'
 npx.cmd tsx scripts/index-readiness.ts
 ```
 
-Apply is restricted to the same local test database and requires both explicit flags:
+Chỉ được áp dụng lên đúng cơ sở dữ liệu kiểm thử local nói trên và phải truyền rõ cả hai cờ cho phép:
 
 ```powershell
 $env:MONGODB_URI='mongodb://127.0.0.1:27018/spacare_test?replicaSet=rs0&directConnection=true'
@@ -26,13 +26,13 @@ $env:SPACARE_ENV='test'; $env:SPACARE_INDEX_READINESS_APPROVAL='LOCAL_TEST_ONLY'
 npx.cmd tsx scripts/index-readiness.ts --apply --approve-index-readiness
 ```
 
-The local script never drops an index. A missing index is created; an existing index with mismatched uniqueness remains a hard failure. Re-running apply is idempotent. Atlas variables, other hosts, other databases, and missing approval variables fail closed.
+Script local không bao giờ xóa index. Nếu index còn thiếu, script sẽ tạo; nếu index hiện có có cấu hình duy nhất không khớp, script sẽ dừng với lỗi nghiêm trọng. Chạy áp dụng lại không tạo tác dụng lặp. Có biến Atlas, máy chủ khác, cơ sở dữ liệu khác hoặc thiếu biến phê duyệt đều khiến thao tác bị từ chối.
 
-## Production preflight and apply
+## Kiểm tra trước và áp dụng trên Production
 
-Production uses a separate wrapper. The local-only script above must never be pointed at Production. [index-readiness-production.ts](../scripts/index-readiness-production.ts) is dry-run by default and does not print the URI. It requires an operator-provided SHA-256 pin of the exact URI, approved host/database values, and `SPACARE_ENV=production`.
+Production dùng một trình bao riêng. Tuyệt đối không trỏ script chỉ dành cho local ở trên vào Production. [index-readiness-production.ts](../scripts/index-readiness-production.ts) mặc định chạy thử và không in URI. Script yêu cầu người vận hành cung cấp dấu ghim SHA-256 của chính xác URI, tên máy chủ/tên cơ sở dữ liệu đã duyệt và `SPACARE_ENV=production`.
 
-Set these values only in the approved operations shell; do not put them in source control or logs:
+Chỉ đặt các giá trị này trong shell vận hành đã được phê duyệt; không ghi vào mã nguồn hoặc log:
 
 ```powershell
 $env:SPACARE_ENV='production'
@@ -44,9 +44,9 @@ $env:SPACARE_APPROVED_REPLICA_SET='<approved replica-set name>'
 npx.cmd tsx scripts/index-readiness-production.ts
 ```
 
-The dry-run is **NO-GO** unless the target hash, host, database, replica-set health, privileges, existing index definitions, and duplicate-key scan all pass. The report contains only the target hash, database name, index metadata and counts; it does not print the URI or document data.
+Chạy thử phải có kết quả **NO-GO** nếu bất kỳ kiểm tra nào sau đây không đạt: dấu băm đích, máy chủ, cơ sở dữ liệu, tình trạng replica set, quyền, định nghĩa index hiện có hoặc quét khóa trùng. Báo cáo chỉ chứa dấu băm đích, tên cơ sở dữ liệu, metadata index và số lượng; không in URI hay dữ liệu tài liệu.
 
-Apply requires all of the following in addition to the dry-run evidence: a change ticket, verified backup, completed restore rehearsal, explicit approval flag and approval marker.
+Ngoài bằng chứng chạy thử, áp dụng cần đủ tất cả mục sau: phiếu thay đổi, bản sao lưu đã xác minh, diễn tập khôi phục hoàn tất, cờ phê duyệt tường minh và dấu xác nhận phê duyệt.
 
 ```powershell
 $env:SPACARE_CHANGE_TICKET='<approved ticket id>'
@@ -56,30 +56,30 @@ $env:SPACARE_INDEX_READINESS_APPROVAL='PRODUCTION_APPROVED'
 npx.cmd tsx scripts/index-readiness-production.ts --apply --approve-index-readiness
 ```
 
-The wrapper creates only the manifest collection/indexes, never drops or rewrites data, rejects mismatched options, and stops before apply when duplicate keys or missing privileges are found. It does not alter `Commission`.
+Trình bao chỉ tạo collection/index trong danh sách khai báo; không xóa hoặc ghi đè dữ liệu. Trình bao từ chối tùy chọn không khớp và dừng trước khi áp dụng nếu phát hiện khóa trùng hoặc thiếu quyền. Không thay đổi collection `Commission`.
 
-## Production runbook
+## Quy trình vận hành Production
 
-1. Confirm a current verified backup, restore rehearsal, rollback owner, maintenance window, and least-privilege database account.
-2. Run the production dry-run and confirm exact target pin, replica-set health, write concern, privileges, duplicate count zero, and no conflicting index options.
-3. Confirm the existing `Commission` index manifest is unchanged and archive the preflight report.
-4. Obtain explicit approval, then run the guarded apply command above. Create the collection first, followed by the three manifest indexes; never drop or alter `Commission` indexes.
-5. Re-run the wrapper in dry-run mode and archive postflight output. Verify every manifest option and that the legacy indexes are unchanged.
-6. Deploy/route traffic only after postflight evidence is stored. The application uses `autoIndex:false`, so it cannot make index readiness automatic; without this gate it can write line commissions before unique indexes exist.
-7. If apply fails, stop rollout and preserve logs, backup evidence and index definitions. If application rollback is needed, keep the additive collection/indexes and reconcile any line-ledger rows before re-enabling the new version. Never delete financial history or change the legacy `Commission` unique index as an emergency workaround.
+1. Xác nhận bản sao lưu hiện tại đã được kiểm chứng, đã diễn tập khôi phục, có người phụ trách hoàn tác, khung giờ bảo trì và tài khoản cơ sở dữ liệu theo nguyên tắc quyền tối thiểu.
+2. Chạy thử trên Production; xác nhận dấu ghim đích chính xác, replica set khỏe, write concern, quyền, số khóa trùng bằng 0 và không có tùy chọn index xung đột.
+3. Xác nhận danh sách index `Commission` hiện có không đổi và lưu trữ báo cáo kiểm tra trước.
+4. Nhận phê duyệt tường minh rồi chạy lệnh áp dụng có chốt ở trên. Tạo collection trước, sau đó tạo ba index trong danh sách; tuyệt đối không xóa hoặc sửa index của `Commission`.
+5. Chạy lại trình bao ở chế độ thử và lưu kết quả kiểm tra sau. Xác minh mọi tùy chọn trong danh sách khai báo và bảo đảm index cũ không đổi.
+6. Chỉ triển khai/điều hướng lưu lượng sau khi lưu bằng chứng kiểm tra sau. Ứng dụng dùng `autoIndex:false`, nên không thể tự động bảo đảm index đã sẵn sàng; nếu bỏ qua chốt này, ứng dụng có thể ghi hoa hồng theo dòng trước khi tạo index duy nhất.
+7. Nếu áp dụng thất bại, dừng phát hành và giữ lại log, bằng chứng sao lưu cùng định nghĩa index. Nếu cần hoàn tác ứng dụng, giữ collection/index bổ sung và đối soát các dòng sổ chi tiết trước khi bật lại phiên bản mới. Không bao giờ xóa lịch sử tài chính hoặc sửa index duy nhất cũ của `Commission` để chữa cháy.
 
-Any missing backup verification, target verification, privilege evidence, duplicate scan, or postflight manifest match is **NO-GO**.
+Thiếu xác minh sao lưu, xác minh đích, bằng chứng quyền, quét khóa trùng hoặc đối chiếu danh sách sau áp dụng đều là **NO-GO**.
 
-## Hardened checks and evidence limitations
+## Kiểm tra tăng cường và giới hạn bằng chứng
 
-The wrapper logs only fixed error codes, never driver messages or raw index metadata. Privileges are checked against the pinned database and each collection (including `find` for the duplicate scan); `getDefaultRWConcern` requires the cluster resource. Dry-run does not require create privileges. Unprovable privileges fail closed.
+Trình bao chỉ ghi mã lỗi cố định, không ghi thông báo từ driver hoặc metadata index thô. Quyền được kiểm tra trên cơ sở dữ liệu đã ghim và từng collection (bao gồm quyền `find` để quét khóa trùng); `getDefaultRWConcern` cần quyền ở cấp cluster. Chạy thử không cần quyền tạo. Quyền không thể chứng minh được sẽ khiến thao tác bị từ chối.
 
-The conservative release policy requires explicit default read concern `majority` and default write concern `{w:'majority',j:true}` with a successful command result. This is an operational release gate, not an instruction to change database defaults. Missing, implicit, weaker or inaccessible defaults block rollout. Operator approval of this policy remains required.
+Chính sách phát hành thận trọng yêu cầu read concern mặc định tường minh là `majority` và write concern mặc định là `{w:'majority',j:true}`, kèm kết quả lệnh thành công. Đây là chốt phát hành vận hành, không phải yêu cầu thay đổi mặc định của cơ sở dữ liệu. Thiếu cấu hình, cấu hình ngầm, yếu hơn hoặc không truy cập được đều chặn phát hành. Chính sách này vẫn cần người vận hành phê duyệt.
 
-All legacy index definitions are canonicalized before the apply block and read again afterward, including on failure. Index list order and object option order are normalized; compound key order and every returned option remain significant. Drift or a failed postflight read blocks rollout. No legacy repair is attempted. `autoCreate:false` prevents model initialization from creating collections during dry-run.
+Tất cả định nghĩa index cũ được chuẩn hóa trước khi áp dụng và đọc lại sau đó, kể cả khi thao tác thất bại. Thứ tự danh sách index và thứ tự tùy chọn trong object được chuẩn hóa; thứ tự khóa compound và mọi tùy chọn được trả về vẫn phải khớp. Sai khác hoặc không đọc được dữ liệu hậu kiểm sẽ chặn phát hành. Không tự sửa index cũ. `autoCreate:false` ngăn quá trình khởi tạo model tạo collection khi chạy thử.
 
-Backup flags remain operator attestations, not automated proof of a valid backup. Store backup ID, restore rehearsal evidence, target approval and privilege evidence in the change ticket. The application must not receive traffic before postflight passes.
+Các cờ sao lưu là xác nhận do người vận hành khai báo, không phải bằng chứng tự động rằng bản sao lưu hợp lệ. Lưu ID bản sao lưu, bằng chứng diễn tập khôi phục, phê duyệt đích và bằng chứng quyền trong phiếu thay đổi. Không chuyển lưu lượng ứng dụng trước khi hậu kiểm đạt.
 
-Offline policy regressions: `node --test tests/index-readiness-policy.test.mjs`. These use synthetic objects and no database connection; they do not establish Production privileges or backup readiness.
+Kiểm thử hồi quy chính sách offline: `node --test tests/index-readiness-policy.test.mjs`. Các kiểm thử này dùng đối tượng tổng hợp, không kết nối cơ sở dữ liệu; chúng không xác nhận quyền Production hoặc mức sẵn sàng của bản sao lưu.
 
-Build evidence must be stored outside this source tree: HEAD, complete candidate list (including untracked files), SHA-256 before/after, UTC timestamps, exact command `npm run build`, its exit code and build log. Candidate now includes the policy module and regression test: 18 files rather than the previous 16. Compare all source hashes and the candidate list before accepting the log. A BUILD_ID or timestamp alone is not sufficient. Do not modify ACLs or delete `.next` to obtain this evidence.
+Bằng chứng build phải được lưu ngoài cây mã nguồn này: HEAD, danh sách đầy đủ các tệp ứng viên (kể cả tệp chưa được Git theo dõi), SHA-256 trước/sau, dấu thời gian UTC, lệnh chính xác `npm run build`, mã thoát và log build. Danh sách ứng viên hiện gồm mô-đun chính sách và kiểm thử hồi quy: 18 tệp thay vì 16. Đối chiếu mọi hash mã nguồn và danh sách ứng viên trước khi chấp nhận log. Chỉ có BUILD_ID hoặc dấu thời gian là chưa đủ. Không sửa ACL hoặc xóa `.next` để tạo bằng chứng này.
