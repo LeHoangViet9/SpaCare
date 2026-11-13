@@ -1,5 +1,15 @@
 # SpaCare — Mô hình dữ liệu
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+PROPOSED kỹ thuật theo BR-TRT-OWNER-USE-001, TreatmentUse mới chỉ lưu danh tính chủ gói qua customerId/ownerCustomerId; snapshot giữ customerId/customerName/ownerCustomerId/ownerCustomerName từ khách đã xác minh. Không sinh recipientCustomerId/recipientName/recipientPhone/isShared trên lượt mới hoặc snapshot mới. isShared bỏ default=false để không tự ghi field lịch sử vào dữ liệu mới.
+
+Giữ các field recipientCustomerId/recipientName/recipientPhone/isShared optional trong schema cho dữ liệu cũ. Reader lịch sử, snapshot/digest/chữ ký cũ tiếp tục đọc nguyên trạng. Không migration/backfill/xóa dữ liệu hoặc thay đổi indexes. Các quan hệ TreatmentUse.treatmentId/checkoutInvoiceId, số buổi, thời điểm/KTV, thanh toán và ledger giữ nguyên.
+
+## Projection số buổi khi in — 13/11/2026
+
+PROPOSED kỹ thuật cho BR-INV-PACKAGE-PRINT-001, dùng Treatment.invoiceId/_id/customerId/packageType/totalSessions và TreatmentUse.treatmentId/sessionNumber/snapshot/checkoutInvoiceId. Invoice.packageItems[].treatmentId, treatmentSessions[].treatmentId/treatmentUseId/lineId và treatmentId/treatmentUseId legacy xác định đúng dòng. Projection InvoicePackageProgress chỉ tồn tại khi đọc để xuất, gồm treatmentId, treatmentUseId tùy chọn để ghép từng lượt TIME trên SESSION, cùng totalSessions/sessionNumber/remaining tùy chọn. packageName lấy từ TreatmentUse.snapshot.name hoặc Treatment.name; recipientName chỉ để giữ thông tin người nhận lịch sử đã có. treatmentUseId dùng ghép đúng dòng cho cả TIME và SESSIONS. TIME không có quota hợp lệ chỉ có sessionNumber khi đã dùng; không sinh remaining. Không đổi dữ liệu lưu. Không đổi schemas, indexes hoặc dữ liệu đã lưu.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED: giữ model DiscountProgram, collection discountprograms và toàn bộ indexes/bản ghi hiện có để bảo toàn dữ liệu. Invoice.discount.programId/programCode/programName cùng type/value/amount và subtotal giữ nguyên để đọc lịch sử. Không migration/backfill/xóa dữ liệu hoặc viết lại hóa đơn, Payment, CashEntry hay audit.
@@ -693,13 +703,13 @@ Các tài liệu con của dòng hóa đơn có thể chứa `lineId`, `performe
 
 ## Cải tiến TreatmentUse và Invoice.packageItems — 01/11/2026
 
-### Cấu trúc TreatmentUse chia sẻ và nhiều lượt dùng
+### Cấu trúc TreatmentUse chia sẻ và nhiều lượt dùng (field người nhận chỉ còn phục vụ lịch sử)
 - `TreatmentUse.ownerCustomerId?: ObjectId`: Lưu ID khách hàng chủ sở hữu gói liệu trình.
 - `TreatmentUse.recipientCustomerId?: ObjectId`: Lưu ID khách hàng thực nhận dịch vụ nếu người nhận đã có hồ sơ trong spa.
 - `TreatmentUse.recipientName?: string`: Tên của người thực nhận dịch vụ trong buổi trị liệu.
 - `TreatmentUse.recipientPhone?: string`: Số điện thoại liên hệ của người thực nhận dịch vụ.
 - `TreatmentUse.isShared?: boolean`: Cờ đánh dấu lượt dùng này là chia sẻ cho người thân/bạn bè (`true`) hay do chính chủ gói sử dụng (`false` hoặc không có).
-- Snapshot và digest: Snapshot của từng lượt dùng ghi nhận đầy đủ `ownerCustomerId`, `ownerCustomerName`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared`, cùng thông tin nhân viên thực hiện và chữ ký vector độc lập.
+- Snapshot và digest lịch sử trước BR-TRT-OWNER-USE-001 ghi nhận đầy đủ `ownerCustomerId`, `ownerCustomerName`, `recipientCustomerId`, `recipientName`, `recipientPhone`, `isShared`, cùng thông tin nhân viên thực hiện và chữ ký vector độc lập.
 - Tính tương thích: Toàn bộ trường mới là additive (tùy chọn), không phá vỡ schema cũ hay yêu cầu migration database production.
 
 ### Mở rộng Invoice.packageItems cho bán nhiều gói

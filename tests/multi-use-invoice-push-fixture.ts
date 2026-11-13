@@ -13,7 +13,6 @@ import { allowedPushEndpoint, urlBase64ToUint8Array } from '../src/lib/push-vali
 import { invoiceEditorAction, invoiceDueDateVisible } from '../src/lib/invoice-editing';
 import type { Signature } from '../src/lib/signature';
 
-const sigA: Signature = { version: 1, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]] };
 const sigB: Signature = { version: 1, strokes: [[[0.1, 0.1], [0.1, 0.4], [0.1, 0.8]]] };
 const sigC: Signature = { version: 1, strokes: [[[0.2, 0.1], [0.2, 0.5], [0.2, 0.9]]] };
 const sigD: Signature = { version: 1, strokes: [[[0.3, 0.1], [0.3, 0.5], [0.3, 0.9]]] };
@@ -147,7 +146,7 @@ state.PackageTemplate = [{
 }];
 state.Day = [{ _id: '8'.repeat(24), spaId, day: spaDay(), status: 'OPEN' }];
 
-console.log('--- TEST 1: MULTI-USE TREATMENT & SHARING WITH FAMILY ---');
+console.log('--- TEST 1: PACKAGE OWNER USE WITHOUT SEPARATE RECIPIENTS ---');
 // Setup: Create a treatment package for Customer A with 5 sessions
 const treatmentId = '7'.repeat(24);
 const treatmentInvoiceId = '6'.repeat(24);
@@ -175,108 +174,107 @@ state.Treatment = [{
   token: 'initial-token'
 }];
 
-// 1.1: Single use works normally
+// One unsigned use belongs to the package owner and consumes exactly one session.
 const singleUseKey = randomUUID();
-await call('use', {
-  treatmentId,
-  remainingBefore: 5,
-  staffId: staff1,
-  signature: sigA
-}, singleUseKey);
-assert.equal(state.Treatment[0].remaining, 4);
-assert.equal(state.TreatmentUse.length, 1);
-assert.equal(state.TreatmentUse[0].customerId, customerA);
-assert.equal(state.TreatmentUse[0].isShared, false);
+const singlePayload = {treatmentId,remainingBefore:5,staffId:staff1};
+const firstUse = await call('use',singlePayload,singleUseKey);
+assert.deepEqual(await call('use',singlePayload,singleUseKey),firstUse);
+assert.equal(state.Treatment[0].remaining,4);
+assert.equal(state.TreatmentUse.length,1);
+const assertOwnerUse = (use:any) => {
+  assert.equal(use.customerId,customerA);
+  assert.equal(use.ownerCustomerId,customerA);
+  const snapshot=JSON.parse(use.snapshot);
+  assert.equal(snapshot.customerId,customerA);
+  assert.equal(snapshot.ownerCustomerId,customerA);
+  for(const key of ['recipientCustomerId','recipientName','recipientPhone','isShared']){
+    assert.equal(Object.hasOwn(use,key),false,key);
+    assert.equal(Object.hasOwn(snapshot,key),false,key);
+  }
+};
+assertOwnerUse(state.TreatmentUse[0]);
+assert.equal(state.TreatmentUse[0].method,'STAFF_RECORDED');
+assert.equal(state.TreatmentUse[0].staffId,staff1);
+assert.ok(state.TreatmentUse[0].performedAt);
+assert.equal(state.TreatmentUse[0].sessionNumber,1);
+const purchaseBefore=clone(state.Invoice[0]);
+const receiptsBefore=clone([state.Payment,state.CashEntry]);
 
-// 1.2: Multi-use in one transaction: 2 sessions used at once for 2 different recipients (shared)
+// Explicit batches retain one decrement per recorded use and per-line technicians.
 const multiUseKey = randomUUID();
-await call('use', {
-  treatmentId,
-  remainingBefore: 4,
-  sessions: [
-    {
-      recipientCustomerId: customerB,
-      recipientName: 'Người thân B',
-      recipientPhone: '0902222222',
-      staffId: staff1,
-      signature: sigB
-    },
-    {
-      recipientName: 'Khách C (Bạn B)',
-      recipientPhone: '0903333333',
-      staffId: staff2,
-      signature: sigC
-    }
-  ]
-}, multiUseKey);
+const batch={treatmentId,remainingBefore:4,sessions:[{staffId:staff1,signature:sigB},{staffId:staff2,signature:sigC}]};
+const multi=await call('use',batch,multiUseKey);
+assert.deepEqual(await call('use',batch,multiUseKey),multi);
+assert.equal(state.Treatment[0].remaining,2);
+assert.equal(state.TreatmentUse.length,3);
+for(const use of state.TreatmentUse)assertOwnerUse(use);
+assert.equal(state.TreatmentUse[1].staffId,staff1);
+assert.equal(state.TreatmentUse[2].staffId,staff2);
+assert.deepEqual(state.TreatmentUse[1].signature,sigB);
+assert.deepEqual(state.TreatmentUse[2].signature,sigC);
+assert.deepEqual(state.Invoice[0],purchaseBefore);
+assert.deepEqual([state.Payment,state.CashEntry],receiptsBefore);
+assert.deepEqual(state.InvoiceLineCommission.map(row=>row.amount),[15000,15000,15000]);
 
-assert.equal(state.Treatment[0].remaining, 2, 'Remaining deducted by 2 sessions');
-assert.equal(state.TreatmentUse.length, 3, 'Total 3 uses recorded');
+// Removed fields are rejected before any new operational or audit write.
+for(const field of ['recipientCustomerId','recipientName','recipientPhone','isShared']){
+  const before=clone(state);
+  const value=field==='recipientCustomerId'?customerB:field==='isShared'?true:'legacy recipient';
+  for(const [action,data] of [
+    ['use',{treatmentId,staffId:staff1,[field]:value}],
+    ['use',{treatmentId,sessions:[{staffId:staff1,[field]:value}]}],
+  ] as const)await assert.rejects(call(action,data),(error:any)=>error.issues?.some((issue:any)=>issue.code==='unrecognized_keys'));
+  assert.deepEqual(state,before);
+}
+await assert.rejects(call('use',{treatmentId,staffId:staff1,sessions:[{},{},{}]}),/vượt quá|Số lượt/i);
+assert.equal(state.Treatment[0].remaining,2);
+const stateBeforeFailure=clone(state);
+failModel='TreatmentUse';
+await assert.rejects(call('use',{treatmentId,sessions:[{staffId:staff1},{staffId:staff2}]}),/INJECTED_FAILURE/);
+failModel='';
+assert.deepEqual(state,stateBeforeFailure,'failed recording restores quota, commissions and history');
 
-const useB = state.TreatmentUse[1];
-assert.equal(useB.customerId, customerA, 'Package owner preserved');
-assert.equal(useB.ownerCustomerId, customerA);
-assert.equal(useB.recipientCustomerId, customerB);
-assert.equal(useB.recipientName, 'Người thân B');
-assert.equal(useB.isShared, true);
-assert.deepEqual(useB.signature, sigB);
+// Legacy recipient evidence remains readable and byte-for-byte unchanged.
+const legacy=new TreatmentUse({_id:new mongoose.Types.ObjectId(),spaId,treatmentId:new mongoose.Types.ObjectId(),actorId:ownerId,
+  customerId:customerA,ownerCustomerId:customerA,recipientCustomerId:customerB,recipientName:'Legacy recipient',recipientPhone:'0902222222',
+  isShared:true,sessionNumber:1,signature:sigD,snapshot:JSON.stringify({recipientName:'Legacy recipient',isShared:true})});
+await legacy.validate();
+const historical=clone(legacy.toObject());state.TreatmentUse.push(historical);
+const legacyBefore=clone(historical);
+const finalUse=await call('use',{treatmentId,remainingBefore:2,staffId:staff1});
+assert.equal(state.Treatment[0].remaining,1);
+assertOwnerUse(state.TreatmentUse.find(row=>row._id===finalUse.id));
+assert.deepEqual(state.TreatmentUse.find(row=>row._id===historical._id),legacyBefore);
+assert.deepEqual(state.Invoice[0],purchaseBefore);
+assert.deepEqual([state.Payment,state.CashEntry],receiptsBefore);
 
-const useC = state.TreatmentUse[2];
-assert.equal(useC.customerId, customerA);
-assert.equal(useC.recipientName, 'Khách C (Bạn B)');
-assert.equal(useC.isShared, true);
-assert.deepEqual(useC.signature, sigC);
-
-// 1.3: Quota guard - cannot exceed remaining sessions
-await assert.rejects(call('use', {
-  treatmentId,
-  remainingBefore: 2,
-  sessions: [
-    { recipientName: 'Khách 1', signature: sigA },
-    { recipientName: 'Khách 2', signature: sigB },
-    { recipientName: 'Khách 3', signature: sigC } // 3 sessions > remaining 2
-  ]
-}), /Số buổi còn lại|không đủ/i);
-assert.equal(state.Treatment[0].remaining, 2, 'Remaining quota untouched after failed operation');
-
-// 1.4: Invariant - Cannot use the same signature for different recipients in one batch
-// (Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ)
-const sameSig: Signature = { version: 1, strokes: [[[0.1, 0.1], [0.2, 0.2], [0.5, 0.5]]] };
-await assert.rejects(call('use', {
-  treatmentId,
-  remainingBefore: 2,
-  sessions: [
-    { recipientName: 'Người thân B', signature: sameSig },
-    { recipientName: 'Người thân C', signature: sameSig } // same signature, different recipient
-  ]
-}), /Không dùng một chữ ký|xác nhận|chủ gói/i);
-assert.equal(state.Treatment[0].remaining, 2, 'Quota untouched after invariant violation');
-
-// 1.5: Invariant - Quota check for batch: 3 sessions when only 2 remain
-await assert.rejects(call('use', {
-  treatmentId,
-  remainingBefore: 2,
-  sessions: [
-    { recipientName: 'Khách 1', signature: sigA },
-    { recipientName: 'Khách 2', signature: sigB },
-    { recipientName: 'Khách 3', signature: sigC } // 3 sessions > remaining 2
-  ]
-}), /vượt quá|Số lượt/i);
-
-// 1.6: Atomic rollback on midway failure
-// Remaining is still 2 (tests 1.4 and 1.5 are rejects so nothing consumed)
-const stateBeforeFailure = clone(state);
-failModel = 'TreatmentUse';
-await assert.rejects(call('use', {
-  treatmentId,
-  remainingBefore: 2,
-  sessions: [
-    { recipientName: 'Khách Rollback 1', signature: sigC, staffId: staff1 },
-    { recipientName: 'Khách Rollback 2', signature: sigD, staffId: staff2 }
-  ]
-}), /INJECTED_FAILURE/);
-failModel = '';
-assert.deepEqual(state, stateBeforeFailure, 'Atomic rollback completely restores treatment quota and records');
+// Cashier invoice and appointment completion also record the package owner without recipient input.
+const flowTreatmentId=String(new mongoose.Types.ObjectId());
+state.Treatment.push({...clone(state.Treatment[0]),_id:flowTreatmentId,totalSessions:5,remaining:5,status:'ACTIVE'});
+let countBefore=state.TreatmentUse.length;
+const fromInvoice=await call('invoice',{customerId:customerA,serviceId,treatments:[
+  {treatmentId:flowTreatmentId,remainingBefore:5,performerId:staff1},
+]});
+assert.equal(state.Treatment.find(row=>row._id===flowTreatmentId)!.remaining,4);
+assert.equal(state.TreatmentUse.length,countBefore+1);
+assertOwnerUse(state.TreatmentUse.at(-1));
+assert.equal(state.Invoice.find(row=>row._id===fromInvoice.id)!.customerId,customerA);
+const appointmentId=String(new mongoose.Types.ObjectId());
+state.Appointment.push({_id:appointmentId,spaId,customerId:customerA,serviceId,treatmentId:flowTreatmentId,
+  staffId:staff1,startAt:new Date(Date.now()-3600000).toISOString(),status:'CONFIRMED'});
+countBefore=state.TreatmentUse.length;
+const completed=await call('completeTreatmentAppointment',{id:appointmentId});
+assert.equal(state.Treatment.find(row=>row._id===flowTreatmentId)!.remaining,3);
+assert.equal(state.TreatmentUse.length,countBefore+1);
+assertOwnerUse(state.TreatmentUse.at(-1));
+assert.equal(state.TreatmentUse.at(-1)!.staffId,staff1);
+await call('completeTreatmentAppointment',{id:appointmentId});
+assert.equal(state.Treatment.find(row=>row._id===flowTreatmentId)!.remaining,3,'completed appointment cannot consume another session');
+assert.equal(state.TreatmentUse.length,countBefore+1);
+assert.equal(state.Invoice.find(row=>row._id===completed.invoiceId)!.customerId,customerA);
+assert.deepEqual(state.TreatmentUse.find(row=>row._id===historical._id),legacyBefore);
+assert.deepEqual(state.Invoice[0],purchaseBefore);
+assert.deepEqual([state.Payment,state.CashEntry],receiptsBefore);
 
 console.log('--- TEST 2: SHORTEN INVOICE FORM WHEN FULLY PAID ---');
 // Exercise the same helpers used by Workspace.editInvoice, not a test-only copy of its logic.

@@ -1,5 +1,23 @@
 # SpaCare — Quy tắc nghiệp vụ
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED — BR-TRT-OWNER-USE-001 theo yêu cầu mới nhất, mỗi TreatmentUse mới gắn customerId và ownerCustomerId lấy từ Treatment.customerId đã kiểm tra cùng spa. Không thu thập tên, điện thoại hoặc hồ sơ người nhận riêng khi dùng/tặng lượt gói. Mỗi lượt thành công trừ đúng một buổi SESSIONS, retry cùng Idempotency-Key không trừ lại và lỗi rollback toàn bộ. Giỏ nhiều lượt tường minh vẫn trừ một buổi cho từng lượt. Quy tắc TIME, quota, số thứ tự buổi, ngày thực hiện, KTV, hoa hồng và quyền giữ như hiện tại.
+
+Quyết định này thay yêu cầu ghi người nhận/chữ ký theo người nhận trong BR-TRT-003 cho dữ liệu mới. Các chữ ký chung vẫn dùng quy tắc hiện có của luồng hóa đơn/lịch hẹn; lịch sử chữ ký và người nhận riêng đã lưu được bảo toàn. PROPOSED kỹ thuật, use cùng sessions[], invoice.treatments[] và completeTreatmentAppointment.treatments[] bỏ recipientCustomerId/recipientName/recipientPhone/isShared khỏi payload hỗ trợ. use/sessions[] strict từ chối trường dư trước khi ghi. invoice.treatments[] và completeTreatmentAppointment.treatments[] giữ cơ chế loại field dư hiện có, nên payload cũ không sinh thông tin người nhận. Signature tham chiếu lượt đầu chỉ khi digest chữ ký trùng; các chữ ký riêng đã gửi theo lượt vẫn được giữ đúng.
+
+## BR-INV-PACKAGE-PRINT-001 — Số buổi trên bản in — 13/11/2026
+
+CONFIRMED theo yêu cầu người dùng, bản in gói theo số buổi hiển thị “Buổi X/Y · Còn lại: Z buổi”. Chỉ dùng quyền lợi gói và lượt sử dụng đã lưu. Chưa dùng buổi thì chỉ hiện số còn lại bằng tổng số buổi. Mỗi gói có số liệu riêng, dịch vụ lẻ và sản phẩm giữ nội dung hiện có.
+
+PROPOSED kỹ thuật, hóa đơn bán gói đọc lượt gần nhất của Treatment, hóa đơn SESSION đọc lượt liên kết với chính hóa đơn bằng treatmentUseId hoặc checkoutInvoiceId. X lấy sessionNumber đã lưu, Y lấy Treatment.totalSessions, Z lấy snapshot.remainingBefore trừ 1 và dùng totalSessions trừ sessionNumber khi snapshot cũ thiếu số dư. Đọc toàn bộ lượt liên quan, độc lập phân trang chữ ký. Gói chuyển sổ thiếu tổng gốc và dữ liệu thiếu nguồn định danh không được tự gán X/Y.
+
+CONFIRMED bổ sung, TIME có lượt đã lưu phải hiện số thứ tự từ TreatmentUse.sessionNumber dù không có quota. SESSION chỉ dùng TreatmentUse gắn với chính hóa đơn; nhiều lượt TIME cùng một gói trên chứng từ vẫn ghép theo treatmentUseId của từng dòng. TIME có totalSessions là số nguyên dương an toàn thì Z=max(0,totalSessions−sessionNumber). TIME thiếu/không hợp lệ quota không sinh tổng hoặc số còn lại. Không dùng Treatment.usedSessions, tiền hoặc mô tả để đoán số thứ tự.
+
+PROPOSED kỹ thuật, với TIME không dùng snapshot.remainingBefore để tính Z vì field này là bộ đếm lượt dùng trước buổi. Hóa đơn bán gói tiếp tục đọc lượt gần nhất, SESSION đọc lượt gắn với chứng từ. Bổ sung này thay quyết định kỹ thuật bỏ qua TIME của phiên bản trước.
+
+CONFIRMED sửa lặp, mỗi lượt in số thứ tự một lần từ TreatmentUse.sessionNumber của đúng dòng/chứng từ. PROPOSED kỹ thuật, lấy tên gói riêng từ snapshot.name của lượt, fallback Treatment.name. Không suy số lượt hoặc xóa từ trong tên bằng regex. TIME không có tổng hiển thị số lượt ngay trên tên; gói có tổng hiển thị một dòng tiến trình sau KTV. Lượt lịch sử có recipientName/isShared trong snapshot giữ thông tin người nhận khi dựng lại tiêu đề. Nếu cả snapshot và Treatment đều thiếu tên riêng, giữ nội dung dòng cũ và chỉ thêm số dư có nguồn xác minh.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED — BR-DISCOUNT-PROGRAM-RETIRED-001: ngừng toàn bộ quản lý và tự áp dụng chương trình, kể cả bản ghi enabled=true hoặc chồng ngày còn lưu. invoice/serviceInvoice/productInvoice/sellProduct/sellPackage/checkout chỉ dùng discount tiền/% nhập trực tiếp; completeAppointment không tra hoặc áp chương trình, không bổ sung giảm thủ công vào luồng này. Thanh toán hóa đơn cũ không tính lại giảm giá.
@@ -927,7 +945,7 @@ PROPOSED kỹ thuật, không phải chính sách spa mới: khi chỉ một dò
 
 ## Cải tiến liệu trình, hóa đơn và thông báo đẩy — 01/11/2026
 
-### BR-TRT-003 — Dùng liệu trình nhiều lượt và chia sẻ cho người thân
+### BR-TRT-003 — Dùng liệu trình nhiều lượt và chia sẻ cho người thân (phần người nhận riêng đã được BR-TRT-OWNER-USE-001 thay thế)
 Trạng thái: CONFIRMED theo yêu cầu người dùng.
 - Cho phép ghi nhận nhiều lượt dùng từ cùng một gói liệu trình trong một lần thao tác (batch use).
 - Mỗi lượt dùng trừ đúng một buổi (`remaining -= 1`); tổng số lượt dùng trong thao tác không được vượt quá số buổi còn lại của gói (`treatment.remaining >= sessions.length`).

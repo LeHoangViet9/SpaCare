@@ -1,5 +1,17 @@
 # SpaCare — Yêu cầu nghiệp vụ
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu mới nhất, màn hình ghi nhận dùng gói bỏ Người nhận dịch vụ và Số điện thoại người nhận. Dù khách tự dùng hay tặng người khác, lượt mới ghi nhận theo khách đứng tên mua gói. Các luồng dùng trực tiếp, thu ngân và hoàn thành lịch hẹn đều áp dụng. Giữ lựa chọn KTV, thời điểm thực hiện, dịch vụ, một lần trừ một buổi cho mỗi lượt, transaction/idempotency/audit và quyền hiện hành. Lịch sử người nhận đã lưu tiếp tục tra cứu được. Quyết định này thay phần phân biệt người nhận riêng của BR-TRT-003.
+
+## Số buổi gói trên hóa đơn in — 13/11/2026
+
+CONFIRMED theo yêu cầu mới nhất, bản in hóa đơn có gói theo số buổi hiển thị dưới đúng dòng gói “Buổi X/Y · Còn lại: Z buổi”. X lấy từ lượt sử dụng đã lưu, Y là tổng số buổi của gói, Z là số dư sau lượt đó. Gói chỉ bán và chưa dùng chỉ hiện số buổi còn lại bằng tổng. Nhiều gói hiển thị riêng, dịch vụ lẻ và sản phẩm không có số buổi. Giữ khổ 80mm, nội dung in và dữ liệu vận hành.
+
+CONFIRMED bổ sung cho gói TIME theo yêu cầu mới nhất, mỗi lượt hợp lệ vẫn hiện “Buổi X” từ TreatmentUse.sessionNumber của đúng lượt. Khi Treatment.totalSessions là số nguyên dương an toàn thì hiện cả tổng và số còn lại; TIME không có tổng cố định chỉ hiện số thứ tự. Gói chưa dùng có tổng cố định chỉ hiện số còn lại bằng tổng; TIME không giới hạn chưa dùng không có số dư buổi. Quyết định này thay phần bỏ qua hoàn toàn TIME trước đây.
+
+CONFIRMED bổ sung theo yêu cầu sửa lặp, số lượt chỉ xuất hiện một lần trên bản in. Dòng SESSION TIME không giới hạn dựng dạng “Tên gói · Buổi X”, gói có tổng cố định dựng tên gói riêng và một dòng “Buổi X/Y · Còn lại: Z buổi”. Tên gói chứa chữ “Buổi” phải được giữ nguyên; không cắt tên bằng so khớp chuỗi lỏng lẻo.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED theo yêu cầu mới nhất: gỡ Chương trình giảm giá theo ngày khỏi menu, màn hình, form tạo/sửa, bật/tắt/xóa và API/backend quản lý. Không tự áp dụng chương trình khi lập hóa đơn, checkout hoặc hoàn thành lịch hẹn. Hóa đơn mới chỉ nhận giảm giá tiền/% người dùng nhập trong form lập hóa đơn; giữ giảm giá thủ công, hạn thanh toán, KTV, PDF, thanh toán và báo cáo.

@@ -1,5 +1,19 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED, giỏ dùng gói bỏ hai ô Người nhận dịch vụ và Số điện thoại người nhận. Chi tiết nhóm giữ từng lượt, KTV và thao tác bỏ lượt; không hiện nhãn người nhận từ bản nháp cũ. Chữ ký tùy chọn hiện như các lượt ghi nhận theo chủ gói.
+
+PROPOSED kỹ thuật, cashierActions xây payload theo danh sách field cho phép nên không phát lại thông tin người nhận từ object/bản nháp cũ. recordUse không tra khách nhận riêng, luôn dùng chủ gói đã xác minh. Các guard chữ ký chỉ phục vụ nhiều người nhận được gỡ. Giao diện đọc lịch sử invoice-content-fields và reader invoice-content vẫn hiển thị snapshot người nhận cũ. Giữ các đường tạo/ghi buổi, transaction, audit và idempotency hiện có.
+
+## Số buổi dưới dòng gói khi in — 13/11/2026
+
+PROPOSED kỹ thuật theo BR-INV-PACKAGE-PRINT-001, invoiceExport đọc projection qua readInvoicePackageProgress rồi truyền vào invoiceExportDocument. Dòng gói thêm tiến trình bằng ký tự xuống dòng ngay trong ô tên hiện có, dùng chung wrap/pagination của renderPdf trên giấy 80mm. Gói chưa sử dụng chỉ thêm dòng số dư. Dòng buổi gói ghép theo lineId và treatmentId, bản legacy dùng tham chiếu gói tường minh. Hóa đơn bán gói dùng lượt đã lưu gần nhất khi in, SESSION dùng lượt thuộc chính hóa đơn để lần in sau giữ đúng buổi của chứng từ đó.
+
+PROPOSED kỹ thuật bổ sung cho TIME, readInvoicePackageProgress giữ các gói TIME dù thiếu tổng buổi. packageProgressText hiện “Buổi X” khi quota vắng, giữ bố cục xuống dòng hiện có khi có quota. Export ghép từng dòng SESSION với treatmentId/treatmentUseId, nên lượt TIME cũ không lấy nhầm lượt mới nhất hoặc số của dòng khác. Giữ renderer và khổ 80mm hiện có.
+
+PROPOSED kỹ thuật sửa lặp, progress chứa packageName riêng từ snapshot.name/Treatment.name. serviceRow dựng lại tiêu đề SESSION từ tên riêng và đúng số thứ tự đã lưu, thay vì nối tiến trình vào tên dòng vốn đã ghép số buổi. TIME không quota đưa số lượt vào tiêu đề; gói có quota đưa số lượt/tổng/còn lại vào một dòng riêng. Ghép bằng treatmentUseId cho từng lượt TIME/SESSIONS. Không dùng regex cắt chữ “Buổi”. Dữ liệu thiếu cả hai nguồn tên giữ nguyên dòng cũ để tránh xóa nhầm; legacy recipient trong snapshot tiếp tục hiển thị.
+
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
 Gỡ panel DiscountPrograms và menu Quản trị tương ứng, hook useInvoiceProgram/InvoiceProgramDiscount và endpoint cấu hình. Cashier/CommercialFields dùng trực tiếp InvoiceDiscountFields: preview tổng sau giảm theo tiền/% nhập thủ công; không chặn lưu vì tải chương trình. Form completeAppointment không có preview chương trình.
@@ -752,12 +766,12 @@ CONFIRMED user request: the invoice list opens on today (Vietnam time). Search a
 
 ĐÃ XÁC NHẬN (02/11/2026): màn chọn dịch vụ đơn lẻ tại Thu ngân ban đầu hiển thị nút nhóm và số lượng dịch vụ, không hiển thị thẻ dịch vụ. Chọn nhóm sẽ hiện dịch vụ; “Các nhóm dịch vụ” quay lại menu nhóm. Dịch vụ chưa phân nhóm nằm tại “Chưa phân nhóm”. Các chế độ Thu ngân khác và nội dung giỏ không đổi.
 
-ĐÃ XÁC NHẬN (02/11/2026): các lựa chọn lặp lại cùng dịch vụ, liệu trình đã mua hoặc mẫu gói hiển thị thành một nhóm giỏ thu gọn với số lượng ×. Có thể mở nhóm và từng lượt để sửa/xóa. ĐỀ XUẤT triển khai: nhóm theo ID bản ghi trong từng loại mục, không chỉ theo tên; giữ nguyên từng dòng/ID giỏ, giá, KTV, người nhận và chi tiết quà trong payload checkout. Nhãn KTV tại Thu ngân là “Kĩ thuật viên”. Thay đổi hiển thị này không gộp số tiền hoặc lượt liệu trình.
+CONFIRMED (2026-11-02): repeated selections of the same service, purchased treatment or package template appear as one collapsed cart group with ×quantity. Expand the group and an individual occurrence to edit/remove it. PROPOSED implementation: group by record ID within each item type, never by name alone, retaining every original line/cart ID, price, technician and gift detail in the checkout payload. Technician labels in the cashier read “Kĩ thuật viên”. No financial or session aggregation is performed by this display change. Recipient fields are historical only under BR-TRT-OWNER-USE-001.
 
 02/11/2026: Thu ngân ẩn phần giải thích hoa hồng và số tiền xem trước, giữ lựa chọn người tư vấn và cách tính hoa hồng hiện tại. Hạn thanh toán được ghi là tùy chọn, không còn bắt buộc trong form Thu ngân hoặc API bán gói.
 Làm rõ mới nhất (02/11/2026): bỏ hẳn ô hạn thanh toán khỏi Thu ngân thay vì chỉ để tùy chọn. Thu ngân không gửi hạn cho giao dịch bán mới. Hạn của hóa đơn hiện có và trường API tùy chọn vẫn được hỗ trợ.
 
-Bản sửa nóng 02/11/2026: giỏ gộp truyền bộ hiển thị dòng hàng qua `renderItem`, không dùng `children`. ValidatedForm biến đổi đệ quy children và không giữ được children dạng hàm. Kiểm thử hồi quy dựng giỏ rỗng, một dòng và các lựa chọn lặp bên trong đúng lớp bọc ValidatedForm, đồng thời giữ các trường người nhận.
+2026-11-02 hotfix: grouped cart passes its item renderer as renderItem, not children. ValidatedForm recursively transforms children and cannot preserve function-valued children. Regression test renders empty, single and repeated selections inside the actual ValidatedForm wrapper, preserving per-occurrence technician fields. Recipient fields are historical only under BR-TRT-OWNER-USE-001.
 
 Tìm khách tại Thu ngân (02/11/2026): ban đầu chỉ hiện một ô tìm kiếm, không tải trước danh sách khách hoặc điều khiển phân trang. Khi nhập, hiện kết quả kèm số điện thoại; chọn kết quả sẽ đưa tên vào ô và thu gọn gợi ý. Chế độ chỉ tìm kiếm tự đọc các trang API tiếp theo để vẫn chọn được các khách trùng tên. Sửa nội dung tìm kiếm sẽ bỏ lựa chọn khách trước đó để tránh lưu hóa đơn cho nhầm người. Các bộ chọn khách khác giữ cách hiển thị hiện tại. Cần kiểm tra trên mobile bằng Selenium trước khi công bố thay đổi này.
 

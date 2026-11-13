@@ -2,23 +2,20 @@
 import { useState } from 'react';
 import { packageLabel, treatmentAvailable, useToken } from '@/lib/treatment-rules';
 import { serviceGroupNames } from '@/lib/service-groups';
-import { isValidSignature, type Signature } from '@/lib/signature';
+import type { Signature } from '@/lib/signature';
 import SignaturePad from './signature-pad';
 type Row = Record<string, any>;
 
-export function TreatmentConfirmations({ treatments, disabled = false, staffOptions }: { treatments: Row[]; disabled?: boolean; staffOptions?: Row[] }) {
+export function TreatmentConfirmations({ treatments, disabled = false, staffOptions, showPackageDetails = true }: { treatments: Row[]; disabled?: boolean; staffOptions?: Row[]; showPackageDetails?: boolean }) {
   const [signature, setSignature] = useState<Signature>({version:1,strokes:[]});
   const [performers,setPerformers] = useState<Record<string,string>>({});
   const values = treatments.map(t => ({ treatmentId: t._id, remainingBefore: useToken(t), ...((performers[t._id] || t.performerId) ? {performerId:performers[t._id] || t.performerId} : {}) }));
   return <section className="session-confirmations">
-    <p>Mỗi gói theo buổi trừ 1 buổi khi lưu thành công.</p>
     <input type="hidden" name="treatments" value={JSON.stringify(values)} />
-    {treatments.map((t,index) => <div key={t._id}><p><strong>{t.name} · {packageLabel(t)} · 0đ</strong></p>{staffOptions && <label>Kỹ thuật viên lượt dùng gói {index+1} ({t.name})<select required disabled={disabled} value={performers[t._id] || ''} onChange={event=>{setPerformers(previous=>({...previous,[t._id]:event.target.value}));setSignature({version:1,strokes:[]});}}><option value="">Chọn kỹ thuật viên…</option>{staffOptions.filter(person=>person.active && ['OWNER','STAFF'].includes(person.role)).map(person=><option key={person._id} value={person._id}>{person.name}</option>)}</select></label>}</div>)}
+    {treatments.map((t,index) => <div key={t._id}>{showPackageDetails && <p><strong>{t.name} · {packageLabel(t)} · 0đ</strong></p>}{staffOptions && <label>Kỹ thuật viên lượt dùng gói {index+1} ({t.name})<select required disabled={disabled} value={performers[t._id] || ''} onChange={event=>{setPerformers(previous=>({...previous,[t._id]:event.target.value}));setSignature({version:1,strokes:[]});}}><option value="">Chọn kỹ thuật viên…</option>{staffOptions.filter(person=>person.active && ['OWNER','STAFF'].includes(person.role)).map(person=><option key={person._id} value={person._id}>{person.name}</option>)}</select></label>}</div>)}
     <h3>Chữ ký chung cho hóa đơn (không bắt buộc)</h3>
-    <p>Có thể bỏ qua chữ ký và lưu hóa đơn bình thường.</p>
-    <SignaturePad value={signature} disabled={disabled} onChange={setSignature}/>
+    <SignaturePad value={signature} disabled={disabled} onChange={setSignature} showInstructions={false}/>
     <input type="hidden" name="signature" value={signature.strokes.length ? JSON.stringify(signature) : ''}/>
-    {isValidSignature(signature) && <small>Đã ký chung cho các dịch vụ trên hóa đơn.</small>}
   </section>;
 }
 

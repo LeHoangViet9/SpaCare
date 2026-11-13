@@ -8,7 +8,7 @@ export function SignatureImage({ signature }: { signature: Signature }) {
   </svg>;
 }
 
-export default function SignaturePad({ value, onChange, disabled }: { value: Signature; onChange: (value: Signature) => void; disabled: boolean }) {
+export default function SignaturePad({ value, onChange, disabled, showInstructions = true }: { value: Signature; onChange: (value: Signature) => void; disabled: boolean; showInstructions?: boolean }) {
   const helpId = useId();
   const pointer = useRef<number | null>(null);
   const latest = useRef(value);
@@ -24,8 +24,8 @@ export default function SignaturePad({ value, onChange, disabled }: { value: Sig
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
   return <div className="signature-field">
-    <p id={helpId}>Khách ký bằng tay hoặc chuột trong khung bên dưới để xác nhận đã thực hiện buổi này.</p>
-    <svg viewBox="0 0 600 220" preserveAspectRatio="none" role="img" aria-label="Ô ký xác nhận của khách" aria-describedby={helpId} className="signature-pad"
+    {showInstructions && <p id={helpId}>Khách ký bằng tay hoặc chuột trong khung bên dưới để xác nhận đã thực hiện buổi này.</p>}
+    <svg viewBox="0 0 600 220" preserveAspectRatio="none" role="img" aria-label="Ô ký xác nhận của khách" aria-describedby={showInstructions ? helpId : undefined} className="signature-pad"
       onPointerDown={event => {
         if (disabled || pointer.current !== null || (event.pointerType === 'mouse' && event.button !== 0) || latest.current.strokes.length >= 30) return;
         event.preventDefault(); pointer.current = event.pointerId; event.currentTarget.setPointerCapture(event.pointerId);

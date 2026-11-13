@@ -97,6 +97,8 @@ test('technician requirement: purchased package occurrences each require their o
  for(let i=0;i<2;i++)await page.getByRole('button',{name:/^Gói chăm sóc da/}).click();
  await page.locator('.cashier-cart-group > summary').click();
  for(const unit of await page.locator('.cashier-cart-unit').all())await unit.locator(':scope > summary').click();
+ await expect(page.getByLabel('Người nhận dịch vụ',{exact:true})).toHaveCount(0);
+ await expect(page.getByLabel('Số điện thoại người nhận',{exact:true})).toHaveCount(0);
  const selectors=page.getByLabel('Kĩ thuật viên lượt này',{exact:true});
  await selectors.nth(0).selectOption('1'.repeat(24));
  await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
@@ -105,6 +107,23 @@ test('technician requirement: purchased package occurrences each require their o
  await selectors.nth(1).selectOption('2'.repeat(24));await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
  const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
  expect(saved.values.treatments.map(row=>row.performerId)).toEqual(['1'.repeat(24),'2'.repeat(24)]);
+ expect(saved.values.customerId).toBe('b'.repeat(24));
+ for(const row of saved.values.treatments){
+  for(const field of ['recipientCustomerId','recipientName','recipientPhone','isShared'])expect(row[field]).toBeUndefined();
+ }
+});
+
+test('purchased package saves one occurrence without recipient or signature input',async({page})=>{
+ await page.goto('/repeated-services');await page.getByRole('button',{name:'Dùng gói đã mua',exact:true}).click();
+ await page.getByRole('button',{name:/^Gói chăm sóc da/}).click();
+ await expect(page.getByLabel('Người nhận dịch vụ',{exact:true})).toHaveCount(0);
+ await expect(page.getByLabel('Số điện thoại người nhận',{exact:true})).toHaveCount(0);
+ await page.getByLabel('Kĩ thuật viên lượt này',{exact:true}).selectOption('1'.repeat(24));
+ await page.getByRole('button',{name:'Lưu toàn bộ giỏ'}).click();
+ const saved=JSON.parse(await page.locator('#saved-cashier').textContent());
+ expect(saved.action).toBe('invoice');expect(saved.values.customerId).toBe('b'.repeat(24));
+ expect(saved.values.treatments).toEqual([{treatmentId:'d'.repeat(24),remainingBefore:8,performerId:'1'.repeat(24)}]);
+ expect(saved.values.signature).toBeUndefined();
 });
 
 for(const [mode,item,action]of [['Bán gói mới','Gói dùng sau QA','sellPackage'],['Sản phẩm','Dầu gội QA','productInvoice']])test(`technician requirement: ${action} saves without a technician`,async({page})=>{

@@ -138,7 +138,7 @@ const schemas = {
   }),
   appointmentStatus: z.object({ id: objectId, status: z.enum(['COMPLETED', 'CANCELLED', 'POSTPONED']), reason: note }),
   rescheduleAppointment: z.object({ id: objectId, staffId: objectId, startAt: date, reason: text }),
-  completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore:remainingBefore.optional(),recipientCustomerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional() }),
+  completeTreatmentAppointment: z.object({ id: objectId, staffId: objectId.optional(), signature: signature.optional(), remainingBefore: remainingBefore.optional(), treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore:remainingBefore.optional()})).min(1).max(30).optional() }),
   completeAppointment: z.object({ id: objectId, staffId: objectId.optional(), existingInvoiceId: objectId.optional(), dueDate:optionalInvoiceDeadline, description: text.optional(), total: zeroMoney.optional(), consultantId: objectId.optional() }),
   deleteInvoice: z.object({id:objectId,expectedUpdatedAt:date,reason:text,confirmDelete:z.literal(true)}),
   cancelInvoice: z.object({id:objectId, expectedUpdatedAt:date, reason:text}),
@@ -151,7 +151,7 @@ const schemas = {
     items: z.array(z.object({ serviceId: objectId, total: zeroMoney.optional(), performerId: objectId.optional() })).min(1).max(30),
   }),
   invoice: z.object({
-    treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore,performerId:objectId.optional(),recipientName:text.optional(),recipientPhone:phone.optional()})).min(1).max(30).optional(),
+    treatments: z.array(z.object({treatmentId:objectId,signature:signature.optional(),remainingBefore,performerId:objectId.optional()})).min(1).max(30).optional(),
     additionalProducts:z.array(z.object({productId:objectId,quantity:z.number().int().min(1).max(1_000_000_000),unitPrice:zeroMoney})).max(30).optional(),
     additionalServices:z.array(z.object({serviceId:objectId,total:zeroMoney,performerId:objectId.optional()})).max(30).optional(),
     cashCard: invoiceCardInput.optional(),
@@ -187,18 +187,12 @@ const schemas = {
     signature: signature.optional(),
     remainingBefore: remainingBefore.optional(),
     staffId: objectId.optional(),
-    recipientCustomerId: objectId.optional(),
-    recipientName: text.optional(),
-    recipientPhone: phone.optional(),
     appointmentId: objectId.optional(),
     sessions: z.array(z.object({
       treatmentId: objectId.optional(),
       signature: signature.optional(),
       remainingBefore: remainingBefore.optional(),
       staffId: objectId.optional(),
-      recipientCustomerId: objectId.optional(),
-      recipientName: text.optional(),
-      recipientPhone: phone.optional(),
       appointmentId: objectId.optional(),
       notes: note.optional(),
     }).strict()).min(1).max(30).optional(),
@@ -561,47 +555,31 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(useToken(treatment) === d.remainingBefore, 'Số buổi đã thay đổi. Tải lại gói và yêu cầu khách ký lại.', 409);
         }
         const ownerCustomer = await get(Customer, String(treatment.customerId));
-        let recipientCustomer = ownerCustomer;
-        let recipientName = d.recipientName ? String(d.recipientName).trim() : undefined;
-        let recipientPhone = d.recipientPhone ? String(d.recipientPhone).trim() : undefined;
-        let isShared = false;
-        if (d.recipientCustomerId) {
-          recipientCustomer = await get(Customer, String(d.recipientCustomerId));
-          recipientName = recipientCustomer.name;
-          recipientPhone = recipientCustomer.phone;
-          isShared = String(recipientCustomer._id) !== String(ownerCustomer._id);
-        } else if (recipientName && recipientName !== ownerCustomer.name) {
-          isShared = true;
-        } else {
-          recipientName = ownerCustomer.name;
-          recipientPhone = ownerCustomer.phone;
-        }
         const staff = resolvedStaffId ? await get(User, resolvedStaffId) : undefined;
         ensure(!staff || staff.active && ['OWNER','STAFF'].includes(staff.role), 'Nhân viên thực hiện không hoạt động.');
         const performedAt = new Date();
         const signatureDigest = d.signature ? sha(JSON.stringify(d.signature)) : undefined;
-        // Do not inherit package owner's signature for a shared service recipient
-        const confirmationUseId = isShared ? undefined : sharedInvoice?.treatmentUseId;
+        const firstUse = sharedInvoice?.treatmentUseId && d.signature
+          ? await get(TreatmentUse, String(sharedInvoice.treatmentUseId)) : null;
+        const confirmationUseId = firstUse?.signatureDigest === signatureDigest ? firstUse?._id : undefined;
         const confirmationMethod = d.signature ? (confirmationUseId ? 'INVOICE_SIGNATURE' : 'DRAWN_SIGNATURE') : 'STAFF_RECORDED';
         const sessionNumber = treatmentUsed(treatment, recordedUseCount) + 1;
         const snapshot = JSON.stringify({ treatmentId: d.treatmentId, ...(appointmentId ? { appointmentId } : {}),
           customerId: String(ownerCustomer._id), customerName: ownerCustomer.name,
           ownerCustomerId: String(ownerCustomer._id), ownerCustomerName: ownerCustomer.name,
-          ...(isShared ? { recipientCustomerId: d.recipientCustomerId ? String(d.recipientCustomerId) : undefined, recipientName, recipientPhone, isShared: true } : {}),
           name: treatment.name,
           ...(staff ? {staffId:resolvedStaffId, staffName: staff.name} : {}), actorId: actor.id, sessionNumber, remainingBefore: timedPackage(treatment) ? useToken(treatment) : remainingForUse, packageType: treatment.packageType || 'SESSIONS', startsOn: treatment.startsOn, expiresOn: treatment.expiresOn,
           performedAt: performedAt.toISOString(), method: confirmationMethod, signatureDigest, ...(confirmationUseId ? {confirmationUseId:String(confirmationUseId)} : {}),
-          confirmationText: d.signature ? (isShared ? 'Người nhận dịch vụ ký xác nhận buổi.' : 'Khách ký chung xác nhận các dịch vụ đã thực hiện trên hóa đơn.') : 'Nhân viên ghi nhận đã thực hiện; không có chữ ký khách hàng.' });
+          confirmationText: d.signature ? 'Khách ký chung xác nhận các dịch vụ đã thực hiện trên hóa đơn.' : 'Nhân viên ghi nhận đã thực hiện; không có chữ ký khách hàng.' });
         const recorded = await create(TreatmentUse, { treatmentId: d.treatmentId, ...(appointmentId && !sharedInvoice ? { appointmentId } : {}),
           actorId: actor.id, ...(staff ? {staffId:resolvedStaffId} : {}), customerId: ownerCustomer._id,
           ownerCustomerId: ownerCustomer._id,
-          ...(isShared ? { recipientCustomerId: d.recipientCustomerId, recipientName, recipientPhone, isShared: true } : {}),
           sessionNumber, method: confirmationMethod,
           ...(confirmationUseId ? {confirmationUseId} : d.signature ? {signature:d.signature} : {}), signatureDigest, performedAt, snapshot, digest: sha(snapshot) });
         ensure(String(purchase.customerId)===String(ownerCustomer._id),'Chứng từ mua và gói không cùng khách.',409);
         const serviceId = treatment.serviceId || purchase.serviceId;
         const service = serviceId ? await get(Service, String(serviceId)) : null;
-        const displayName = treatment.name + ' · Buổi ' + sessionNumber + (isShared && recipientName ? ' (' + recipientName + ')' : '');
+        const displayName = treatment.name + ' · Buổi ' + sessionNumber;
         const line = { lineId: newLineId(), serviceId, name: displayName, total: 0, commission: staff ? service?.commission || 0 : 0, ...(staff ? {performerId:staff._id} : {}) };
         const sessionInvoice = sharedInvoice || await create(Invoice, { customerId: ownerCustomer._id, ...(service ? { serviceId: service._id } : {}),
           ...(appointmentId ? { appointmentId } : {}), treatmentId: treatment._id, treatmentUseId: recorded._id,
@@ -1151,20 +1129,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           }
           const ids = target.treatmentIds?.length ? target.treatmentIds.map(String) : [String(target.treatmentId)];
           const selections = d.treatments || [{treatmentId:String(target.treatmentId),signature:d.signature,remainingBefore:d.remainingBefore}];
-          const hasDifferentRecipients = selections.some(s => (s.recipientCustomerId && String(s.recipientCustomerId) !== String(target.customerId)) || (s.recipientName && s.recipientName !== ''));
-          const invoiceSignature = hasDifferentRecipients ? undefined : commonSignature(d.signature,selections);
-          if (hasDifferentRecipients) {
-            const sigMap: { rec: string; sigStr: string }[] = [];
-            for (const s of selections) {
-              const rec = s.recipientCustomerId ? String(s.recipientCustomerId) : (s.recipientName ? s.recipientName.trim().toLowerCase() : String(target.customerId));
-              if (s.signature) {
-                const sigStr = JSON.stringify(s.signature);
-                const dup = sigMap.find(item => item.sigStr === sigStr && item.rec !== rec);
-                ensure(!dup, 'Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ.', 409);
-                sigMap.push({ rec, sigStr });
-              }
-            }
-          }
+          const invoiceSignature = commonSignature(d.signature,selections);
           ensure(selections.every(item=>ids.includes(item.treatmentId)) && ids.every((id: string)=>selections.some(item=>item.treatmentId===id)), 'Xác nhận đủ từng liệu trình trong lịch.');
           ensure(!await Invoice.exists({ ...scope, appointmentId: target._id }).session(session), 'Lịch đã có hóa đơn; cần đối chiếu trước.', 409);
           appointmentBefore = target.toObject();
@@ -1178,7 +1143,7 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           for (const item of selections) {
             const treatment = await get(Treatment,item.treatmentId);
             ensure(String(treatment.customerId) === String(target.customerId), 'Gói không khớp khách.');
-            const itemSig = hasDifferentRecipients ? item.signature : (item.signature || invoiceSignature);
+            const itemSig = item.signature || invoiceSignature;
             const recorded = await recordUse({...item,signature:itemSig},String(target._id),String(target.staffId),combined);
             treatmentUseId ||= String(recorded._id);
             combined = await get(Invoice,linkedInvoiceId!);
@@ -1604,16 +1569,14 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
           ensure(!(d.treatmentId && d.treatments), 'Chỉ gửi một danh sách liệu trình.');
           const selections = d.treatments || (d.treatmentId ? [{treatmentId:d.treatmentId,signature:d.signature,remainingBefore:d.remainingBefore,performerId:d.staffId}] : []);
           if (selections.length) {
-            const sharedRecipients = selections.some(item=>'recipientName' in item && !!item.recipientName);
-            ensure(!sharedRecipients || (!d.signature && selections.every(item=>!item.signature)), 'Không dùng chữ ký chung cho các người nhận khác nhau.');
-            const invoiceSignature = sharedRecipients ? undefined : commonSignature(d.signature,selections);
+            const invoiceSignature = commonSignature(d.signature,selections);
             let combined: any;
             for (const [index,item] of selections.entries()) {
               const plan = await get(Treatment,item.treatmentId);
               const {purchase} = await checkTreatmentUse(plan);
               ensure(String(plan.customerId) === d.customerId && (index > 0 || String(plan.serviceId || purchase.serviceId) === d.serviceId), 'Gói không khớp khách hoặc dịch vụ.');
               const performerId = 'performerId' in item ? item.performerId : undefined;
-              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore,...('recipientName' in item ? {recipientName:item.recipientName,recipientPhone:item.recipientPhone} : {})}),undefined,performerId || null,combined,`lượt dùng gói ${index+1}`);
+              const recorded = await recordUse(schemas.use.parse({treatmentId:item.treatmentId,signature:invoiceSignature,remainingBefore:item.remainingBefore}),undefined,performerId || null,combined,`lượt dùng gói ${index+1}`);
               treatmentUseId ||= String(recorded._id);
               combined = await get(Invoice,linkedInvoiceId!);
             }
@@ -1869,17 +1832,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
             if (!timedPackage(treatment)) {
               ensure((treatment.remaining || 0) >= sessions.length, 'Số lượt dùng (' + sessions.length + ') vượt quá số buổi còn lại (' + (treatment.remaining || 0) + ').', 409);
             }
-            // Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ
-            const signedRecipients: { recipient: string; sigStr: string }[] = [];
-            for (const s of sessions) {
-              const rec = s.recipientCustomerId ? String(s.recipientCustomerId) : (s.recipientName ? s.recipientName.trim().toLowerCase() : String(treatment.customerId));
-              if (s.signature) {
-                const sigStr = JSON.stringify(s.signature);
-                const duplicate = signedRecipients.find(item => item.sigStr === sigStr && item.recipient !== rec);
-                ensure(!duplicate, 'Không dùng một chữ ký hoặc xác nhận của chủ gói thay cho nhiều người nhận dịch vụ.', 409);
-                signedRecipients.push({ recipient: rec, sigStr });
-              }
-            }
             let combinedInvoice: any;
             const uses = [];
             const initialRemaining = useToken(treatment);
@@ -1893,9 +1845,6 @@ export async function operate(initial: Actor, action: string, raw: unknown, key:
                 staffId: s.staffId || d.staffId,
                 signature: s.signature,
                 remainingBefore: currentToken,
-                recipientCustomerId: s.recipientCustomerId || d.recipientCustomerId,
-                recipientName: s.recipientName || d.recipientName,
-                recipientPhone: s.recipientPhone || d.recipientPhone,
               }, s.appointmentId || d.appointmentId || checkoutAppointmentId, s.staffId || d.staffId, combinedInvoice, `lượt dùng gói ${index+1}`);
               uses.push(recorded);
               combinedInvoice = await get(Invoice, linkedInvoiceId!);
