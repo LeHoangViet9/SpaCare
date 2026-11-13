@@ -188,7 +188,7 @@ export default function Cashier({data,busy,initialMode,initialCustomer,initialAp
    </section>;
    }}/>
    {packageItems.length>0 && <><SaleParticipants people={data.staff} value={participantIds} onChange={setParticipantIds} total={packageAmount} disabled={busy} showPreview={false}/></>}
-   {sessionItems.length>0 && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy}/>}
+   {sessionItems.length>0 && <TreatmentConfirmations key={JSON.stringify([sessionItems.map(row=>row._id),serviceItems.map(row=>[row._id,row.total]),productItems.map(row=>[row._id,row.quantity,row.unitPrice])])} treatments={sessionItems} disabled={busy} showPackageDetails={false}/>}
    {cardEligible && customer && <section><h3>Thẻ tiền cho phần dịch vụ lẻ</h3><InvoiceCardPayment key={cardContext} customerId={customer._id} total={Math.max(0,serviceAmount-(subtotal-amount))} disabled={busy} onAppliedChange={previewCard} defaultReceivedOn={issuedOn||data.today}/></section>}
    {serviceItems.length>1 && !sessionItems.length && !productItems.length && <p>Lưu hóa đơn trước, sau đó mở chi tiết hóa đơn để dùng thẻ hoặc thanh toán số còn nợ.</p>}
    </fieldset>
