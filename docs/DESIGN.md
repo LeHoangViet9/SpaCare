@@ -8,7 +8,11 @@ PROPOSED kỹ thuật, cashierActions xây payload theo danh sách field cho ph�
 
 ## Số buổi dưới dòng gói khi in — 13/11/2026
 
-PROPOSED kỹ thuật theo BR-INV-PACKAGE-PRINT-001, invoiceExport đọc projection qua readInvoicePackageProgress rồi truyền vào invoiceExportDocument. Dòng gói thêm hai dòng chữ bằng ký tự xuống dòng ngay trong ô tên hiện có, dùng chung wrap/pagination của renderPdf trên giấy 80mm. Gói chưa sử dụng chỉ thêm dòng số dư. Dòng buổi gói ghép theo lineId và treatmentId, bản legacy dùng tham chiếu gói tường minh. Hóa đơn bán gói dùng lượt đã lưu gần nhất khi in, SESSION dùng lượt thuộc chính hóa đơn để lần in sau giữ đúng buổi của chứng từ đó.
+PROPOSED kỹ thuật theo BR-INV-PACKAGE-PRINT-001, invoiceExport đọc projection qua readInvoicePackageProgress rồi truyền vào invoiceExportDocument. Dòng gói thêm tiến trình bằng ký tự xuống dòng ngay trong ô tên hiện có, dùng chung wrap/pagination của renderPdf trên giấy 80mm. Gói chưa sử dụng chỉ thêm dòng số dư. Dòng buổi gói ghép theo lineId và treatmentId, bản legacy dùng tham chiếu gói tường minh. Hóa đơn bán gói dùng lượt đã lưu gần nhất khi in, SESSION dùng lượt thuộc chính hóa đơn để lần in sau giữ đúng buổi của chứng từ đó.
+
+PROPOSED kỹ thuật bổ sung cho TIME, readInvoicePackageProgress giữ các gói TIME dù thiếu tổng buổi. packageProgressText hiện “Buổi X” khi quota vắng, giữ bố cục xuống dòng hiện có khi có quota. Export ghép từng dòng SESSION với treatmentId/treatmentUseId, nên lượt TIME cũ không lấy nhầm lượt mới nhất hoặc số của dòng khác. Giữ renderer và khổ 80mm hiện có.
+
+PROPOSED kỹ thuật sửa lặp, progress chứa packageName riêng từ snapshot.name/Treatment.name. serviceRow dựng lại tiêu đề SESSION từ tên riêng và đúng số thứ tự đã lưu, thay vì nối tiến trình vào tên dòng vốn đã ghép số buổi. TIME không quota đưa số lượt vào tiêu đề; gói có quota đưa số lượt/tổng/còn lại vào một dòng riêng. Ghép bằng treatmentUseId cho từng lượt TIME/SESSIONS. Không dùng regex cắt chữ “Buổi”. Dữ liệu thiếu cả hai nguồn tên giữ nguyên dòng cũ để tránh xóa nhầm; legacy recipient trong snapshot tiếp tục hiển thị.
 
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 

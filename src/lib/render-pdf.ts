@@ -29,7 +29,7 @@ export async function renderPdf(doc: ExportDocument): Promise<File> {
   function finish() {
     if (!canvas) return;
     font(17); ctx.fillStyle = '#52666b';
-    ctx.fillText(`${receipt?.name || 'SpaCare'} | Trang ${pages.length + 1}`, margin, receipt ? Math.min(height - 55, Math.max(445, y + 45)) : height - 55);
+    ctx.fillText(receipt ? receipt.name : `SpaCare | Trang ${pages.length + 1}`, margin, receipt ? Math.min(height - 55, Math.max(445, y + 45)) : height - 55);
     if (receipt) {
       const cropped = document.createElement('canvas'); cropped.width = width; cropped.height = Math.min(height, Math.max(500, y + 100));
       cropped.getContext('2d')!.drawImage(canvas, 0, 0);

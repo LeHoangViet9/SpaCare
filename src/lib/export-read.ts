@@ -22,12 +22,25 @@ export function invoiceExportDocument(data: Awaited<ReturnType<typeof readInvoic
   const bill = data.invoice;
   const summary=invoiceSummary(bill);
   const services=[...(bill.serviceItems || []),...(bill.treatmentSessions || []).filter((session:any)=>!bill.serviceItems?.some((item:any)=>item.lineId && String(item.lineId)===String(session.lineId) && item.total===0 && session.total===0))];
-  const forTreatment = (id: unknown) => progress.find(plan => plan.treatmentId === String(id));
+  const forTreatment = (id: unknown, useId?: unknown) => progress.find(plan => plan.treatmentId === String(id)
+    && (!useId || !plan.treatmentUseId || plan.treatmentUseId === String(useId)));
   const serviceRow=(item:{lineId?:unknown;name?:string;total:number;performerName?:string|null})=>{
     const session = bill.treatmentSessions?.find((line: any) => item.lineId && String(line.lineId) === String(item.lineId));
     const legacySession = bill.kind === 'SESSION' && !bill.treatmentSessions?.length && services.length <= 1;
-    const plan = forTreatment(session?.treatmentId || (legacySession ? bill.treatmentId : undefined));
-    return [`${item.name || 'Dịch vụ'}\nKỹ thuật viên: ${item.performerName || 'Chưa có'}${packageProgressText(plan)}`,money(item.total)];
+    const plan = forTreatment(session?.treatmentId || (legacySession ? bill.treatmentId : undefined),
+      session?.treatmentUseId || (legacySession ? bill.treatmentUseId : undefined));
+    let name = item.name || 'Dịch vụ';
+    let progressText = '';
+    if (plan?.sessionNumber && plan.packageName) {
+      name = plan.packageName;
+      if (plan.totalSessions === undefined) name += ` · Buổi ${plan.sessionNumber}`;
+      else progressText = packageProgressText(plan);
+      if (plan.recipientName) name += ` (${plan.recipientName})`;
+    } else if (plan?.remaining !== undefined) {
+      // Preserve ambiguous legacy text when no separate package name survives.
+      progressText = `\nCòn lại: ${plan.remaining} buổi`;
+    }
+    return [`${name}\nKỹ thuật viên: ${item.performerName || 'Chưa có'}${progressText}`,money(item.total)];
   };
   const legacyPackage = bill.kind === 'PACKAGE' && progress.length === 1 ? packageProgressText(progress[0]) : '';
   const replacementNotes = bill.activeDocumentId && !bill.financialRevision ? [`Chứng từ thay thế hiện hành. Chứng từ trước đã hết hiệu lực: ${(bill.documentHistory || []).map(historicalInvoiceCode).join(', ')}. Giữ nguyên khoản thu và quyền lợi; không thu tiền lần nữa.`] : [];

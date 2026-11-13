@@ -8,7 +8,7 @@ Giữ các field recipientCustomerId/recipientName/recipientPhone/isShared optio
 
 ## Projection số buổi khi in — 13/11/2026
 
-PROPOSED kỹ thuật cho BR-INV-PACKAGE-PRINT-001, dùng Treatment.invoiceId/_id/customerId/packageType/totalSessions và TreatmentUse.treatmentId/sessionNumber/snapshot/checkoutInvoiceId. Invoice.packageItems[].treatmentId, treatmentSessions[].treatmentId/treatmentUseId/lineId và treatmentId/treatmentUseId legacy xác định đúng dòng. Projection InvoicePackageProgress chỉ tồn tại khi đọc để xuất, gồm treatmentId, totalSessions, sessionNumber tùy chọn và remaining. Không đổi schemas, indexes hoặc dữ liệu đã lưu.
+PROPOSED kỹ thuật cho BR-INV-PACKAGE-PRINT-001, dùng Treatment.invoiceId/_id/customerId/packageType/totalSessions và TreatmentUse.treatmentId/sessionNumber/snapshot/checkoutInvoiceId. Invoice.packageItems[].treatmentId, treatmentSessions[].treatmentId/treatmentUseId/lineId và treatmentId/treatmentUseId legacy xác định đúng dòng. Projection InvoicePackageProgress chỉ tồn tại khi đọc để xuất, gồm treatmentId, treatmentUseId tùy chọn để ghép từng lượt TIME trên SESSION, cùng totalSessions/sessionNumber/remaining tùy chọn. packageName lấy từ TreatmentUse.snapshot.name hoặc Treatment.name; recipientName chỉ để giữ thông tin người nhận lịch sử đã có. treatmentUseId dùng ghép đúng dòng cho cả TIME và SESSIONS. TIME không có quota hợp lệ chỉ có sessionNumber khi đã dùng; không sinh remaining. Không đổi dữ liệu lưu. Không đổi schemas, indexes hoặc dữ liệu đã lưu.
 
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 

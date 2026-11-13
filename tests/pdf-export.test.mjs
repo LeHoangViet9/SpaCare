@@ -28,3 +28,7 @@ test('commission export scopes all month rows, preserves negative adjustments an
   assert.match(text, /MediaBox \[0 0 226\.77 453\.54\]/);
   assert.match(text, /226\.77 0 0 453\.54 0 0 cm/);
 });
+
+test('single and multipage receipts retain content and spa footer without page numbers',()=>{
+  execFileSync(process.execPath,['--import','tsx',fileURLToPath(new URL('./receipt-footer-fixture.ts',import.meta.url))],{stdio:'inherit',timeout:15000});
+});

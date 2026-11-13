@@ -8,9 +8,15 @@ Quyết định này thay yêu cầu ghi người nhận/chữ ký theo người
 
 ## BR-INV-PACKAGE-PRINT-001 — Số buổi trên bản in — 13/11/2026
 
-CONFIRMED theo yêu cầu người dùng, bản in gói theo số buổi hiển thị “Buổi đang thực hiện: X/Y” và “Còn lại: Z buổi”. Chỉ dùng quyền lợi gói và lượt sử dụng đã lưu. Chưa dùng buổi thì chỉ hiện số còn lại bằng tổng số buổi. Mỗi gói có số liệu riêng, dịch vụ lẻ và sản phẩm giữ nội dung hiện có.
+CONFIRMED theo yêu cầu người dùng, bản in gói theo số buổi hiển thị “Buổi X/Y · Còn lại: Z buổi”. Chỉ dùng quyền lợi gói và lượt sử dụng đã lưu. Chưa dùng buổi thì chỉ hiện số còn lại bằng tổng số buổi. Mỗi gói có số liệu riêng, dịch vụ lẻ và sản phẩm giữ nội dung hiện có.
 
-PROPOSED kỹ thuật, hóa đơn bán gói đọc lượt gần nhất của Treatment, hóa đơn SESSION đọc lượt liên kết với chính hóa đơn bằng treatmentUseId hoặc checkoutInvoiceId. X lấy sessionNumber đã lưu, Y lấy Treatment.totalSessions, Z lấy snapshot.remainingBefore trừ 1 và dùng totalSessions trừ sessionNumber khi snapshot cũ thiếu số dư. Đọc toàn bộ lượt liên quan, độc lập phân trang chữ ký. Gói TIME, gói chuyển sổ thiếu tổng gốc và dữ liệu thiếu nguồn định danh không được tự gán X/Y.
+PROPOSED kỹ thuật, hóa đơn bán gói đọc lượt gần nhất của Treatment, hóa đơn SESSION đọc lượt liên kết với chính hóa đơn bằng treatmentUseId hoặc checkoutInvoiceId. X lấy sessionNumber đã lưu, Y lấy Treatment.totalSessions, Z lấy snapshot.remainingBefore trừ 1 và dùng totalSessions trừ sessionNumber khi snapshot cũ thiếu số dư. Đọc toàn bộ lượt liên quan, độc lập phân trang chữ ký. Gói chuyển sổ thiếu tổng gốc và dữ liệu thiếu nguồn định danh không được tự gán X/Y.
+
+CONFIRMED bổ sung, TIME có lượt đã lưu phải hiện số thứ tự từ TreatmentUse.sessionNumber dù không có quota. SESSION chỉ dùng TreatmentUse gắn với chính hóa đơn; nhiều lượt TIME cùng một gói trên chứng từ vẫn ghép theo treatmentUseId của từng dòng. TIME có totalSessions là số nguyên dương an toàn thì Z=max(0,totalSessions−sessionNumber). TIME thiếu/không hợp lệ quota không sinh tổng hoặc số còn lại. Không dùng Treatment.usedSessions, tiền hoặc mô tả để đoán số thứ tự.
+
+PROPOSED kỹ thuật, với TIME không dùng snapshot.remainingBefore để tính Z vì field này là bộ đếm lượt dùng trước buổi. Hóa đơn bán gói tiếp tục đọc lượt gần nhất, SESSION đọc lượt gắn với chứng từ. Bổ sung này thay quyết định kỹ thuật bỏ qua TIME của phiên bản trước.
+
+CONFIRMED sửa lặp, mỗi lượt in số thứ tự một lần từ TreatmentUse.sessionNumber của đúng dòng/chứng từ. PROPOSED kỹ thuật, lấy tên gói riêng từ snapshot.name của lượt, fallback Treatment.name. Không suy số lượt hoặc xóa từ trong tên bằng regex. TIME không có tổng hiển thị số lượt ngay trên tên; gói có tổng hiển thị một dòng tiến trình sau KTV. Lượt lịch sử có recipientName/isShared trong snapshot giữ thông tin người nhận khi dựng lại tiêu đề. Nếu cả snapshot và Treatment đều thiếu tên riêng, giữ nội dung dòng cũ và chỉ thêm số dư có nguồn xác minh.
 
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 

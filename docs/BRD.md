@@ -6,7 +6,11 @@ CONFIRMED theo yêu cầu mới nhất, màn hình ghi nhận dùng gói bỏ Ng
 
 ## Số buổi gói trên hóa đơn in — 13/11/2026
 
-CONFIRMED theo yêu cầu mới nhất, bản in hóa đơn có gói theo số buổi hiển thị dưới đúng dòng gói “Buổi đang thực hiện: X/Y” và “Còn lại: Z buổi”. X lấy từ lượt sử dụng đã lưu, Y là tổng số buổi của gói, Z là số dư sau lượt đó. Gói chỉ bán và chưa dùng chỉ hiện số buổi còn lại bằng tổng. Nhiều gói hiển thị riêng, dịch vụ lẻ và sản phẩm không có số buổi. Giữ khổ 80mm, nội dung in và dữ liệu vận hành.
+CONFIRMED theo yêu cầu mới nhất, bản in hóa đơn có gói theo số buổi hiển thị dưới đúng dòng gói “Buổi X/Y · Còn lại: Z buổi”. X lấy từ lượt sử dụng đã lưu, Y là tổng số buổi của gói, Z là số dư sau lượt đó. Gói chỉ bán và chưa dùng chỉ hiện số buổi còn lại bằng tổng. Nhiều gói hiển thị riêng, dịch vụ lẻ và sản phẩm không có số buổi. Giữ khổ 80mm, nội dung in và dữ liệu vận hành.
+
+CONFIRMED bổ sung cho gói TIME theo yêu cầu mới nhất, mỗi lượt hợp lệ vẫn hiện “Buổi X” từ TreatmentUse.sessionNumber của đúng lượt. Khi Treatment.totalSessions là số nguyên dương an toàn thì hiện cả tổng và số còn lại; TIME không có tổng cố định chỉ hiện số thứ tự. Gói chưa dùng có tổng cố định chỉ hiện số còn lại bằng tổng; TIME không giới hạn chưa dùng không có số dư buổi. Quyết định này thay phần bỏ qua hoàn toàn TIME trước đây.
+
+CONFIRMED bổ sung theo yêu cầu sửa lặp, số lượt chỉ xuất hiện một lần trên bản in. Dòng SESSION TIME không giới hạn dựng dạng “Tên gói · Buổi X”, gói có tổng cố định dựng tên gói riêng và một dòng “Buổi X/Y · Còn lại: Z buổi”. Tên gói chứa chữ “Buổi” phải được giữ nguyên; không cắt tên bằng so khớp chuỗi lỏng lẻo.
 
 ## Gỡ chương trình giảm giá theo ngày — 11/11/2026 (ưu tiên mới nhất)
 
