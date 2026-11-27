@@ -10,6 +10,33 @@ const { CashEntry, Payment, Invoice, allModels } = await tsImport('../src/lib/mo
 const { readWorkspace } = await tsImport('../src/lib/workspace-read.ts', import.meta.url);
 const { workspaceQuery } = await tsImport('../src/lib/workspace-query.ts', import.meta.url);
 const { cashFlowEntries } = await tsImport('../src/lib/cash-flow.ts', import.meta.url);
+
+test('ledger presentation separates void reason, hides technical IDs and preserves source data', () => {
+  const adjustmentId = 'd8047b9b-3822-4838-bc30-a2fa67921113';
+  const entry = { _id: 'a'.repeat(24), originalId: 'b'.repeat(24), kind: 'REVERSAL',
+    note: `Hủy/đối soát hóa đơn · Điều chỉnh #${adjustmentId}: Ghi nhầm phương thức\nKhách chuyển khoản`, reversalInvoiceCode: 'HD000190' };
+  const before = structuredClone(entry);
+  const html = renderToStaticMarkup(React.createElement(CashEntryNote, { entry, fallback: 'Đảo sai sót' }));
+  assert.match(html, /<strong>Hủy\/đối soát hóa đơn<\/strong>/);
+  assert.match(html, /Lý do: Ghi nhầm phương thức\nKhách chuyển khoản/);
+  assert.match(html, /<small>Hóa đơn: HD000190<\/small>/);
+  for (const id of [entry._id, entry.originalId, adjustmentId, '#aaaaaa', '#bbbbbb']) assert.ok(!html.includes(id));
+  assert.deepEqual(entry, before);
+});
+
+test('other ledger kinds retain readable notes, fallback titles and external references', () => {
+  for (const kind of ['PAYMENT', 'DEPOSIT', 'INCOME', 'EXPENSE', 'PAYROLL', 'REFUND', 'CARD_SALE', 'REVERSAL']) {
+    const entry = { kind, note: 'Nội dung đối chiếu HD000190', transferReference: 'Nhóm hoàn tiền tháng 11' };
+    const html = renderToStaticMarkup(React.createElement(CashEntryNote, { entry, fallback: 'Tên thao tác' }));
+    assert.match(html, /<strong>Tên thao tác<\/strong>/);
+    assert.match(html, /Nội dung đối chiếu HD000190/);
+    assert.match(html, /Ảnh nhóm: Nhóm hoàn tiền tháng 11/);
+  }
+  const html = renderToStaticMarkup(React.createElement(CashEntryNote, { entry: { note: 'Đối chiếu #d8047b9b-3822-4838-bc30-a2fa67921113 và #abcdef012345abcdef012345' }, fallback: 'Thu khác' }));
+  assert.ok(!html.includes('d8047b9b'));
+  assert.ok(!html.includes('abcdef012345'));
+  assert.match(renderToStaticMarkup(React.createElement(CashEntryNote, { entry: {}, fallback: 'Thu khác' })), /<strong>Thu khác<\/strong>/);
+});
 const spaId = 'a'.repeat(24), foreignSpa = 'f'.repeat(24);
 const id = n => n.toString(16).padStart(24, '0');
 const originals = [
@@ -77,8 +104,8 @@ test('reversal follows only same-spa PAYMENT history, including reversed payment
   assert.deepEqual(enriched.map(({ reversalInvoiceCode, ...row }) => row), before);
   const markup = renderToStaticMarkup(React.createElement(CashEntryNote, { entry: enriched[0], fallback: 'Đảo giao dịch' }));
   assert.match(markup, /Hóa đơn: HD000067/);
-  assert.ok(markup.includes('#' + rows[0]._id.slice(-6)), 'keep reversal transaction code');
-  assert.ok(markup.includes('Giao dịch gốc: #' + rows[0].originalId.slice(-6)), 'keep original transaction code');
+  assert.ok(!markup.includes('#' + rows[0]._id.slice(-6)), 'hide internal reversal code');
+  assert.ok(!markup.includes('Giao dịch gốc:'), 'invoice code is sufficient for reconciliation');
   assert.ok(!markup.includes('HD000099'), 'show original invoice code, not replacement code');
   for (const entry of enriched.slice(1)) {
     const html = renderToStaticMarkup(React.createElement(CashEntryNote, { entry, fallback: 'Giao dịch' }));
@@ -87,7 +114,7 @@ test('reversal follows only same-spa PAYMENT history, including reversed payment
   }
 });
 
-test('PAYMENT rows show only their issued same-spa invoice code and keep receipt identity', async t => {
+test('PAYMENT rows show their issued same-spa invoice code without internal receipt identity', async t => {
   mockReferences(t);
   const before = structuredClone(originals);
   const enriched = await cashReversalReferences(spaId, originals);
@@ -99,7 +126,7 @@ test('PAYMENT rows show only their issued same-spa invoice code and keep receipt
   for (const [index, entry] of enriched.entries()) {
     const markup = renderToStaticMarkup(React.createElement(CashEntryNote, { entry, fallback: 'Thu hóa đơn' }));
     assert.equal(markup.includes('Hóa đơn: HD000067'), index === 0);
-    assert.ok(markup.includes('#' + String(entry._id).slice(-6)));
+    assert.ok(!markup.includes('#' + String(entry._id).slice(-6)));
     assert.ok(!markup.includes('Giao dịch gốc:'));
     assert.ok(!markup.includes('HD000099'));
   }

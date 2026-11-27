@@ -9,6 +9,15 @@ import Cashier from '../src/components/cashier';
 const id='a'.repeat(24), customer='b'.repeat(24),service='c'.repeat(24);
 const fixture:any={user:{id,name:'Chủ spa kiểm thử',role:'OWNER',cashier:true},today:'2026-10-23',totals:{treatments:1,remaining:8,bookings:0,debt:0,credit:0,inflow:0},pages:{},staff:[{_id:id,name:'Nhân viên A',role:'OWNER',active:true}],customers:[{_id:customer,name:'Nguyễn Ánh',phone:'0900000000'}],services:[{_id:service,name:'Chăm sóc da',active:true,price:100000,duration:60}],products:[],productGroups:[],packageTemplates:[],appointments:[],invoices:[],deposits:[],allocations:[],cash:[],days:[],uses:[],audit:[],treatments:[{_id:'d'.repeat(24),customerId:customer,serviceId:service,name:'Gói chăm sóc da',status:'ACTIVE',remaining:8,totalSessions:10}]};
 const replace=history.replaceState.bind(history);history.replaceState=(...args)=>{replace(...args);window.dispatchEvent(new Event('urlchange'));};
+if (new URLSearchParams(location.search).has('ledgerLayout')) {
+ fixture.cash = ['REVERSAL','PAYMENT','DEPOSIT','INCOME','EXPENSE','PAYROLL','REFUND','CARD_SALE'].map((kind, index) => ({
+  _id: String(index).repeat(24), originalId: id, kind, actorId: id, method: index % 2 ? 'CASH' : 'BANK_TRANSFER',
+  direction: ['REVERSAL','EXPENSE','PAYROLL','REFUND'].includes(kind) ? 'OUT' : 'IN', amount: 1500000,
+  createdAt: '2026-11-27T03:00:00Z', note: index === 0 ? 'Hủy/đối soát hóa đơn · Điều chỉnh #d8047b9b-3822-4838-bc30-a2fa67921113: Ghi nhầm phương thức thanh toán' : 'Nội dung đối chiếu dễ đọc cho nhân viên',
+  ...(kind === 'REVERSAL' ? { reversalInvoiceCode: 'HD000190' } : kind === 'PAYMENT' ? { paymentInvoiceCode: 'HD000191' } : {}),
+ }));
+ fixture.pages.cash = { rows: fixture.cash, page: 1, pageSize: 10, total: 8, summary: { incoming: 7500000, outgoing: 4500000 } };
+}
 const detailFixture = {
  invoice: {_id:id,code:'HD000123',customerId:customer,kind:'SERVICE',description:'Massage CVG + Dầu gội khách',total:1500000,paid:1500000,createdAt:'2026-11-05T05:00:00Z',performedAt:'2026-11-05T05:00:00Z',creatorName:'Chủ spa kiểm thử',serviceItems:[
   {lineId:'a',name:'Massage CVG',total:500000,performerName:'Thư'},
@@ -49,10 +58,27 @@ function invoiceDeadlineDetail(){
  return {...detailFixture,invoice:{...detailFixture.invoice,subtotal:1000000,discount:{type:'PERCENT',value:20,amount:200000},total:800000,paid:variant==='paid'?800000:300000,status:variant==='stale-paid'?'PAID':'OPEN',dueDate:variant==='missing'?undefined:'2026-12-01'}};
 }
 (window as any).__programRequests=0;
+(window as any).__invoiceRequests=[];
+(window as any).__cashCardRequests=[];
+const cleanupPreview = new URLSearchParams(location.search).has('cleanupPreview');
 window.fetch=async(input:any,options:any)=>{
  await new Promise(resolve=>setTimeout(resolve,35));
+ if(String(input).startsWith('/api/invoices/')) (window as any).__invoiceRequests.push(String(input));
+ if(String(input).startsWith('/api/cash-cards?')) (window as any).__cashCardRequests.push(String(input));
  if(String(input).startsWith('/api/discount-programs')){
   (window as any).__programRequests++;throw new Error('Retired program API must not be called');
+ }
+ if (cleanupPreview && String(input).startsWith('/api/payroll?')) {
+  const rows = [
+   {_id:'commission-1', invoiceId:id, sourceId:service, serviceName:'Dịch vụ chưa vào lương', amount:10000},
+   {_id:'commission-2', invoiceId:customer, sourceId:service, category:'PACKAGE_SALE', serviceName:'Bán gói trong bản nháp', inDraft:true, amount:50000},
+   {_id:'commission-3', sourceId:service, serviceName:'Dịch vụ đã chốt', payrollId:'payroll-1', payrollStatus:'PAID', payrollMonth:'2026-10', amount:10000},
+  ].map(row=>({...row,staffName:'Nhân viên A',earnedAt:'2026-10-23T05:00:00Z'}));
+  return Response.json({rows,services:[],people:[],page:1,total:rows.length,summary:{serviceCommission:20000,saleCommission:50000,commission:70000,sessions:2,unsettled:60000}});
+ }
+ if (cleanupPreview && String(input).startsWith('/api/cash-cards?')) {
+  const cards = ['PURCHASE','GIFT'].map((origin,index)=>({_id:String(index+1).repeat(24),customerId:customer,customerName:'Khách minh họa',customerPhone:'0900000000',amount:800000,balance:400000,origin,createdAt:'2026-10-23T05:00:00Z',...(origin==='GIFT'?{sourceInvoiceId:id}:{})}));
+  return Response.json({cards,total:2,page:1,uses:[],useTotal:0});
  }
  return new Response(JSON.stringify(String(input).startsWith('/api/cash-cards')?{cards:[],uses:[],total:0,useTotal:0}:String(input).startsWith('/api/invoices/')?invoiceDeadlineDetail():String(input).includes('/api/workspace')?fixture:{customers:fixture.customers,total:1,page:1}),{status:200,headers:{'Content-Type':'application/json'}});
 };

@@ -1,5 +1,64 @@
 import {test,expect} from '@playwright/test';
 
+test('commission details preserve payroll states and open the invoice ID rather than the service source', async ({page}) => {
+ await page.goto('/workspace/commission?cleanupPreview=1');
+ const records = page.locator('.payroll-record');
+ await expect(records).toHaveCount(3);
+ await expect(records.nth(0)).toContainText('Chưa được ghi nhận trong bảng lương');
+ await expect(records.nth(1)).toContainText('Đã có trong bản nháp · Chưa chốt lương');
+ await expect(records.nth(2)).toContainText('Đã chi · 2026-10');
+ await expect(records.nth(2).getByRole('button',{name:'Xem hóa đơn'})).toHaveCount(0);
+ for (const [index,invoiceId] of [[0,'a'.repeat(24)],[1,'b'.repeat(24)]]) {
+  await records.nth(index).getByRole('button',{name:'Xem hóa đơn',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__invoiceRequests)).toContain(`/api/invoices/${invoiceId}?signaturePage=1`);
+  await expect(page.locator('.detail-modal')).toContainText('HD000123');
+  await page.locator('.detail-modal').getByRole('button',{name:'Đóng',exact:true}).click();
+ }
+});
+
+test('cash cards remove origin controls while preserving invoice action and receipt confirmation', async ({page}) => {
+ await page.goto('/workspace/cash_cards?cleanupPreview=1&cardOrigin=GIFT');
+ const table = page.locator('.card-manager-table');
+ await expect(table.locator('tbody tr')).toHaveCount(2);
+ await expect(table.locator('th')).toHaveCount(8);
+ await expect(page.getByRole('combobox',{name:'Loại thẻ'})).toHaveCount(0);
+ await expect(table).not.toContainText('Loại thẻ');
+ await expect(table.getByRole('button',{name:'Xem hóa đơn gói'})).toBeVisible();
+ const requests=await page.evaluate(()=>window.__cashCardRequests);
+ expect(requests.length).toBeGreaterThan(0);
+ expect(requests.every(url=>!new URL(url,'http://fixture.test').searchParams.has('origin'))).toBe(true);
+ await page.getByRole('button',{name:'+ Tạo thẻ mới',exact:true}).click();
+ const modal = page.getByRole('dialog');
+ await expect(modal).not.toContainText('Khách phải trả đủ mệnh giá');
+ await expect(modal.getByRole('checkbox',{name:'Đã kiểm tra và thực nhận đủ tiền mua thẻ'})).toBeVisible();
+});
+
+test('cash ledger keeps readable columns and scrolls horizontally on narrow screens', async ({page}, testInfo) => {
+ await page.goto('/workspace/cash?ledgerLayout=1');
+ const table = page.locator('.cash-ledger-table');
+ await expect(table.locator('thead th')).toHaveCount(8);
+ await expect(table.locator('tbody tr')).toHaveCount(8);
+ const note = table.locator('.cash-entry-note').first();
+ await expect(note.locator('strong')).toHaveText('Hủy/đối soát hóa đơn');
+ await expect(note).toContainText('Lý do: Ghi nhầm phương thức thanh toán');
+ await expect(note).toContainText('Hóa đơn: HD000190');
+ await expect(table).not.toContainText('d8047b9b');
+ await expect(table).not.toContainText('Giao dịch gốc:');
+ await expect(table.locator('tbody tr').nth(1)).toContainText('Hóa đơn: HD000191');
+ const layout = await page.locator('.cash-ledger .table-scroll').evaluate(el => {
+  el.scrollLeft = el.scrollWidth;
+  return { width: el.clientWidth, total: el.scrollWidth, scroll: el.scrollLeft,
+   pageOverflow: document.documentElement.scrollWidth > innerWidth,
+   headerVisible: getComputedStyle(el.querySelector('thead')).position !== 'absolute' };
+ });
+ expect(layout.headerVisible).toBe(true);
+ expect(layout.pageOverflow).toBe(false);
+ if (testInfo.project.name === 'desktop') expect(layout.total).toBe(layout.width);
+ if (layout.total > layout.width) expect(layout.scroll).toBeGreaterThan(0);
+ await page.locator('.cash-ledger .table-scroll').evaluate(el => { el.scrollLeft = 0; });
+ await page.screenshot({path:`outputs/input-ui/cash-ledger-${testInfo.project.name}.png`,fullPage:true});
+});
+
 for(const form of ['commercial','cashier'])for(const mode of ['active','error'])test(`retired programs: ${form} ${mode} still allows manual discount without API reads`,async({page})=>{
  await page.goto((form==='commercial'?'/pre-service':'/repeated-services')+'?program='+mode);
  if(form==='commercial')await page.getByRole('combobox',{name:'Dịch vụ',exact:true}).selectOption('c'.repeat(24));

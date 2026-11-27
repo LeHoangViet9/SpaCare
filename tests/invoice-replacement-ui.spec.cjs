@@ -99,8 +99,8 @@ test('ledger shows issued invoice codes for PAYMENT and REVERSAL without tagging
  const rows=page.getByRole('row');await expect(rows).toHaveCount(3);
  await expect(rows.nth(0)).toContainText('Hóa đơn: HD000067');
  await expect(rows.nth(1)).toContainText('Hóa đơn: HD000067');
- await expect(rows.nth(0)).toContainText('#aaaaaa');
- await expect(rows.nth(1)).toContainText('Giao dịch gốc: #aaaaaa');
+ await expect(rows.nth(0)).not.toContainText('#aaaaaa');
+ await expect(rows.nth(1)).not.toContainText('Giao dịch gốc:');
  await expect(rows.nth(2)).not.toContainText('Hóa đơn:');
  expect(warnings).toEqual([]);
  await page.screenshot({path:`outputs/payment-reversal-codes-${testInfo.project.name}.png`,fullPage:true});
