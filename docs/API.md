@@ -1,5 +1,11 @@
 # API nội bộ
 
+## Trang công khai có slug — 27/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo BR-PUBLIC-SPA-001: `GET /s/{slug}`, `/s/{slug}/services`, `/s/{slug}/services/{id}`, `/s/{slug}/products?q=&page=`, `/s/{slug}/booking?serviceId=` chỉ đọc spa đang hoạt động/được phép công khai tra ở server. Slug không hợp lệ/không công khai trả 404, không trả danh mục spa khác. Menu, tìm kiếm, phân trang và đặt lịch giữ slug. `/` không đọc danh mục; URL cũ `/services`, `/services/{id}`, `/products`, `/booking` trả 404, không tự chuyển spa.
+
+`POST /api/s/{slug}/booking` thay `POST /api/booking` (URL cũ trả 404). Giữ payload serviceIds hoặc serviceId, startAt, name, phone, notes; Origin khớp APP_ORIGIN và Idempotency-Key UUID như trước. Không nhận spaId/staffId/giá client gửi. Server tra lại spa trong transaction, kiểm mọi service active/cùng spa, kể cả service đầu tiên. Spa/dịch vụ ngoài phạm vi trả 404; nhân sự spa khác vẫn bị chặn 403. Response thành công, Notification/Audit/Idempotency giữ cơ chế cũ, không tạo tiền/hóa đơn. Replay vẫn phải vượt kiểm tra spa công khai. API quản trị không thay đổi.
+
 ## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
 
 Contract PROPOSED kỹ thuật thực hiện BR-TRT-OWNER-USE-001 CONFIRMED, use nhận treatmentId, staffId?, signature?, remainingBefore?, appointmentId? và sessions[] theo cấu trúc hiện có đã bỏ recipientCustomerId/recipientName/recipientPhone. invoice.treatments[] chỉ nhận treatmentId/remainingBefore/performerId?/signature?. completeTreatmentAppointment.treatments[] chỉ nhận treatmentId/remainingBefore?/signature?. use/sessions[] strict từ chối dữ liệu người nhận đã bỏ; invoice.treatments[] và completeTreatmentAppointment.treatments[] loại field dư theo validation hiện có. Client không gửi isShared hoặc danh tính chủ gói để thay nguồn backend.

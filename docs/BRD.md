@@ -1,5 +1,11 @@
 # SpaCare — Yêu cầu nghiệp vụ
 
+## Trang công khai theo spa — 27/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu người dùng: trang công khai dùng `/s/{slug}` và các trang con dịch vụ, sản phẩm, đặt lịch. Server xác định spa từ slug, chỉ phục vụ spa đang hoạt động và được phép công khai; slug sai, spa ngừng hoặc chưa công khai trả 404. Không chọn spa đầu tiên hoặc suy spa từ dịch vụ do trình duyệt gửi. Mọi danh mục, tìm kiếm, phân trang, chi tiết và dịch vụ đặt lịch phải cùng spa. Kiểm tra lại spa/dịch vụ trong transaction tạo lịch; điều hướng giữ slug. Yêu cầu này thay thiết kế cũ dùng dịch vụ đầu tiên xác định spa và các URL danh mục không có spa.
+
+PROPOSED kỹ thuật: thêm Spa.slug, active, publicEnabled; thiếu cờ hoặc false đều không công khai. URL cũ thiếu slug không phục vụ danh mục/đặt lịch; `/` chỉ giới thiệu chung. Không tự cấp slug, bật cờ, backfill hoặc chạy migration/index trên production. Các spa đang dùng cần cấu hình công khai được duyệt riêng trước khi dùng URL mới. Không đổi nghiệp vụ nội bộ, giờ đến, quyền CUSTOMER, thu tiền hoặc thông báo.
+
 ## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED theo yêu cầu mới nhất, màn hình ghi nhận dùng gói bỏ Người nhận dịch vụ và Số điện thoại người nhận. Dù khách tự dùng hay tặng người khác, lượt mới ghi nhận theo khách đứng tên mua gói. Các luồng dùng trực tiếp, thu ngân và hoàn thành lịch hẹn đều áp dụng. Giữ lựa chọn KTV, thời điểm thực hiện, dịch vụ, một lần trừ một buổi cho mỗi lượt, transaction/idempotency/audit và quyền hiện hành. Lịch sử người nhận đã lưu tiếp tục tra cứu được. Quyết định này thay phần phân biệt người nhận riêng của BR-TRT-003.

@@ -6,6 +6,7 @@ import type { Actor } from './auth';
 import { Appointment, Audit, Control, Customer, Idempotency, Service, User, Notification } from './models';
 import { ensure, withinArrivalHours } from './rules';
 import { assertWritesAllowed } from './write-freeze';
+import { requirePublicSpa } from './public-spa';
 
 export const publicBookingInput = z.object({
   serviceId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
@@ -17,19 +18,20 @@ export const publicBookingInput = z.object({
   notes: z.string().trim().max(500).default(''),
 }).refine(input => !!input.serviceId !== !!input.serviceIds, 'Chọn từ 1 đến 30 dịch vụ.');
 
-export async function reservePublicBooking(raw: unknown, actor: Actor | null, key: string) {
+export async function reservePublicBooking(raw: unknown, actor: Actor | null, key: string, slug: string) {
   assertWritesAllowed();
   ensure(actor?.role !== 'CUSTOMER', CUSTOMER_ACCESS_NOTICE, 403);
   const input = publicBookingInput.parse(raw);
   ensure(z.string().uuid().safeParse(key).success, 'Mã yêu cầu đặt lịch không hợp lệ.');
-  const fingerprint = createHash('sha256').update(JSON.stringify({ input, actorId: actor?.id || null })).digest('hex');
+  const fingerprint = createHash('sha256').update(JSON.stringify({ input, slug, actorId: actor?.id || null })).digest('hex');
   const session = await mongoose.startSession();
   try {
     return await session.withTransaction(async () => {
       const serviceIds = input.serviceIds || [input.serviceId!];
-      const service = await Service.findOne({ _id: serviceIds[0], active: true }).session(session);
+      const spa = await requirePublicSpa(slug, session);
+      const scope = { spaId: spa._id };
+      const service = await Service.findOne({ ...scope, _id: serviceIds[0], active: true }).session(session);
       ensure(service, 'Dịch vụ không tồn tại hoặc đã ngừng cung cấp.', 404);
-      const scope = { spaId: service.spaId };
       // Serialize with internal appointment changes using the same guard.
       const guard = await Control.findOneAndUpdate(scope, { $inc: { revision: 1 } }, { session, returnDocument: 'after' });
       ensure(guard, 'Spa chưa sẵn sàng nhận lịch trực tuyến.', 503);

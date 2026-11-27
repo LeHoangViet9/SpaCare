@@ -34,7 +34,7 @@ import { readCustomerHistory } from '../src/lib/customer-history';
 import { readPayroll, payrollQuery } from '../src/lib/payroll-read';
 import { monthBounds } from '../src/lib/payroll-rules';
 import { workspaceQuery } from '../src/lib/workspace-query';
-import { reservePublicBooking } from '../src/lib/public-booking';
+import { reservePublicBooking as reserveForSpa } from '../src/lib/public-booking';
 import { GET as productImageGET } from '../src/app/api/product-images/[id]/route';
 import { Notification, ActivityNotification } from '../src/lib/models';
 import { assertConnectedServerIdentity, assertIntegrationEnvironment, inspectIntegrationSchema } from './integration-safety';
@@ -1231,7 +1231,8 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       assert.equal(management.rows[0].baseSalary,9876543);
     });
     await t.test('arrival bookings allow shared times and preserve transactional retries', async () => {
-      const publicSpa = await Spa.create({ name: 'Public booking fixture' });
+      const publicSpa = await Spa.create({ name: 'Public booking fixture', slug: 'public-' + randomUUID(), active: true, publicEnabled: true });
+      const reservePublicBooking = (raw: unknown, user: Actor | null, key: string) => reserveForSpa(raw, user, key, publicSpa.slug);
       extraSpaIds.push(publicSpa._id);
       const scope = { spaId: publicSpa._id };
       const person = await User.create({ ...scope, name: 'Only staff', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'OWNER' });
@@ -1271,6 +1272,16 @@ test('transactions: idempotency, cạnh tranh cọc/lượt dùng, quyền và c
       const secondStaff = await User.create({ ...scope, name: 'Available staff', email: `${randomUUID()}@example.test`, passwordHash: hashPassword(randomUUID()), role: 'STAFF' });
       const parallelVisit = await reservePublicBooking(requests[index].data, null, randomUUID());
       assert.equal(String((await Appointment.findById(parallelVisit!.appointmentId))!.staffId), String(person._id));
+      const foreignSpa = await Spa.create({ name: 'Synthetic public B', slug: 'public-b-' + randomUUID(), active: true, publicEnabled: true });
+      extraSpaIds.push(foreignSpa._id);
+      const foreignService = await Service.create({ spaId: foreignSpa._id, name: 'Synthetic service B', price: 1, active: true });
+      const unchanged = async () => JSON.stringify(await Promise.all([Appointment.find({spaId:{$in:[publicSpa._id,foreignSpa._id]}}).sort({_id:1}).lean(), Customer.find({spaId:{$in:[publicSpa._id,foreignSpa._id]}}).sort({_id:1}).lean()]));
+      const beforeScopeTests = await unchanged();
+      await assert.rejects(reservePublicBooking({ ...requests[index].data, serviceId: String(foreignService._id) }, null, randomUUID()), (e:any) => e.status === 404);
+      await assert.rejects(reserveForSpa(requests[index].data, null, randomUUID(), 'missing-public-spa'), (e:any) => e.status === 404);
+      await Spa.updateOne({_id:publicSpa._id},{$set:{publicEnabled:false}});
+      await assert.rejects(reservePublicBooking(requests[index].data, null, randomUUID()), (e:any) => e.status === 404);
+      assert.equal(await unchanged(), beforeScopeTests, 'tenant mismatch and disabled slug cannot write appointments or customers');
     });
     await assert.rejects(call('customer', { name: 'Duplicate', phone: '+84 900 000 000' }), /Số điện thoại đã tồn tại/);
     await call('updateCustomer', { id: customer.id, name: 'Updated', phone: '0900000000' });

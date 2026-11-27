@@ -1,5 +1,13 @@
 # SpaCare — Quy tắc nghiệp vụ
 
+## BR-PUBLIC-SPA-001 — Cách ly trang công khai theo slug (27/11/2026)
+
+CONFIRMED theo yêu cầu người dùng: `/s/{slug}` xác định spa cho trang chủ, danh mục dịch vụ/sản phẩm, chi tiết dịch vụ và đặt lịch. Slug phải xác định đúng một spa đang hoạt động, được phép công khai. Không có/ngừng/chưa công khai trả 404, không fallback spa đầu tiên. Mọi dịch vụ, kể cả dịch vụ đầu tiên, phải active/cùng spa từ slug; không tin spaId/staffId/giá client gửi. Kiểm lại spa trong transaction kể cả replay idempotency. Giữ quyền phiên, transaction, audit, giờ đến và thông báo. Quy tắc này thay cách suy spa từ dịch vụ đầu tiên trước đây.
+
+PROPOSED kỹ thuật: slug ASCII chữ thường/số, phân cách bằng dấu gạch ngang, tối đa 80 ký tự; active và publicEnabled mặc định false. Bản ghi lịch sử thiếu trường không tự công khai. Slug trùng bị từ chối đọc kể cả khi unique index chưa được cấp. Cấp slug/công khai và áp index production là công việc cần duyệt riêng, không nằm trong lần triển khai này.
+
+Kiểm thử: A không thấy danh mục/chi tiết B; đặt trên A với bất kỳ dịch vụ B nào bị từ chối và không ghi dữ liệu. Slug sai/cờ thiếu hoặc false không trả danh mục; retry không tạo trùng và không vượt qua trạng thái ngừng công khai.
+
 ## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED — BR-TRT-OWNER-USE-001 theo yêu cầu mới nhất, mỗi TreatmentUse mới gắn customerId và ownerCustomerId lấy từ Treatment.customerId đã kiểm tra cùng spa. Không thu thập tên, điện thoại hoặc hồ sơ người nhận riêng khi dùng/tặng lượt gói. Mỗi lượt thành công trừ đúng một buổi SESSIONS, retry cùng Idempotency-Key không trừ lại và lỗi rollback toàn bộ. Giỏ nhiều lượt tường minh vẫn trừ một buổi cho từng lượt. Quy tắc TIME, quota, số thứ tự buổi, ngày thực hiện, KTV, hoa hồng và quyền giữ như hiện tại.

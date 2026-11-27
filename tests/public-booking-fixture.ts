@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { publicBookingInput, reservePublicBooking } from '../src/lib/public-booking';
+import { publicBookingInput, reservePublicBooking as reserveForSpa } from '../src/lib/public-booking';
 import mongoose from 'mongoose';
-import { Appointment, Audit, Control, Customer, Idempotency, Service, User, Notification } from '../src/lib/models';
+import { Appointment, Audit, Control, Customer, Idempotency, Service, User, Notification, Spa } from '../src/lib/models';
 import { randomUUID } from 'node:crypto';
 import { spaDay } from '../src/lib/rules';
 
+const reservePublicBooking = (raw: unknown, actor: any, key: string) => reserveForSpa(raw, actor, key, 'spa-a');
 const tomorrow = spaDay(new Date(Date.now() + 86400000));
 const data = { serviceId: '123456789012345678901234', name: 'Guest', phone: '+84 912 345 678', startAt: `${tomorrow}T10:00:00+07:00` };
 const parsed = publicBookingInput.parse({ ...data, spaId: 'forged', staffId: 'forged' });
@@ -19,6 +20,7 @@ await assert.rejects(reservePublicBooking(data, { id: 'legacy', spaId: 'spa', na
 
 // Model doubles exercise booking decisions; real race/rollback tests live in integration.test.ts.
 const query = (value: unknown): any => ({ session: async () => value, sort: () => query(value) });
+(Spa as any).find = (filter: any) => ({ select() { return this; }, limit() { return this; }, session() { return this; }, async lean() { return filter.slug === 'spa-a' && filter.active && filter.publicEnabled ? [{_id:'spa',slug:'spa-a',name:'Spa A'}] : []; } });
 let writes = 0;
 let staff = [{ _id: 'busy-staff', role: 'STAFF' }, { _id: 'free-staff', role: 'OWNER' }];
 let previous: any = null;

@@ -5,14 +5,15 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
 import type { Actor } from '@/lib/auth';
+import { publicSpaPath } from '@/lib/public-spa-path';
 
-export default function MobileBottomNav({ user }: { user: Actor | null }) {
+export default function MobileBottomNav({ user, spaSlug }: { user: Actor | null; spaSlug?: string }) {
   const pathname = usePathname();
   const [mounted,setMounted]=useState(false);
   useEffect(()=>setMounted(true),[]);
 
   // Hide on workspace pages if needed, but show on all public & customer pages
-  if (!mounted || pathname.startsWith('/workspace')) {
+  if (!mounted || !spaSlug || pathname.startsWith('/workspace')) {
     return null;
   }
 
@@ -28,15 +29,16 @@ export default function MobileBottomNav({ user }: { user: Actor | null }) {
       : 'Quản lý'
     : 'Đăng nhập';
 
-  const isHome = pathname === '/';
-  const isServices = pathname.startsWith('/services');
-  const isBooking = pathname === '/booking';
+  const home = publicSpaPath(spaSlug);
+  const isHome = pathname === home;
+  const isServices = pathname.startsWith(publicSpaPath(spaSlug, '/services'));
+  const isBooking = pathname === publicSpaPath(spaSlug, '/booking');
   const isAccount = pathname === '/customer' || pathname === '/login' || pathname === '/register';
 
   return createPortal(
     <nav className="pub-mobile-bottom-bar" aria-label="Điều hướng nhanh trên điện thoại">
       <Link
-        href="/"
+        href={publicSpaPath(spaSlug)}
         className={`pub-bottom-item ${isHome ? 'active' : ''}`}
       >
         <span className="pub-bottom-icon">
@@ -49,7 +51,7 @@ export default function MobileBottomNav({ user }: { user: Actor | null }) {
       </Link>
 
       <Link
-        href="/services"
+        href={publicSpaPath(spaSlug, '/services')}
         className={`pub-bottom-item ${isServices ? 'active' : ''}`}
       >
         <span className="pub-bottom-icon">
@@ -62,7 +64,7 @@ export default function MobileBottomNav({ user }: { user: Actor | null }) {
       </Link>
 
       <Link
-        href="/booking"
+        href={publicSpaPath(spaSlug, '/booking')}
         className="pub-bottom-item pub-bottom-cta-item"
         aria-label="Đặt lịch hẹn"
       >
@@ -80,7 +82,7 @@ export default function MobileBottomNav({ user }: { user: Actor | null }) {
       </Link>
 
       <a
-        href="tel:0329357116"
+        href={publicSpaPath(spaSlug, "/#contact")}
         className="pub-bottom-item"
         title="Gọi hotline"
       >

@@ -5,8 +5,8 @@ import { workspaceHref } from '../src/lib/workspace-view.ts';
 import { middleware } from '../src/middleware.ts';
 import { NextRequest } from 'next/server.js';
 
-test('TC-01, TC-02: Public routes (/, /services, /booking) do not require authentication', () => {
-  const publicPaths = ['/', '/services', '/services/67abcdef0123456789abcdef', '/booking', '/login', '/register'];
+test('TC-01, TC-02: Slug public routes do not require authentication', () => {
+  const publicPaths = ['/', '/s/spa-a', '/s/spa-a/services', '/s/spa-a/services/67abcdef0123456789abcdef', '/s/spa-a/booking', '/s/spa-a/products', '/login', '/register'];
   for (const path of publicPaths) {
     const req = new NextRequest(new URL(path, 'http://localhost:3000'));
     const res = middleware(req);

@@ -1,5 +1,27 @@
 import {test,expect} from '@playwright/test';
 
+for (const slug of ['spa-a','spa-b']) test(`public spa ${slug} preserves scoped links and booking endpoint`, async ({page}, testInfo) => {
+ await page.goto(`/s/${slug}/booking?publicSpa=1`);
+ if (testInfo.project.name === 'mobile') {
+  await page.getByRole('button',{name:'Mở menu',exact:true}).click();
+  await expect(page.locator('#public-menu').getByRole('link',{name:'Dịch vụ & bảng giá'})).toHaveAttribute('href',`/s/${slug}/services`);
+  await page.getByRole('button',{name:'Đóng menu',exact:true}).click();
+ }
+ const links = await page.locator('.pub-header a, .pub-mobile-bottom-bar a, footer a').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('href')));
+ expect(links.every(href=>href.startsWith(`/s/${slug}`) || ['/login','/workspace','/customer'].includes(href))).toBe(true);
+ await page.getByPlaceholder('Ví dụ: Nguyễn Thị Mai').fill('Khách kiểm thử giả');
+ await page.getByPlaceholder('0901 234 567').fill('0900000000');
+ await page.locator('input[name="arrivalTime"]').fill('14:17');
+ await page.getByRole('button',{name:'Xác nhận đặt lịch ngay →',exact:true}).click();
+ await expect(page.getByText('SpaCare đã tiếp nhận lịch hẹn của bạn')).toBeVisible();
+ const saved = await page.evaluate(()=>window.__publicBooking);
+ expect(saved.url).toBe(`/api/s/${slug}/booking`);
+ expect(saved.body.serviceIds).toEqual([(slug === 'spa-a' ? 'a' : 'b').repeat(24)]);
+ expect(saved.body.startAt).toContain('07:17:00');
+ expect(saved.body.spaId).toBeUndefined();
+ await expect(page.getByRole('link',{name:'Về trang chủ',exact:true})).toHaveAttribute('href',`/s/${slug}`);
+});
+
 test('commission details preserve payroll states and open the invoice ID rather than the service source', async ({page}) => {
  await page.goto('/workspace/commission?cleanupPreview=1');
  const records = page.locator('.payroll-record');

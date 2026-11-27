@@ -14,7 +14,7 @@ export function middleware(request: NextRequest) {
   const isWorkspace = pathname === '/workspace' || pathname.startsWith('/workspace/');
   const isCustomer = pathname === '/customer' || pathname.startsWith('/customer/');
 
-  if (isWriteFrozen() && pathname !== '/maintenance' && (isWorkspace || isCustomer || pathname === '/booking')) {
+  if (isWriteFrozen() && pathname !== '/maintenance' && (isWorkspace || isCustomer || pathname === '/booking' || /^\/s\/[^/]+\/booking$/.test(pathname))) {
     return NextResponse.rewrite(new URL('/maintenance', request.url));
   }
 
@@ -36,5 +36,6 @@ export const config = {
     '/customer/:path*',
     '/booking',
     '/booking/:path*',
+    '/s/:slug/booking',
   ],
 };

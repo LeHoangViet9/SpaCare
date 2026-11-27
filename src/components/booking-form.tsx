@@ -5,6 +5,7 @@ import ValidatedForm from '@/components/validated-form';
 import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import type { Actor } from '@/lib/auth';
+import { publicSpaPath } from '@/lib/public-spa-path';
 
 type ServiceItem = {
   _id: string;
@@ -22,10 +23,12 @@ export default function BookingForm({
   services,
   user,
   initialServiceId,
+  spaSlug,
 }: {
   services: ServiceItem[];
   user: Actor | null;
   initialServiceId?: string;
+  spaSlug: string;
 }) {
   // Categories
   const categories = useMemo(() => {
@@ -117,7 +120,7 @@ export default function BookingForm({
       const body = JSON.stringify({ serviceIds: selectedServiceIds, startAt: startDateTime.toISOString(),
         name: name.trim(), phone: phone.trim(), notes: notes.trim() });
       if (bookingRequest.current?.body !== body) bookingRequest.current = { body, key: crypto.randomUUID() };
-      const res = await fetch('/api/booking', {
+      const res = await fetch(`/api/s/${encodeURIComponent(spaSlug)}/booking`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': bookingRequest.current.key },
         body,
@@ -194,7 +197,7 @@ export default function BookingForm({
               Đăng nhập để theo dõi lịch
             </Link>
           )}
-          <Link href="/" className="pub-btn pub-btn-secondary" style={{ flex: 1, minWidth: '160px' }}>
+          <Link href={publicSpaPath(spaSlug)} className="pub-btn pub-btn-secondary" style={{ flex: 1, minWidth: '160px' }}>
             Về trang chủ
           </Link>
         </div>
@@ -357,7 +360,7 @@ export default function BookingForm({
               <p>Đăng nhập để tự động lưu buổi trị liệu vào hồ sơ khách hàng của bạn.</p>
             </div>
             <Link
-              href={`/login?returnTo=/booking?serviceId=${selectedServiceIds[0] || ''}`}
+              href={'/login?' + new URLSearchParams({returnTo: publicSpaPath(spaSlug, `/booking?serviceId=${selectedServiceIds[0] || ''}`)})}
               className="pub-btn pub-btn-secondary pub-btn-sm"
             >
               Đăng nhập ngay →

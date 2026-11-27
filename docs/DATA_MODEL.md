@@ -1,5 +1,11 @@
 # SpaCare — Mô hình dữ liệu
 
+## Spa công khai theo slug — 27/11/2026
+
+PROPOSED kỹ thuật cho BR-PUBLIC-SPA-001: Spa thêm `slug?: String` (trim/lowercase, `[a-z0-9]+(-[a-z0-9]+)*`, tối đa 80), `active: Boolean` default false, `publicEnabled: Boolean` default false. Index khai báo unique `{slug:1}` với partialFilterExpression `{slug:{$type:'string'}}` để giữ Spa lịch sử thiếu slug. Không đổi ID hoặc spaId trên dữ liệu nghiệp vụ.
+
+Reader chọn `{slug,active:true,publicEnabled:true}`, lấy tối đa 2 kết quả và yêu cầu đúng 1; không dựa riêng vào index đã có. Không mặc định missing=true, không chọn spa đầu tiên, không cache trạng thái công khai giữa yêu cầu. Booking tra lại Spa trong transaction rồi kiểm Service `{spaId:Spa._id,active:true}`. Idempotency vẫn unique `(spaId,key)`, fingerprint thêm slug. Không backfill/ghi dữ liệu thật hoặc chạy index/migration production; cần kiểm tra slug trùng và duyệt provisioning riêng trước bật công khai. User/Session/quyền nội bộ không đổi.
+
 ## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
 
 PROPOSED kỹ thuật theo BR-TRT-OWNER-USE-001, TreatmentUse mới chỉ lưu danh tính chủ gói qua customerId/ownerCustomerId; snapshot giữ customerId/customerName/ownerCustomerId/ownerCustomerName từ khách đã xác minh. Không sinh recipientCustomerId/recipientName/recipientPhone/isShared trên lượt mới hoặc snapshot mới. isShared bỏ default=false để không tự ghi field lịch sử vào dữ liệu mới.

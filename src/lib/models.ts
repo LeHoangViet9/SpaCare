@@ -28,7 +28,12 @@ export const Spa =
   mongoose.models.Spa ||
   mongoose.model(
     'Spa',
-    new Schema({ name: String, timezone: { type: String, default: 'Asia/Ho_Chi_Minh' } }),
+    new Schema({
+      name: String, timezone: { type: String, default: 'Asia/Ho_Chi_Minh' },
+      slug: { type: String, trim: true, lowercase: true, match: /^[a-z0-9]+(?:-[a-z0-9]+)*$/, maxlength: 80 },
+      active: { type: Boolean, default: false },
+      publicEnabled: { type: Boolean, default: false },
+    }).index({ slug: 1 }, { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }),
   );
 
 export const User = model(

@@ -1,5 +1,11 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Ngữ cảnh spa công khai — 27/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED phạm vi theo BR-PUBLIC-SPA-001. PROPOSED kỹ thuật: publicSpaPage gọi requirePublicSpa để tra slug và đổi lỗi không tìm thấy thành notFound; mọi page tra spa trước truy vấn danh mục, với force-dynamic. Các page dưới `/s/[slug]` giữ bố cục công khai cũ, thêm scope spaId và truyền slug cho Header/Footer/ServiceCard/BookingForm. Không suy spa từ phiên đăng nhập hoặc dịch vụ; API dùng slug từ route, kiểm lại Spa trong transaction trước Service/Control/Idempotency. Các cờ missing/false và slug trùng đều fail closed. Menu di động, liên kết chi tiết/đặt lịch, tìm kiếm, phân trang, returnTo và trang thành công giữ slug; không dùng hotline hardcode của một spa trên trang có slug. URL công khai cũ thiếu slug không đọc dữ liệu, trang gốc giới thiệu chung.
+
+Không triển khai giao diện quản trị slug, onboarding, domain riêng, chuyển tài khoản nhiều spa, thay chính sách ảnh/PDF hoặc migration dữ liệu. Không chạy setup/index trên production; bật công khai cho Spa hiện có cần cấu hình và kiểm tra index được duyệt riêng. Thiết kế này thay phần dịch vụ đầu tiên quyết định spa ở mô tả đặt lịch cũ bên dưới.
+
 ## Ghi nhận dùng gói theo khách đứng tên — 13/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED, giỏ dùng gói bỏ hai ô Người nhận dịch vụ và Số điện thoại người nhận. Chi tiết nhóm giữ từng lượt, KTV và thao tác bỏ lượt; không hiện nhãn người nhận từ bản nháp cũ. Chữ ký tùy chọn hiện như các lượt ghi nhận theo chủ gói.
