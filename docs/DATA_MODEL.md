@@ -1,5 +1,13 @@
 # SpaCare — Mô hình dữ liệu
 
+## Phiên bản URL chỉ để đọc — 27/11/2026
+
+PROPOSED kỹ thuật: `/api/product-images/v2/{id}` là đường hiển thị nội bộ, không phải giá trị mới của Product.imageUrl hoặc kết quả upload. ProductImagePicker vẫn gửi tham chiếu gốc `/api/product-images/{id}` để backend kiểm sở hữu như trước. Không đổi schema/index, không ghi lại URL, tạo bản sao hoặc xóa file. Header cache và quy trình purge không làm thay đổi dữ liệu GridFS. Xem `PRODUCT_IMAGE_CACHE.md`.
+
+## Projection quyền đọc ảnh — 27/11/2026
+
+PROPOSED kỹ thuật cho BR-PRODUCT-IMAGE-ACCESS-001: không đổi schema/index, không migration/backfill. Product.imageUrl và GridFS product_images.files/chunks giữ nguyên. Công khai chỉ sử dụng Product `{_id,spaId:Spa._id,active:true}`; parser chỉ chấp nhận đường dẫn tương đối `/api/product-images/{24 hex}` từ bản ghi đã xác minh. File còn phải có metadata `{spaId:String(Spa._id),kind:PRODUCT_IMAGE,contentType:image/jpeg|image/png|image/webp}`. Đường đọc nội bộ kiểm metadata.spaId từ phiên và giữ khả năng preview ảnh chưa gắn; không xóa ảnh cũ/không có tham chiếu. URL tuyệt đối legacy vẫn nằm trong dữ liệu, không được công khai bởi projection này.
+
 ## Spa công khai theo slug — 27/11/2026
 
 PROPOSED kỹ thuật cho BR-PUBLIC-SPA-001: Spa thêm `slug?: String` (trim/lowercase, `[a-z0-9]+(-[a-z0-9]+)*`, tối đa 80), `active: Boolean` default false, `publicEnabled: Boolean` default false. Index khai báo unique `{slug:1}` với partialFilterExpression `{slug:{$type:'string'}}` để giữ Spa lịch sử thiếu slug. Không đổi ID hoặc spaId trên dữ liệu nghiệp vụ.

@@ -1,5 +1,16 @@
 # API nội bộ
 
+## Cache ảnh và URL nội bộ v2 — 27/11/2026 (ưu tiên mới nhất)
+
+PROPOSED kỹ thuật theo yêu cầu rà soát cache: `GET /api/product-images/v2/{id}` dùng đúng handler/quyền của route nội bộ cũ. UI thumbnail/preview chỉ đổi URL src sang v2, không đổi URL lưu/upload hoặc dữ liệu. Hai route nội bộ và route public theo slug đều trả Cache-Control private/no-store/max-age=0 và hai header CDN-Cache-Control/Vercel-CDN-Cache-Control no-store trên thành công/lỗi. Không dùng cache validator để bỏ qua quyền. Xem `PRODUCT_IMAGE_CACHE.md` để phân biệt cache browser/CDN, quy trình purge riêng và chẩn đoán DOCKER_CLI. Chưa deploy/purge; ảnh đã tải không thể thu hồi.
+
+## Đọc ảnh sản phẩm theo ngữ cảnh — 27/11/2026 (ưu tiên mới nhất)
+
+- `GET /api/s/{slug}/products/{productId}/image`: công khai, không dùng cookie để mở rộng quyền. Server tra spa active/publicEnabled từ slug; tra Product active cùng spa; lấy ID ảnh từ imageUrl tương đối đã lưu và kiểm GridFS metadata cùng spa, kind/MIME hợp lệ. Trả 404 nếu bất kỳ điều kiện nào không đúng; không nhận imageId/spaId/url qua query và không fetch/redirect URL tuyệt đối. Ảnh sản phẩm của spa B chỉ công khai dưới slug B hợp lệ, không dưới slug A.
+- `GET /api/product-images/{id}`: chuyển từ route đọc công khai thành route nội bộ OWNER/STAFF có phiên active, metadata cùng spa. Chưa đăng nhập/phiên không hợp lệ trả 401, vai trò không có quyền trả 403, ảnh sai/khác spa trả 404. Không yêu cầu Product active hoặc đã gắn ảnh để giữ preview nội bộ. URL tuyệt đối tới route này vẫn phải qua cùng kiểm tra phiên/spa.
+- Hai route trả ảnh JPG/PNG/WebP, nosniff, CSP sandbox; thành công và lỗi có `Cache-Control: private, no-store, max-age=0`. Header mới không thu hồi bản đã cache/tải theo chính sách cũ; purge cache cũ là bước phát hành riêng, chưa thực hiện.
+- `POST /api/product-images` và payload product/updateProduct giữ nguyên. Trang `/s/{slug}/products` chỉ dựng URL route công khai mới; không render imageUrl thô/URL tuyệt đối, không dùng route nội bộ làm fallback. Dữ liệu URL legacy không bị sửa.
+
 ## Trang công khai có slug — 27/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED theo BR-PUBLIC-SPA-001: `GET /s/{slug}`, `/s/{slug}/services`, `/s/{slug}/services/{id}`, `/s/{slug}/products?q=&page=`, `/s/{slug}/booking?serviceId=` chỉ đọc spa đang hoạt động/được phép công khai tra ở server. Slug không hợp lệ/không công khai trả 404, không trả danh mục spa khác. Menu, tìm kiếm, phân trang và đặt lịch giữ slug. `/` không đọc danh mục; URL cũ `/services`, `/services/{id}`, `/products`, `/booking` trả 404, không tự chuyển spa.

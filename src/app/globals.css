@@ -2310,3 +2310,57 @@ label textarea { margin-top: 8px; }
 .invoice-content-comparison section { min-width:0; padding:10px; background:#f6f8f7; border-radius:8px; }
 .invoice-content-comparison ul { padding-left:18px; }
 @media (max-width:600px) { .invoice-content-comparison { grid-template-columns:1fr; } }
+
+/* Product rows keep a compact thumbnail and independent actions at every size. */
+.product-workspace .payroll-people { gap: 0; }
+.product-workspace .payroll-people > .product-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 0 14px;
+  padding-block: 16px;
+  line-height: 1.45;
+}
+.product-workspace .product-image-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin-top: 2px;
+}
+.product-image-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--muted); }
+.product-workspace .product-thumb { position: absolute; inset: 0; }
+.product-workspace .product-card-top { flex-direction: row; gap: 12px; }
+.product-card-heading { min-width: 0; flex: 1; }
+.product-workspace .product-name { display: block; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.product-workspace .product-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 4px 0 0; font-size: 12px; line-height: 1.45; }
+.product-workspace .product-card-badges .badge { font-size: 12px; line-height: 1.4; white-space: nowrap; padding: 4px 8px; }
+.product-sku { min-width: 0; max-width: 100%; }
+.product-sku summary { cursor: pointer; font-size: inherit; overflow-wrap: anywhere; }
+.product-sku summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.product-sku-full { margin-top: 4px; padding: 6px 8px; border-radius: 6px; background: var(--paper); overflow-wrap: anywhere; user-select: text; }
+.product-sku-full code { font-size: 12px; }
+.product-workspace .product-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 14px; margin-top: 5px; font-size: 13px; }
+.product-workspace .product-price { font-size: 18px; color: var(--green); font-variant-numeric: tabular-nums; }
+.product-workspace .product-min-stock { font-size: 12px; }
+.product-workspace .product-origin-dates { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 7px 0 0; font-size: 12px; }
+.product-workspace .product-origin-dates > div { gap: 4px; }
+.product-workspace .product-origin-dates dt { min-width: 0; }
+.product-workspace .product-description { margin-top: 6px; font-size: 13px; line-height: 1.45; }
+.product-workspace .product-description p { margin: 0; line-height: inherit; }
+.product-workspace .product-card-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; width: auto; margin-top: 9px; }
+.product-workspace .product-card-actions:empty { display: none; }
+.product-workspace .product-card-actions > button { flex: 0 0 auto; width: auto; max-width: 100%; min-height: 36px; margin: 0; padding: 6px 11px; font-size: 13px; line-height: 1.4; white-space: normal; }
+@media (max-width: 700px) {
+  .product-workspace { padding-bottom: 12px; }
+  .product-workspace .payroll-people > .product-card { grid-template-columns: 56px minmax(0, 1fr); gap: 0 10px; padding-block: 13px; }
+  .product-workspace .product-image-wrap { width: 56px; height: 56px; border-radius: 8px; }
+  .product-workspace .product-card-top { flex-wrap: wrap; gap: 4px 8px; }
+  .product-workspace .product-card-heading { flex-basis: 150px; }
+  .product-workspace .product-name { font-size: 15px; }
+  .product-workspace .product-meta { font-size: 12px; gap: 2px 8px; }
+  .product-workspace .product-facts { font-size: 13px; gap: 2px 10px; }
+  .product-workspace .product-price { font-size: 17px; }
+  .product-workspace .product-description { font-size: 13px; }
+  .product-workspace .product-card-actions { grid-column: 1 / -1; gap: 6px; scroll-margin-block-end: calc(120px + env(safe-area-inset-bottom, 0px)); }
+  .product-workspace .product-card-actions > button { min-height: 44px; padding: 7px 10px; font-size: 13px; }
+}

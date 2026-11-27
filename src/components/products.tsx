@@ -1,4 +1,5 @@
 'use client';
+import { internalProductImageUrl } from '@/lib/product-image';
 import { formatCurrency } from '@/lib/currency';
 import { useEffect, useState } from 'react';
 type Row = Record<string, any>;
@@ -10,6 +11,10 @@ function stockBadge(r: Row) {
   if (r.stock === 0) return <span className="badge badge-danger">Hết hàng</span>;
   if (r.minStock > 0 && r.stock <= r.minStock) return <span className="badge badge-warning">Tồn thấp</span>;
   return <span className="badge badge-ok">Còn hàng</span>;
+}
+
+function compactSku(value: string) {
+  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
 }
 
 export default function Products({ section, refreshKey, onOpen, onInvoice, canManage }: { section: 'products' | 'product_groups' | 'inventory'; refreshKey: unknown; onOpen: (title: string, action: string, fields: Field[], defaults?: Row, description?: string) => void; onInvoice: (id: string) => void; canManage?: boolean }) {
@@ -51,7 +56,7 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
   const lowStockCount = section === 'products' && data?.rows ? data.rows.filter((r: Row) => r.active && r.stock === 0).length : 0;
   const warnStockCount = section === 'products' && data?.rows ? data.rows.filter((r: Row) => r.active && r.stock > 0 && r.minStock > 0 && r.stock <= r.minStock).length : 0;
 
-  return <div className="payroll-workspace"><section className="panel panel-padded">
+  return <div className="payroll-workspace product-workspace"><section className="panel panel-padded">
     <div className="section-head"><h3>{section === 'products' ? 'Danh sách sản phẩm' : section === 'product_groups' ? 'Nhóm sản phẩm' : 'Kho hàng'}</h3>
       <div className="actions">
         {canEdit && (section === 'products' ? <button className="primary" disabled={loading} onClick={() => edit()}>＋ Thêm sản phẩm</button>
@@ -102,19 +107,23 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
               {(r.invoiceId || r.checkoutInvoiceId) && <button onClick={() => onInvoice(r.invoiceId || r.checkoutInvoiceId)}>Hóa đơn #{(r.invoiceId || r.checkoutInvoiceId).slice(-6)}</button>}
             </article>
           : <article key={r._id} className="product-card">
-              {/* Hình ảnh sản phẩm */}
-              {r.imageUrl && <div className="product-image-wrap"><img src={r.imageUrl} alt={r.name} className="product-thumb" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} /></div>}
+              <div className="product-image-wrap" role={r.imageUrl ? undefined : 'img'} aria-label={r.imageUrl ? undefined : 'Chưa có ảnh sản phẩm'}>
+                <span className="product-image-placeholder" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></span>
+                {r.imageUrl && <img src={internalProductImageUrl(r.imageUrl)} alt={r.name} className="product-thumb" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+              </div>
               <div className="product-card-body">
                 <div className="product-card-top">
-                  <div>
-                    <strong>{r.name}</strong>
-                    <p className="product-meta">{r.sku} · {groups.find(g => g._id === r.groupId)?.name || 'Chưa phân nhóm'}</p>
-                    <p><b>{money(r.price)}</b> / sản phẩm{r.sizeMl ? ` · ${r.sizeMl} ml` : ''} · Tồn: <b>{r.stock}</b>{r.minStock > 0 && <span className="product-min-stock"> · Tối thiểu: {r.minStock}</span>}</p>
+                  <div className="product-card-heading">
+                    <strong className="product-name">{r.name}</strong>
+                    <div className="product-meta"><span>{groups.find(g => g._id === r.groupId)?.name || 'Chưa phân nhóm'}</span>
+                      {r.sku && <details className="product-sku"><summary title={r.sku} aria-label={`Xem mã đầy đủ của ${r.name}`}>Mã: {compactSku(String(r.sku))}</summary><div className="product-sku-full">Mã đầy đủ: <code>{r.sku}</code></div></details>}
+                    </div>
                   </div>
                   <div className="product-card-badges">
                     {stockBadge(r)}
                   </div>
                 </div>
+                <div className="product-facts"><strong className="product-price">{money(r.price)}</strong><span>{r.sizeMl ? `${r.sizeMl} ml` : 'Chưa có dung tích'}</span><span>Tồn: <b>{r.stock}</b>{r.unit ? ` ${r.unit}` : ''}</span>{r.minStock > 0 && <span className="product-min-stock">Tối thiểu: {r.minStock}</span>}</div>
                 {/* Mô tả sản phẩm (có thể thu gọn) */}
                 {(r.origin || r.manufacturedOn || r.expiresOn) && <dl className="product-origin-dates">
                   {r.origin && <div><dt>Xuất xứ</dt><dd>{r.origin}</dd></div>}
@@ -125,13 +134,13 @@ export default function Products({ section, refreshKey, onOpen, onInvoice, canMa
                   <p className={expandedId === r._id ? '' : 'product-desc-clamp'}>{r.description}</p>
                   {r.description.length > 120 && <button className="link-btn" onClick={() => setExpandedId(expandedId === r._id ? null : r._id)}>{expandedId === r._id ? 'Thu gọn' : 'Xem thêm'}</button>}
                 </div>}
-                <div className="actions">
+              </div>
+              <div className="actions product-card-actions">
                   {canEdit ? <>
                     <button onClick={() => edit(r)}>Sửa</button>
                     <button onClick={() => movement('IN', r)}>Nhập kho</button>
                     <button onClick={() => onOpen(r.active ? 'Ngừng bán sản phẩm' : 'Bán lại sản phẩm', 'productStatus', [], { id: r._id, active: !r.active }, r.name + '. Giữ lịch sử hóa đơn và kho.')}>{r.active ? 'Ngừng bán' : 'Bán lại'}</button>
                   </> : null}
-                </div>
               </div>
             </article>
       )}

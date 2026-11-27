@@ -1,5 +1,15 @@
 # Thiết kế chuyển đổi SpaCare
 
+## Cache ảnh và namespace nội bộ mới — 27/11/2026
+
+PROPOSED kỹ thuật: product-image-cache áp cùng header no-store cho browser/CDN, kể cả lỗi; route force-dynamic. InternalProductImageUrl dựng `/api/product-images/v2/{id}` từ tham chiếu tương đối khi render thumbnail/preview để tránh cache key immutable cũ, giữ hidden input/database URL gốc. Route v2 dùng chính GET nội bộ, không thay quyền. Public URL theo slug giữ nguyên và không cache. Không thay service worker, không tự purge production, không sửa Docker toàn máy. Chi tiết cache key, purge và giới hạn thu hồi trong `PRODUCT_IMAGE_CACHE.md`.
+
+## Tách đường đọc ảnh công khai/nội bộ — 27/11/2026 (ưu tiên mới nhất)
+
+PROPOSED kỹ thuật cho BR-PRODUCT-IMAGE-ACCESS-001: product-image-read dùng chung bộ phục vụ GridFS với scope metadata.spaId/kind/MIME và header no-store. Route nội bộ gọi actor() rồi kiểm canViewProducts; route công khai connect/requirePublicSpa và tra Product active cùng spa, không có fallback sang quyền nội bộ. Không dựa vào Referer, Origin, spaId/productId trong query hoặc URL ảnh do client chọn để cấp quyền. Đường public chỉ nhận slug/productId; ID file lấy từ tham chiếu tương đối của sản phẩm đã xác minh.
+
+Public products page dựng đường ảnh mới, không render URL tuyệt đối hoặc gọi fetch/redirect URL trong database. URL legacy không xác minh được dùng placeholder; Products/ProductImagePicker nội bộ giữ URL và preview hiện có. Không đổi upload, schema/index hay dữ liệu. Cache cũ theo public immutable một năm và bản người dùng đã tải không thể bị thu hồi bởi code; cần kiểm tra/purge cache cũ khi được phép phát hành. Không thực hiện deploy/purge trong lượt này.
+
 ## Ngữ cảnh spa công khai — 27/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED phạm vi theo BR-PUBLIC-SPA-001. PROPOSED kỹ thuật: publicSpaPage gọi requirePublicSpa để tra slug và đổi lỗi không tìm thấy thành notFound; mọi page tra spa trước truy vấn danh mục, với force-dynamic. Các page dưới `/s/[slug]` giữ bố cục công khai cũ, thêm scope spaId và truyền slug cho Header/Footer/ServiceCard/BookingForm. Không suy spa từ phiên đăng nhập hoặc dịch vụ; API dùng slug từ route, kiểm lại Spa trong transaction trước Service/Control/Idempotency. Các cờ missing/false và slug trùng đều fail closed. Menu di động, liên kết chi tiết/đặt lịch, tìm kiếm, phân trang, returnTo và trang thành công giữ slug; không dùng hotline hardcode của một spa trên trang có slug. URL công khai cũ thiếu slug không đọc dữ liệu, trang gốc giới thiệu chung.

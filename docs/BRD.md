@@ -1,5 +1,11 @@
 # SpaCare — Yêu cầu nghiệp vụ
 
+## Quyền đọc ảnh sản phẩm theo spa công khai — 27/11/2026 (ưu tiên mới nhất)
+
+CONFIRMED theo yêu cầu người dùng: khách chỉ đọc ảnh của sản phẩm đang công khai thuộc spa hợp lệ từ slug; không cấp quyền bằng image ID, spaId/productId hoặc URL client tự gửi. Đọc nội bộ tiếp tục theo phiên nhân sự đang hoạt động/cùng spa, gồm ảnh vừa upload chưa lưu sản phẩm và ảnh của sản phẩm đã ngừng. Không sửa dữ liệu thật, deploy, commit hoặc push trong công việc này. Yêu cầu này thay thiết kế cũ cho mọi ảnh GridFS đọc công khai chỉ bằng ID.
+
+PROPOSED kỹ thuật: route công khai theo slug và productId tra sản phẩm active rồi kiểm metadata GridFS cùng spa; không dùng/fetch/redirect URL tuyệt đối hoặc URL ngoài đã lưu. Trang công khai dùng URL route mới, giá trị không phải tham chiếu GridFS tương đối hiển thị Chưa có ảnh, không đổi dữ liệu cũ. Route ảnh theo ID dành riêng OWNER/STAFF cùng spa. Phản hồi mới no-store; bản đã tải/cache theo chính sách immutable cũ không thể thu hồi bằng thay đổi này, cần xử lý cache ở bước phát hành riêng.
+
 ## Trang công khai theo spa — 27/11/2026 (ưu tiên mới nhất)
 
 CONFIRMED theo yêu cầu người dùng: trang công khai dùng `/s/{slug}` và các trang con dịch vụ, sản phẩm, đặt lịch. Server xác định spa từ slug, chỉ phục vụ spa đang hoạt động và được phép công khai; slug sai, spa ngừng hoặc chưa công khai trả 404. Không chọn spa đầu tiên hoặc suy spa từ dịch vụ do trình duyệt gửi. Mọi danh mục, tìm kiếm, phân trang, chi tiết và dịch vụ đặt lịch phải cùng spa. Kiểm tra lại spa/dịch vụ trong transaction tạo lịch; điều hướng giữ slug. Yêu cầu này thay thiết kế cũ dùng dịch vụ đầu tiên xác định spa và các URL danh mục không có spa.

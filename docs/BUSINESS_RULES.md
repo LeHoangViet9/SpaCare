@@ -1,5 +1,11 @@
 # SpaCare — Quy tắc nghiệp vụ
 
+## BR-PRODUCT-IMAGE-ACCESS-001 — Quyền đọc ảnh công khai và nội bộ (27/11/2026)
+
+CONFIRMED theo yêu cầu mới nhất: ảnh công khai phải gắn với Product.active=true trong spa có slug hợp lệ, active=true, publicEnabled=true. Server lấy imageUrl từ đúng sản phẩm rồi kiểm ảnh thuộc cùng spa. Đổi spaId/productId/image ID hoặc dùng URL tuyệt đối không mở quyền đọc ảnh spa khác. Phiên nội bộ không bỏ qua các điều kiện của route công khai. OWNER/STAFF đang hoạt động tiếp tục đọc ảnh cùng spa qua route nội bộ, không phụ thuộc trạng thái công khai hoặc đã gắn ảnh vào sản phẩm. CUSTOMER không được dùng route ảnh nội bộ. Quy tắc này thay đề xuất cũ “ảnh sản phẩm là ảnh công khai” không gắn trạng thái sản phẩm.
+
+PROPOSED kỹ thuật: chỉ công khai tham chiếu `/api/product-images/{ObjectId}` đã lưu, không chấp nhận URL tuyệt đối/ngoài kể cả cùng host. Không fetch/redirect theo URL client/database. Public URL dùng slug/productId, không lộ image ID trong HTML. Cache-Control private/no-store cho cả thành công và lỗi; không thay cơ chế ghi imageUrl hoặc tự chuyển đổi ảnh legacy. Kiểm thử A/B phải bao phủ slug sai/ngừng, sản phẩm ngừng, tham chiếu chéo spa, URL tuyệt đối, query giả, xem nội bộ và tài khoản bị khóa.
+
 ## BR-PUBLIC-SPA-001 — Cách ly trang công khai theo slug (27/11/2026)
 
 CONFIRMED theo yêu cầu người dùng: `/s/{slug}` xác định spa cho trang chủ, danh mục dịch vụ/sản phẩm, chi tiết dịch vụ và đặt lịch. Slug phải xác định đúng một spa đang hoạt động, được phép công khai. Không có/ngừng/chưa công khai trả 404, không fallback spa đầu tiên. Mọi dịch vụ, kể cả dịch vụ đầu tiên, phải active/cùng spa từ slug; không tin spaId/staffId/giá client gửi. Kiểm lại spa trong transaction kể cả replay idempotency. Giữ quyền phiên, transaction, audit, giờ đến và thông báo. Quy tắc này thay cách suy spa từ dịch vụ đầu tiên trước đây.

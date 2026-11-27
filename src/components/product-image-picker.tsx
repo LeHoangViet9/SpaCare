@@ -1,5 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
+import { internalProductImageUrl } from '@/lib/product-image';
 
 export default function ProductImagePicker({ name, initialValue, disabled, onBusyChange }: {
   name: string; initialValue?: string; disabled: boolean; onBusyChange: (busy: boolean) => void;
@@ -27,7 +28,7 @@ export default function ProductImagePicker({ name, initialValue, disabled, onBus
   return <div className="product-image-picker">
     <strong>Ảnh sản phẩm</strong>
     <input type="hidden" name={name} value={url} />
-    {url ? <img src={url} alt="Ảnh sản phẩm đã chọn" className="product-image-preview" /> : <div className="product-image-empty">Chưa có ảnh sản phẩm</div>}
+    {url ? <img src={internalProductImageUrl(url)} alt="Ảnh sản phẩm đã chọn" className="product-image-preview" /> : <div className="product-image-empty">Chưa có ảnh sản phẩm</div>}
     <div className="product-image-actions">
       <button type="button" disabled={disabled || busy} onClick={() => library.current?.click()}>Chọn ảnh</button>
       <button type="button" disabled={disabled || busy} onClick={() => camera.current?.click()}>Chụp ảnh</button>

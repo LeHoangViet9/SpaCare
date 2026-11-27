@@ -28,6 +28,8 @@ const spas = [
 ];
 const services = spas.slice(0, 2).map((spa, index) => ({ _id: id(index ? 'b' : 'a'), spaId: spa._id, name: `Only Service ${index ? 'B' : 'A'}`, price: 100000, active: true }));
 const products = spas.slice(0, 2).flatMap((spa, index) => Array.from({ length: 13 }, (_, n) => ({ _id: `${index}-${n}`, spaId: spa._id, name: `Only Product ${index ? 'B' : 'A'} ${n}`, price: 200000, active: true, stock: 2 })));
+Object.assign(products[0], { imageUrl: '/api/product-images/' + id('c') });
+Object.assign(products[1], { imageUrl: 'https://example.test/api/product-images/' + id('d') });
 let state: Record<string, any[]> = { Customer: [], Appointment: [], Audit: [], Idempotency: [], Notification: [] };
 const matches = (row: any, filter: any): boolean => Object.entries(filter).every(([key, value]: any) => {
   if (value?.$regex !== undefined) return new RegExp(value.$regex, value.$options).test(row[key]);
@@ -62,6 +64,9 @@ for (const slug of ['spa-a', 'spa-b']) {
   }
 }
 const detail = (await import('../src/app/s/[slug]/services/[id]/page')).default;
+const imagePage = renderToStaticMarkup(await pages[2].default({ params: Promise.resolve({ slug: 'spa-a' }), searchParams: Promise.resolve({}) }));
+assert.ok(imagePage.includes('src="/api/s/spa-a/products/0-0/image"'));
+assert.ok(!imagePage.includes('/api/product-images/') && !imagePage.includes('https://example.test'), 'public HTML never publishes raw or absolute stored image URLs');
 await assert.rejects(detail({ params: Promise.resolve({ slug: 'spa-a', id: services[1]._id }) }), /NOT_FOUND/);
 assert.match(renderToStaticMarkup(await detail({ params: Promise.resolve({ slug: 'spa-a', id: services[0]._id }) })), /Only Service A/);
 for (const slug of ['missing', 'hidden', 'inactive', 'legacy', 'Bad Slug', '../spa-a']) {

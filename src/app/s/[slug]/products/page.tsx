@@ -1,5 +1,6 @@
 import { publicSpaPage } from '@/lib/public-page';
 import { publicSpaPath } from '@/lib/public-spa-path';
+import { publicProductImageUrl } from '@/lib/product-image';
 import { formatCurrency } from '@/lib/currency';
 import ValidatedForm from '@/components/validated-form';
 import Link from 'next/link';
@@ -36,7 +37,7 @@ export default async function ProductsPage({ params: routeParams, searchParams }
       <ValidatedForm className="public-product-search" action={publicSpaPath(spa.slug, '/products')}><label htmlFor="product-search">Tìm sản phẩm</label><div><input id="product-search" name="q" className="pub-text-input" defaultValue={search} placeholder="Nhập tên sản phẩm" maxLength={100} /><button className="pub-btn pub-btn-primary">Tìm kiếm</button></div></ValidatedForm>
       {failed ? <p role="alert">Chưa tải được sản phẩm. Vui lòng thử lại sau.</p> : <>
         <div className="public-products-grid">{products.map(p => <article key={String(p._id)} className="public-product-card">
-          {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" width={360} height={300} /> : <div className="public-product-no-image">Chưa có ảnh</div>}
+          {publicProductImageUrl(spa.slug, String(p._id), p.imageUrl) ? <img src={publicProductImageUrl(spa.slug, String(p._id), p.imageUrl)!} alt={p.name} loading="lazy" width={360} height={300} /> : <div className="public-product-no-image">Chưa có ảnh</div>}
           <div className="public-product-content"><span className={`pub-status-badge ${p.stock > 0 ? 'pub-status-active' : ''}`}>{p.stock > 0 ? 'Còn hàng' : 'Tạm hết hàng'}</span><h2>{p.name}</h2>{p.sizeMl && <p>{p.sizeMl} ml</p>}<strong className="public-product-price">{formatCurrency(p.price)}</strong>{p.description && <p className="public-product-description">{p.description}</p>}<Link href={publicSpaPath(spa.slug, '/#contact')} className="pub-btn pub-btn-secondary">Liên hệ tư vấn</Link></div>
         </article>)}</div>
         {!products.length && <p role="status">{search ? 'Không tìm thấy sản phẩm phù hợp.' : 'Spa đang cập nhật danh sách sản phẩm.'}</p>}
