@@ -6,6 +6,7 @@ import SalaryTable from '../src/components/salary-table';
 const record = { _id:'test', staffName:'Nhân viên mẫu', month:'2026-10', baseSalary:5000000, earnedBase:4800000, serviceCommissionTotal:300000, saleCommissionTotal:100000, bonus:200000, deductions:50000, advance:1000000, total:4350000,currentWorkdays:23,currentLeaveStats:{permitted:1,unpermitted:0} };
 const render = (owner:boolean, status:string) => renderToStaticMarkup(<SalaryTable rows={[{...record,status}]} owner={owner} onEdit={()=>{}} onApprove={()=>{}} onPay={()=>{}} />);
 const draft=render(true,'DRAFT');
+assert.match(draft,/Tiền trừ do nghỉ/); assert.match(draft,/Khoản này đã được tính vào lương kỳ này/); assert.doesNotMatch(draft,/Giảm do nghỉ \(snapshot\)/);
 assert.match(draft,/4\.350\.000/); assert.match(draft,/300\.000/); assert.match(draft,/100\.000/);
 assert.match(draft,/200\.000/); assert.match(draft,/50\.000/); assert.match(draft,/Thưởng \/ phụ cấp thêm/); assert.match(draft,/Tổng hoa hồng/); assert.match(draft,/400\.000/); assert.match(draft,/Không gồm hoa hồng/); assert.doesNotMatch(draft,/Đã gồm trong thưởng|Công đã ghi|Công đã tính lương/);
 assert.match(draft,/Bảng lương nhân viên theo tháng/);

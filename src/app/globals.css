@@ -1310,6 +1310,26 @@ body:has(.modal-backdrop) { overflow: hidden; }
 /* Fit desktop tables to the content area instead of expanding for long text. */
 .cell-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .cell-stack small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* Keep ledger columns readable; narrow screens scroll inside the table. */
+.cash-ledger .table-scroll { overflow-x: auto; max-width: 100%; padding: 0 0 10px; overscroll-behavior-x: contain; }
+.cash-ledger .table-scroll:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.cash-ledger-table { table-layout: fixed; width: 100%; min-width: 1080px; }
+.cash-ledger-table th, .cash-ledger-table td { padding: 14px 12px; vertical-align: top; line-height: 1.55; font-size: 13px; overflow-wrap: break-word; }
+.cash-ledger-table th { white-space: nowrap; font-size: 12px; }
+.cash-ledger-table th:nth-child(1) { width: 12%; }
+.cash-ledger-table th:nth-child(2) { width: 27%; }
+.cash-ledger-table th:nth-child(3) { width: 10%; }
+.cash-ledger-table th:nth-child(4) { width: 9%; }
+.cash-ledger-table th:nth-child(5) { width: 10%; }
+.cash-ledger-table th:nth-child(6) { width: 12%; }
+.cash-ledger-table th:nth-child(7) { width: 11%; }
+.cash-ledger-table th:nth-child(8) { width: 9%; }
+.cash-ledger-table td:nth-child(6) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cash-ledger-table td button { max-width: 100%; white-space: normal; }
+.cash-entry-note { gap: 4px; }
+.cash-entry-note strong { font-weight: 600; }
+.cash-entry-note .cash-entry-description { white-space: pre-line; overflow-wrap: anywhere; }
 .record-details summary { cursor: pointer; color: var(--green); font-size: 12px; }
 .record-details[open]>.cell-stack { margin-top: 10px; }
 .row-action-menu { min-width: 0; width: 100%; }
@@ -2004,12 +2024,11 @@ label textarea { margin-top: 8px; }
  .cash-card-manager .card-manager-table td:nth-child(4) { order:4; white-space:normal; }
  .cash-card-manager .card-manager-table td:nth-child(5) { order:3; white-space:normal; }
  .cash-card-manager .card-manager-table td:nth-child(5) strong { font-size:20px; color:var(--ink); }
- .cash-card-manager .card-manager-table td:nth-child(6) { order:5; }
- .cash-card-manager .card-manager-table td:nth-child(7) { display:none; }
- .cash-card-manager .card-manager-table td:nth-child(8) { order:6; }
- .cash-card-manager .card-manager-table td:nth-child(9) { order:7; grid-column:1/-1; border-top:1px solid var(--line); padding-top:12px; }
- .cash-card-manager .card-manager-table td:nth-child(9)::before { display:none; }
- .cash-card-manager .card-manager-table td:nth-child(9)>button { width:100%; min-height:40px; }
+ .cash-card-manager .card-manager-table td:nth-child(6) { display:none; }
+ .cash-card-manager .card-manager-table td:nth-child(7) { order:6; }
+ .cash-card-manager .card-manager-table td:nth-child(8) { order:7; grid-column:1/-1; border-top:1px solid var(--line); padding-top:12px; }
+ .cash-card-manager .card-manager-table td:nth-child(8)::before { display:none; }
+ .cash-card-manager .card-manager-table td:nth-child(8)>button { width:100%; min-height:40px; }
  .cash-card-manager .card-manager-table td[colspan] { grid-column:1/-1; }
  .cash-card-manager .card-manager-table td[colspan]::before { display:none; }
  .cash-card-manager .card-manager-footer { padding:16px; gap:12px; }

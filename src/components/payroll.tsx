@@ -8,9 +8,10 @@ type Row = Record<string, any>;
 type Field = { key: string; label: string; type?: string; min?: number; step?: number; max?: number; optional?: boolean; options?: [string, string][]; hint?: string };
 const money = formatCurrency;
 const status: Record<string, string> = { DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt', PAID: 'Đã chi' };
-export default function PayrollPanel({ user, section, today, refreshKey, onOpen }: {
+export default function PayrollPanel({ user, section, today, refreshKey, onOpen, onInvoice }: {
   user: Row; section: 'salary' | 'commission'; today: string; refreshKey: unknown;
   onOpen: (title: string, action: string, fields: Field[], defaults?: Row, description?: string) => void;
+  onInvoice: (id: string) => void;
 }) {
   const owner = user.role === 'OWNER';
   const [attendanceRecord,setAttendanceRecord]=useState<Row|null>(null);
@@ -74,7 +75,14 @@ export default function PayrollPanel({ user, section, today, refreshKey, onOpen 
  {key:'mode',label:'Cách tính lương',options:[['NONE','Lương tháng, không tự khấu trừ'],['DAILY','Theo ngày công (cấu hình lịch sử)']]},
 ],{staffId:p._id,...(p.salaryPolicy || {standardDays:26,paidLeaveDays:0,mode:'NONE'})},'Các giá trị ban đầu chỉ là gợi ý. Chủ spa lưu mới áp dụng. Luồng mới chỉ ghi nghỉ và giữ lương tháng. Công thức DAILY cũ dựa vào ngày công, chưa áp dụng thành công thức giảm chỉ theo ngày nghỉ; chủ spa đối soát khấu trừ có lý do khi chốt kỳ.')}>Chính sách lương</button></div></details>:null;}}
         onApprove={r => onOpen('Duyệt bảng lương', 'approvePayroll', [], { id: r._id, expectedTotal: r.total }, `${r.staffName} · ${r.month} · ${money(r.total)}. Bao gồm hoa hồng trong bảng. Duyệt khóa số liệu; chưa ghi chi tiền.`)}
-        onPay={pay} /> : <div className="payroll-records">{data.rows.map((r: Row) => <article key={r._id} className="payroll-record"><div className="section-head"><strong>{r.serviceName}</strong><strong className={r.amount<0?'negative':'positive'}>{money(r.amount)}</strong></div><p>{r.staffName} · {new Date(r.earnedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p><p>Khách hàng: <strong>{r.customerName || 'Chưa ghi nhận'}</strong>{r.customerPhone && <> · <span>{r.customerPhone}</span></>}</p><small>{r.sourceType === 'INVOICE_ADJUSTMENT' ? 'Điều chỉnh hóa đơn · giữ ledger gốc' : r.category === 'PACKAGE_SALE' ? (r.shareCount > 1 ? `Bán gói · chia đều 5% / ${r.shareCount} người` : 'Bán gói 5%') + ' · hóa đơn #' + String(r.invoiceId).slice(-6) : r.sourceType === 'TREATMENT_USE' ? 'Buổi liệu trình' : 'Dịch vụ lẻ'} · #{String(r.sourceId).slice(-6)}</small><p>{r.payrollId ? `${status[r.payrollStatus] || 'Đã vào bảng lương'} · ${r.payrollMonth || ''}` : r.inDraft ? 'Đã có trong bản nháp · Chưa chốt lương' : 'Chưa có trong snapshot lương'}</p></article>)}</div>}
+        onPay={pay} /> : <div className="payroll-records">{data.rows.map((r: Row) => <article key={r._id} className="payroll-record">
+          <div className="section-head"><strong>{r.serviceName}</strong><strong className={r.amount<0?'negative':'positive'}>{money(r.amount)}</strong></div>
+          <p>{r.staffName} · {new Date(r.earnedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
+          <p>Khách hàng: <strong>{r.customerName || 'Chưa ghi nhận'}</strong>{r.customerPhone && <> · <span>{r.customerPhone}</span></>}</p>
+          <small>{r.sourceType === 'INVOICE_ADJUSTMENT' ? 'Điều chỉnh hóa đơn · giữ ledger gốc' : r.category === 'PACKAGE_SALE' ? (r.shareCount > 1 ? `Bán gói · chia đều 5% / ${r.shareCount} người` : 'Bán gói 5%') : r.sourceType === 'TREATMENT_USE' ? 'Buổi liệu trình' : 'Dịch vụ lẻ'} · #{String(r.sourceId).slice(-6)}</small>
+          {r.invoiceId && <p><button type="button" onClick={() => onInvoice(r.invoiceId)}>Xem hóa đơn</button></p>}
+          <p>{r.payrollId ? `${status[r.payrollStatus] || 'Đã vào bảng lương'} · ${r.payrollMonth || ''}` : r.inDraft ? 'Đã có trong bản nháp · Chưa chốt lương' : 'Chưa được ghi nhận trong bảng lương'}</p>
+        </article>)}</div>}
       {!loading && data && data.total > 10 && <div className="table-pagination"><button disabled={data.page <= 1} onClick={() => setPage(data.page - 1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total / 10)}</span><button disabled={data.page * 10 >= data.total} onClick={() => setPage(data.page + 1)}>Sau</button></div>}
     </section>
     {section === 'salary' && attendanceRecord && <AttendanceDialog person={attendanceRecord} month={month} today={today} user={user} refreshKey={refreshKey} onClose={()=>setAttendanceRecord(null)} onOpen={onOpen} />}
